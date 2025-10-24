@@ -1,0 +1,119 @@
+server:
+  port: 9091
+  servlet:
+    context-path: /
+  compression:
+    enabled: true
+
+spring:
+  application:
+    name: zkinfo
+  profiles:
+    active: dev
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+    default-property-inclusion: non_null
+
+# ZooKeeper配置
+zookeeper:
+  connect-string: localhost:2181
+  session-timeout: 30000
+  connection-timeout: 15000
+  base-path: /dubbo
+  retry:
+    max-retries: 3
+    base-sleep-time: 1000
+
+# 监控配置
+monitor:
+  heartbeat:
+    interval: 30000  # 心跳检测间隔(毫秒)
+    timeout: 3000    # 心跳超时时间(毫秒)
+    thread-pool-size: 8
+    offline-threshold: 5  # 离线阈值(分钟)
+    cleanup-threshold: 30 # 清理阈值(分钟)
+
+# 日志配置
+logging:
+  level:
+    root: INFO
+    com.zkinfo: DEBUG
+    org.apache.curator: INFO
+    org.apache.zookeeper: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n"
+  file:
+    name: logs/zkinfo.log
+    max-size: 100MB
+    max-history: 30
+
+# 管理端点配置
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+    info:
+      enabled: true
+  info:
+    env:
+      enabled: true
+    java:
+      enabled: true
+    os:
+      enabled: true
+
+# SpringDoc OpenAPI 配置
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+    enabled: true
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+    try-it-out-enabled: true
+    operations-sorter: method
+    tags-sorter: alpha
+    doc-expansion: none
+  show-actuator: true
+  group-configs:
+    - group: 'zkinfo-api'
+      display-name: 'ZkInfo API'
+      paths-to-match: '/api/**'
+
+---
+# 开发环境配置
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+zookeeper:
+  connect-string: localhost:2181
+
+logging:
+  level:
+    com.zkinfo: DEBUG
+
+---
+# 生产环境配置
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+zookeeper:
+  connect-string: ${ZK_CONNECT_STRING:localhost:2181}
+
+logging:
+  level:
+    root: WARN
+    com.zkinfo: INFO
+  file:
+    name: /var/log/zkinfo/zkinfo.log

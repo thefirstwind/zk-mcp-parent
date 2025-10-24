@@ -1,0 +1,66 @@
+server:
+  port: 8081
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: mcp-ai-client
+  
+  # Jackson 配置 - 忽略未知字段（兼容 DeepSeek API）
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: false
+  
+  ai:
+    openai:
+      # api-key: ${DEEPSEEK_API_KEY:your-deepseek-api-key-here}
+      api-key: sk-c82a3957785d4c48b08a62e0e707ecf2
+      base-url: https://api.deepseek.com
+      chat:
+        options:
+          model: deepseek-chat
+          temperature: 0.7
+          max-tokens: 4000
+
+# MCP Server配置
+mcp:
+  server:
+    url: http://localhost:9091
+    timeout: 30000
+
+# 日志配置
+logging:
+  level:
+    root: INFO
+    com.zkinfo: DEBUG
+    org.springframework.ai: DEBUG
+  pattern:
+    console: '%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n'
+  file:
+    name: logs/mcp-ai-client.log
+    max-size: 10MB
+    max-history: 7
+
+# Actuator配置
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+# Swagger配置
+springdoc:
+  api-docs:
+    enabled: true
+    path: /api-docs
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+  show-actuator: true
+

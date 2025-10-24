@@ -1,0 +1,31 @@
+# 开发环境配置
+spring:
+  # Jackson 配置 - 忽略未知字段（兼容 DeepSeek API）
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: false
+  
+  ai:
+    openai:
+      # api-key: ${DEEPSEEK_API_KEY:your-deepseek-api-key-here}
+      api-key: sk-c82a3957785d4c48b08a62e0e707ecf2
+      base-url: https://api.deepseek.com
+      chat:
+        options:
+          model: deepseek-chat
+          temperature: 0.7
+          max-tokens: 4000
+
+mcp:
+  server:
+    url: http://localhost:9091
+    timeout: 30000
+
+logging:
+  level:
+    com.zkinfo: DEBUG
+    org.springframework.ai: TRACE
+    org.springframework.ai.openai.api: TRACE
+    org.springframework.web.client: TRACE
+    org.springframework.http: TRACE
+

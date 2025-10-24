@@ -1,0 +1,44 @@
+
+server:
+  port: 8083
+
+spring:
+  application:
+    name: demo-provider
+
+# Dubbo配置
+dubbo:
+  application:
+    name: demo-provider
+    version: 1.0.0
+  registry:
+    address: zookeeper://localhost:2181
+    timeout: 10000
+  protocol:
+    name: dubbo
+    port: 20883
+  provider:
+    timeout: 3000
+    retries: 0
+    loadbalance: roundrobin
+  consumer:
+    timeout: 3000
+    retries: 0
+  scan:
+    base-packages: com.zkinfo.demo.service.impl
+
+# 日志配置
+logging:
+  level:
+    com.zkinfo.demo: DEBUG
+    org.apache.dubbo: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/demo-provider.log
+
+
+
+
+

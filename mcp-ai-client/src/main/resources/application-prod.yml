@@ -1,0 +1,28 @@
+# 生产环境配置
+spring:
+  # Jackson 配置 - 忽略未知字段（兼容 DeepSeek API）
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: false
+  
+  ai:
+    openai:
+      api-key: ${DEEPSEEK_API_KEY}
+      base-url: https://api.deepseek.com
+      chat:
+        options:
+          model: deepseek-chat
+          temperature: 0.5
+          max-tokens: 4000
+
+mcp:
+  server:
+    url: ${MCP_SERVER_URL:http://localhost:9091}
+    timeout: 60000
+
+logging:
+  level:
+    root: INFO
+    com.zkinfo: INFO
+    org.springframework.ai: INFO
+

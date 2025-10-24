@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSE 流式调用测试客户端</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .content {
+            padding: 20px;
+        }
+        .test-section {
+            margin-bottom: 30px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .test-section h3 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        .form-group input, .form-group textarea, .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .form-group textarea {
+            height: 100px;
+            resize: vertical;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #5a6fd8;
+        }
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+        .btn-danger:hover {
+            background: #c82333;
+        }
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        .btn-success:hover {
+            background: #218838;
+        }
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .log-container {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 5px;
+            border-radius: 3px;
+        }
+        .log-info {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        .log-success {
+            background: #d4edda;
+            color: #155724;
+        }
+        .log-error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .log-data {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-connected {
+            background: #28a745;
+        }
+        .status-disconnected {
+            background: #dc3545;
+        }
+        .status-connecting {
+            background: #ffc107;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .stat-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #667eea;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #6c757d;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌊 SSE 流式调用测试客户端</h1>
+            <p>测试 ZK MCP Parent 项目的 Server-Sent Events 流式传输功能</p>
+        </div>
+        
+        <div class="content">
+            <!-- 基础 SSE 测试 -->
+            <div class="test-section">
+                <h3>📡 基础 SSE 流式调用测试</h3>
+                <div class="form-group">
+                    <label for="basicToolName">工具名称:</label>
+                    <select id="basicToolName">
+                        <option value="com.zkinfo.demo.service.UserService.getUserById">获取用户信息</option>
+                        <option value="com.zkinfo.demo.service.OrderService.getOrderById">获取订单信息</option>
+                        <option value="com.zkinfo.demo.service.ProductService.getProductById">获取产品信息</option>
+                        <option value="com.zkinfo.demo.service.UserService.getAllUsers">获取所有用户</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="basicArguments">参数 (JSON格式):</label>
+                    <textarea id="basicArguments" placeholder='{"args": [1]}'></textarea>
+                </div>
+                <div class="button-group">
+                    <button id="basicStartBtn" class="btn btn-primary" onclick="startBasicSseTest()">开始流式调用</button>
+                    <button id="basicStopBtn" class="btn btn-danger" onclick="stopBasicSseTest()" disabled>停止调用</button>
+                    <button class="btn btn-success" onclick="clearBasicLog()">清空日志</button>
+                </div>
+                <div class="form-group">
+                    <label>连接状态: <span id="basicStatus" class="status-indicator status-disconnected"></span><span id="basicStatusText">未连接</span></label>
+                </div>
+                <div class="log-container" id="basicLog"></div>
+            </div>
+
+            <!-- 并发 SSE 测试 -->
+            <div class="test-section">
+                <h3>🚀 并发 SSE 流式调用测试</h3>
+                <div class="form-group">
+                    <label for="concurrentCount">并发数量:</label>
+                    <input type="number" id="concurrentCount" value="3" min="1" max="10">
+                </div>
+                <div class="form-group">
+                    <label for="concurrentDelay">调用间隔 (毫秒):</label>
+                    <input type="number" id="concurrentDelay" value="500" min="100" max="5000">
+                </div>
+                <div class="button-group">
+                    <button id="concurrentStartBtn" class="btn btn-primary" onclick="startConcurrentSseTest()">开始并发测试</button>
+                    <button id="concurrentStopBtn" class="btn btn-danger" onclick="stopConcurrentSseTest()" disabled>停止所有</button>
+                    <button class="btn btn-success" onclick="clearConcurrentLog()">清空日志</button>
+                </div>
+                <div class="log-container" id="concurrentLog"></div>
+            </div>
+
+            <!-- 长时间运行测试 -->
+            <div class="test-section">
+                <h3>⏱️ 长时间运行 SSE 测试</h3>
+                <div class="form-group">
+                    <label for="longRunningDuration">运行时长 (秒):</label>
+                    <input type="number" id="longRunningDuration" value="30" min="10" max="300">
+                </div>
+                <div class="form-group">
+                    <label for="longRunningInterval">数据推送间隔 (毫秒):</label>
+                    <input type="number" id="longRunningInterval" value="1000" min="100" max="10000">
+                </div>
+                <div class="button-group">
+                    <button id="longRunningStartBtn" class="btn btn-primary" onclick="startLongRunningSseTest()">开始长时间测试</button>
+                    <button id="longRunningStopBtn" class="btn btn-danger" onclick="stopLongRunningSseTest()" disabled>停止测试</button>
+                    <button class="btn btn-success" onclick="clearLongRunningLog()">清空日志</button>
+                </div>
+                <div class="log-container" id="longRunningLog"></div>
+            </div>
+
+            <!-- 错误处理测试 -->
+            <div class="test-section">
+                <h3>❌ 错误处理测试</h3>
+                <div class="form-group">
+                    <label for="errorTestType">错误类型:</label>
+                    <select id="errorTestType">
+                        <option value="invalid_stream_id">无效流ID</option>
+                        <option value="invalid_tool_name">无效工具名称</option>
+                        <option value="invalid_arguments">无效参数</option>
+                        <option value="network_error">网络错误模拟</option>
+                    </select>
+                </div>
+                <div class="button-group">
+                    <button id="errorTestBtn" class="btn btn-primary" onclick="startErrorTest()">开始错误测试</button>
+                    <button class="btn btn-success" onclick="clearErrorLog()">清空日志</button>
+                </div>
+                <div class="log-container" id="errorLog"></div>
+            </div>
+
+            <!-- 统计信息 -->
+            <div class="test-section">
+                <h3>📊 测试统计</h3>
+                <div class="stats">
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalConnections">0</div>
+                        <div class="stat-label">总连接数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="activeConnections">0</div>
+                        <div class="stat-label">活跃连接</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalMessages">0</div>
+                        <div class="stat-label">接收消息数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="errorCount">0</div>
+                        <div class="stat-label">错误次数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="avgLatency">0ms</div>
+                        <div class="stat-label">平均延迟</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="uptime">0s</div>
+                        <div class="stat-label">运行时间</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let basicEventSource = null;
+        let concurrentEventSources = [];
+        let longRunningEventSource = null;
+        let stats = {
+            totalConnections: 0,
+            activeConnections: 0,
+            totalMessages: 0,
+            errorCount: 0,
+            latencies: [],
+            startTime: null
+        };
+
+        // 更新统计信息
+        function updateStats() {
+            document.getElementById('totalConnections').textContent = stats.totalConnections;
+            document.getElementById('activeConnections').textContent = stats.activeConnections;
+            document.getElementById('totalMessages').textContent = stats.totalMessages;
+            document.getElementById('errorCount').textContent = stats.errorCount;
+            
+            const avgLatency = stats.latencies.length > 0 
+                ? Math.round(stats.latencies.reduce((a, b) => a + b, 0) / stats.latencies.length)
+                : 0;
+            document.getElementById('avgLatency').textContent = avgLatency + 'ms';
+            
+            const uptime = stats.startTime 
+                ? Math.round((Date.now() - stats.startTime) / 1000)
+                : 0;
+            document.getElementById('uptime').textContent = uptime + 's';
+        }
+
+        // 添加日志
+        function addLog(containerId, type, message, data = null) {
+            const container = document.getElementById(containerId);
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            let content = `[${timestamp}] ${message}`;
+            
+            if (data) {
+                content += '\n' + JSON.stringify(data, null, 2);
+            }
+            
+            entry.textContent = content;
+            container.appendChild(entry);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // 基础 SSE 测试
+        async function startBasicSseTest() {
+            const toolName = document.getElementById('basicToolName').value;
+            const argumentsText = document.getElementById('basicArguments').value;
+            
+            try {
+                const arguments_ = argumentsText ? JSON.parse(argumentsText) : {};
+                
+                // 更新状态
+                updateConnectionStatus('basic', 'connecting', '连接中...');
+                document.getElementById('basicStartBtn').disabled = true;
+                
+                // 创建流式调用
+                const response = await fetch('/mcp/stream', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        id: 'basic-test-' + Date.now(),
+                        method: 'tools/call',
+                        params: {
+                            name: toolName,
+                            arguments: arguments_,
+                            stream: true
+                        }
+                    })
+                });
+                
+                const result = await response.json();
+                addLog('basicLog', 'info', '创建流式调用', result);
+                
+                if (result.streamId) {
+                    // 开始 SSE 监听
+                    basicEventSource = new EventSource(`/mcp/stream/${result.streamId}`);
+                    stats.totalConnections++;
+                    stats.activeConnections++;
+                    
+                    const startTime = Date.now();
+                    
+                    basicEventSource.onopen = function() {
+                        updateConnectionStatus('basic', 'connected', '已连接');
+                        addLog('basicLog', 'success', 'SSE 连接已建立');
+                        document.getElementById('basicStopBtn').disabled = false;
+                    };
+                    
+                    basicEventSource.onmessage = function(event) {
+                        const latency = Date.now() - startTime;
+                        stats.latencies.push(latency);
+                        stats.totalMessages++;
+                        
+                        try {
+                            const data = JSON.parse(event.data);
+                            addLog('basicLog', 'data', '接收到数据', data);
+                        } catch (e) {
+                            addLog('basicLog', 'data', '接收到数据: ' + event.data);
+                        }
+                        updateStats();
+                    };
+                    
+                    basicEventSource.onerror = function(event) {
+                        addLog('basicLog', 'error', 'SSE 连接错误');
+                        stats.errorCount++;
+                        updateConnectionStatus('basic', 'disconnected', '连接错误');
+                        stopBasicSseTest();
+                    };
+                    
+                } else {
+                    addLog('basicLog', 'error', '创建流式调用失败', result);
+                    updateConnectionStatus('basic', 'disconnected', '创建失败');
+                    document.getElementById('basicStartBtn').disabled = false;
+                }
+                
+            } catch (error) {
+                addLog('basicLog', 'error', '请求失败: ' + error.message);
+                updateConnectionStatus('basic', 'disconnected', '请求失败');
+                document.getElementById('basicStartBtn').disabled = false;
+                stats.errorCount++;
+            }
+            
+            updateStats();
+        }
+
+        function stopBasicSseTest() {
+            if (basicEventSource) {
+                basicEventSource.close();
+                basicEventSource = null;
+                stats.activeConnections--;
+            }
+            
+            updateConnectionStatus('basic', 'disconnected', '已断开');
+            document.getElementById('basicStartBtn').disabled = false;
+            document.getElementById('basicStopBtn').disabled = true;
+            addLog('basicLog', 'info', 'SSE 连接已关闭');
+            updateStats();
+        }
+
+        // 并发 SSE 测试
+        async function startConcurrentSseTest() {
+            const count = parseInt(document.getElementById('concurrentCount').value);
+            const delay = parseInt(document.getElementById('concurrentDelay').value);
+            
+            document.getElementById('concurrentStartBtn').disabled = true;
+            document.getElementById('concurrentStopBtn').disabled = false;
+            
+            addLog('concurrentLog', 'info', `开始 ${count} 个并发 SSE 连接测试`);
+            
+            for (let i = 0; i < count; i++) {
+                setTimeout(async () => {
+                    try {
+                        const response = await fetch('/mcp/stream', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                jsonrpc: '2.0',
+                                id: `concurrent-${i}-${Date.now()}`,
+                                method: 'tools/call',
+                                params: {
+                                    name: 'com.zkinfo.demo.service.UserService.getUserById',
+                                    arguments: { args: [i + 1] },
+                                    stream: true
+                                }
+                            })
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (result.streamId) {
+                            const eventSource = new EventSource(`/mcp/stream/${result.streamId}`);
+                            concurrentEventSources.push(eventSource);
+                            stats.totalConnections++;
+                            stats.activeConnections++;
+                            
+                            eventSource.onmessage = function(event) {
+                                stats.totalMessages++;
+                                addLog('concurrentLog', 'data', `连接 ${i + 1} 接收数据`, JSON.parse(event.data));
+                                updateStats();
+                            };
+                            
+                            eventSource.onerror = function() {
+                                addLog('concurrentLog', 'error', `连接 ${i + 1} 发生错误`);
+                                stats.errorCount++;
+                                stats.activeConnections--;
+                                updateStats();
+                            };
+                            
+                            addLog('concurrentLog', 'success', `连接 ${i + 1} 已建立`);
+                        }
+                        
+                    } catch (error) {
+                        addLog('concurrentLog', 'error', `连接 ${i + 1} 创建失败: ${error.message}`);
+                        stats.errorCount++;
+                    }
+                    updateStats();
+                }, i * delay);
+            }
+        }
+
+        function stopConcurrentSseTest() {
+            concurrentEventSources.forEach((eventSource, index) => {
+                if (eventSource) {
+                    eventSource.close();
+                    addLog('concurrentLog', 'info', `连接 ${index + 1} 已关闭`);
+                }
+            });
+            
+            stats.activeConnections -= concurrentEventSources.length;
+            concurrentEventSources = [];
+            
+            document.getElementById('concurrentStartBtn').disabled = false;
+            document.getElementById('concurrentStopBtn').disabled = true;
+            addLog('concurrentLog', 'info', '所有并发连接已关闭');
+            updateStats();
+        }
+
+        // 长时间运行测试
+        async function startLongRunningSseTest() {
+            const duration = parseInt(document.getElementById('longRunningDuration').value);
+            
+            document.getElementById('longRunningStartBtn').disabled = true;
+            document.getElementById('longRunningStopBtn').disabled = false;
+            
+            addLog('longRunningLog', 'info', `开始 ${duration} 秒长时间运行测试`);
+            
+            try {
+                const response = await fetch('/mcp/stream', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        id: 'long-running-' + Date.now(),
+                        method: 'tools/call',
+                        params: {
+                            name: 'com.zkinfo.demo.service.UserService.getAllUsers',
+                            arguments: {},
+                            stream: true
+                        }
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.streamId) {
+                    longRunningEventSource = new EventSource(`/mcp/stream/${result.streamId}`);
+                    stats.totalConnections++;
+                    stats.activeConnections++;
+                    
+                    const startTime = Date.now();
+                    
+                    longRunningEventSource.onmessage = function(event) {
+                        const elapsed = Math.round((Date.now() - startTime) / 1000);
+                        stats.totalMessages++;
+                        addLog('longRunningLog', 'data', `[${elapsed}s] 接收数据`, JSON.parse(event.data));
+                        updateStats();
+                    };
+                    
+                    longRunningEventSource.onerror = function() {
+                        addLog('longRunningLog', 'error', '长时间连接发生错误');
+                        stats.errorCount++;
+                        stopLongRunningSseTest();
+                    };
+                    
+                    // 自动停止
+                    setTimeout(() => {
+                        if (longRunningEventSource) {
+                            stopLongRunningSseTest();
+                            addLog('longRunningLog', 'info', '长时间测试自动结束');
+                        }
+                    }, duration * 1000);
+                }
+                
+            } catch (error) {
+                addLog('longRunningLog', 'error', '长时间测试启动失败: ' + error.message);
+                document.getElementById('longRunningStartBtn').disabled = false;
+                document.getElementById('longRunningStopBtn').disabled = true;
+                stats.errorCount++;
+            }
+            
+            updateStats();
+        }
+
+        function stopLongRunningSseTest() {
+            if (longRunningEventSource) {
+                longRunningEventSource.close();
+                longRunningEventSource = null;
+                stats.activeConnections--;
+            }
+            
+            document.getElementById('longRunningStartBtn').disabled = false;
+            document.getElementById('longRunningStopBtn').disabled = true;
+            addLog('longRunningLog', 'info', '长时间测试已停止');
+            updateStats();
+        }
+
+        // 错误处理测试
+        async function startErrorTest() {
+            const errorType = document.getElementById('errorTestType').value;
+            
+            addLog('errorLog', 'info', `开始错误测试: ${errorType}`);
+            
+            let testUrl = '';
+            let testBody = null;
+            
+            switch (errorType) {
+                case 'invalid_stream_id':
+                    testUrl = '/mcp/stream/invalid_stream_id_12345';
+                    break;
+                case 'invalid_tool_name':
+                    testUrl = '/mcp/stream';
+                    testBody = {
+                        jsonrpc: '2.0',
+                        id: 'error-test',
+                        method: 'tools/call',
+                        params: {
+                            name: 'com.invalid.Service.invalidMethod',
+                            arguments: {},
+                            stream: true
+                        }
+                    };
+                    break;
+                case 'invalid_arguments':
+                    testUrl = '/mcp/stream';
+                    testBody = {
+                        jsonrpc: '2.0',
+                        id: 'error-test',
+                        method: 'tools/call',
+                        params: {
+                            name: 'com.zkinfo.demo.service.UserService.getUserById',
+                            arguments: { invalid: 'arguments' },
+                            stream: true
+                        }
+                    };
+                    break;
+                case 'network_error':
+                    testUrl = '/mcp/stream/network_error_test';
+                    break;
+            }
+            
+            try {
+                if (testBody) {
+                    // 先创建流，再连接
+                    const response = await fetch(testUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(testBody)
+                    });
+                    
+                    const result = await response.json();
+                    addLog('errorLog', 'info', '创建流响应', result);
+                    
+                    if (result.streamId) {
+                        testUrl = `/mcp/stream/${result.streamId}`;
+                    }
+                }
+                
+                // 连接 SSE
+                const errorEventSource = new EventSource(testUrl);
+                stats.totalConnections++;
+                stats.activeConnections++;
+                
+                errorEventSource.onopen = function() {
+                    addLog('errorLog', 'success', '错误测试连接已建立');
+                };
+                
+                errorEventSource.onmessage = function(event) {
+                    stats.totalMessages++;
+                    addLog('errorLog', 'data', '错误测试接收数据', JSON.parse(event.data));
+                    updateStats();
+                };
+                
+                errorEventSource.onerror = function(event) {
+                    addLog('errorLog', 'error', '预期的错误发生');
+                    stats.errorCount++;
+                    stats.activeConnections--;
+                    errorEventSource.close();
+                    updateStats();
+                };
+                
+                // 5秒后自动关闭
+                setTimeout(() => {
+                    if (errorEventSource.readyState !== EventSource.CLOSED) {
+                        errorEventSource.close();
+                        stats.activeConnections--;
+                        addLog('errorLog', 'info', '错误测试连接已关闭');
+                        updateStats();
+                    }
+                }, 5000);
+                
+            } catch (error) {
+                addLog('errorLog', 'error', '错误测试失败: ' + error.message);
+                stats.errorCount++;
+                updateStats();
+            }
+        }
+
+        // 更新连接状态
+        function updateConnectionStatus(prefix, status, text) {
+            const indicator = document.getElementById(prefix + 'Status');
+            const textElement = document.getElementById(prefix + 'StatusText');
+            
+            indicator.className = `status-indicator status-${status}`;
+            if (textElement) {
+                textElement.textContent = text;
+            }
+        }
+
+        // 清空日志函数
+        function clearBasicLog() {
+            document.getElementById('basicLog').innerHTML = '';
+        }
+        
+        function clearConcurrentLog() {
+            document.getElementById('concurrentLog').innerHTML = '';
+        }
+        
+        function clearLongRunningLog() {
+            document.getElementById('longRunningLog').innerHTML = '';
+        }
+        
+        function clearErrorLog() {
+            document.getElementById('errorLog').innerHTML = '';
+        }
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            stats.startTime = Date.now();
+            
+            // 定期更新统计信息
+            setInterval(updateStats, 1000);
+            
+            // 设置默认参数
+            document.getElementById('basicArguments').value = '{"args": [1]}';
+            
+            addLog('basicLog', 'info', 'SSE 测试客户端已就绪');
+            addLog('concurrentLog', 'info', '并发测试模块已就绪');
+            addLog('longRunningLog', 'info', '长时间测试模块已就绪');
+            addLog('errorLog', 'info', '错误测试模块已就绪');
+        });
+
+        // 页面关闭时清理连接
+        window.addEventListener('beforeunload', function() {
+            if (basicEventSource) basicEventSource.close();
+            if (longRunningEventSource) longRunningEventSource.close();
+            concurrentEventSources.forEach(es => es.close());
+        });
+    </script>
+</body>
+</html>
+
+

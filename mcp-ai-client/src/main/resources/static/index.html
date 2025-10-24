@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP AI Client - 智能对话助手</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            width: 100%;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .session-info {
+            background: #f8f9fa;
+            padding: 15px 30px;
+            border-bottom: 1px solid #e9ecef;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .session-id {
+            font-size: 12px;
+            color: #6c757d;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #28a745;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .chat-container {
+            height: 500px;
+            overflow-y: auto;
+            padding: 30px;
+            background: #f8f9fa;
+        }
+
+        .message {
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .message.user {
+            align-items: flex-end;
+        }
+
+        .message.assistant {
+            align-items: flex-start;
+        }
+
+        .message-content {
+            max-width: 70%;
+            padding: 15px 20px;
+            border-radius: 18px;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+        }
+
+        .message.user .message-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .message.assistant .message-content {
+            background: white;
+            color: #333;
+            border: 1px solid #e9ecef;
+        }
+
+        .message-label {
+            font-size: 12px;
+            color: #6c757d;
+            margin-bottom: 5px;
+            padding: 0 10px;
+        }
+
+        .input-container {
+            padding: 20px 30px;
+            background: white;
+            border-top: 1px solid #e9ecef;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+        }
+
+        .input-field {
+            flex: 1;
+            padding: 15px 20px;
+            border: 2px solid #e9ecef;
+            border-radius: 25px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        .input-field:focus {
+            border-color: #667eea;
+        }
+
+        .send-button {
+            padding: 15px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: transform 0.2s;
+        }
+
+        .send-button:hover {
+            transform: translateY(-2px);
+        }
+
+        .send-button:active {
+            transform: translateY(0);
+        }
+
+        .send-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .tools-panel {
+            padding: 20px 30px;
+            background: white;
+            border-top: 1px solid #e9ecef;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .tools-header {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .tool-item {
+            padding: 8px 12px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            font-size: 12px;
+        }
+
+        .tool-name {
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .tool-description {
+            color: #6c757d;
+            margin-top: 4px;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 MCP AI Client</h1>
+            <p>智能对话助手 - 通过自然语言管理 ZooKeeper 和 Dubbo 服务</p>
+        </div>
+
+        <div class="session-info">
+            <div class="session-id">会话ID: <span id="sessionId">加载中...</span></div>
+            <div class="status">
+                <div class="status-indicator"></div>
+                <span>已连接</span>
+            </div>
+        </div>
+
+        <div class="chat-container" id="chatContainer">
+            <div class="message assistant">
+                <div class="message-label">AI 助手</div>
+                <div class="message-content">
+                    👋 你好！我是你的智能助手，可以帮你查询和管理 ZooKeeper 和 Dubbo 服务。
+
+你可以问我：
+• 有哪些 Dubbo 服务？
+• 查询 UserService 的详细信息
+• 这些服务的健康状态如何？
+• 还有更多...
+
+试着用自然语言告诉我你想做什么吧！
+                </div>
+            </div>
+        </div>
+
+        <div class="tools-panel" id="toolsPanel" style="display: none;">
+            <div class="tools-header">可用工具 (<span id="toolCount">0</span>)</div>
+            <div id="toolsList"></div>
+        </div>
+
+        <div class="input-container">
+            <div class="input-group">
+                <input type="text" id="messageInput" class="input-field" 
+                       placeholder="输入你的问题..." 
+                       onkeypress="handleKeyPress(event)">
+                <button class="send-button" onclick="sendMessage()" id="sendButton">发送</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let sessionId = null;
+        let isLoading = false;
+
+        // 初始化
+        async function init() {
+            try {
+                const response = await fetch('/api/chat/session', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                sessionId = data.sessionId;
+                document.getElementById('sessionId').textContent = sessionId.substring(0, 8) + '...';
+                
+                // 加载工具列表
+                loadTools();
+            } catch (error) {
+                console.error('初始化失败:', error);
+                addErrorMessage('初始化失败，请刷新页面重试');
+            }
+        }
+
+        // 加载工具列表
+        async function loadTools() {
+            try {
+                // 等待一下让服务器加载工具
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                const response = await fetch(`/api/chat/session/${sessionId}/tools`);
+                const data = await response.json();
+                
+                if (data.tools && data.tools.length > 0) {
+                    document.getElementById('toolCount').textContent = data.tools.length;
+                    
+                    const toolsList = document.getElementById('toolsList');
+                    toolsList.innerHTML = data.tools.map(tool => `
+                        <div class="tool-item">
+                            <div class="tool-name">${tool.name}</div>
+                            <div class="tool-description">${tool.description || '无描述'}</div>
+                        </div>
+                    `).join('');
+                    
+                    document.getElementById('toolsPanel').style.display = 'block';
+                }
+            } catch (error) {
+                console.error('加载工具失败:', error);
+            }
+        }
+
+        // 发送消息
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            if (!message || isLoading || !sessionId) return;
+            
+            // 添加用户消息到界面
+            addMessage('user', message);
+            input.value = '';
+            
+            // 显示加载状态
+            isLoading = true;
+            document.getElementById('sendButton').disabled = true;
+            
+            try {
+                const response = await fetch(`/api/chat/session/${sessionId}/message`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ message })
+                });
+                
+                const data = await response.json();
+                
+                // 添加AI响应到界面
+                addMessage('assistant', data.aiResponse);
+            } catch (error) {
+                console.error('发送消息失败:', error);
+                addErrorMessage('发送消息失败，请重试');
+            } finally {
+                isLoading = false;
+                document.getElementById('sendButton').disabled = false;
+            }
+        }
+
+        // 添加消息到聊天界面
+        function addMessage(role, content) {
+            const chatContainer = document.getElementById('chatContainer');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${role}`;
+            
+            const label = role === 'user' ? '你' : 'AI 助手';
+            
+            messageDiv.innerHTML = `
+                <div class="message-label">${label}</div>
+                <div class="message-content">${escapeHtml(content)}</div>
+            `;
+            
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        // 添加错误消息
+        function addErrorMessage(message) {
+            const chatContainer = document.getElementById('chatContainer');
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-message';
+            errorDiv.textContent = message;
+            chatContainer.appendChild(errorDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        // 转义HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // 处理回车键
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        // 页面加载时初始化
+        window.onload = init;
+    </script>
+</body>
+</html>
+
+
+

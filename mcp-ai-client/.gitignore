@@ -1,0 +1,42 @@
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+.settings/
+.classpath
+.project
+*.swp
+*.swo
+*~
+
+# Logs
+logs/
+*.log
+*.log.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 敏感配置 - 防止 API Key 泄露
+src/main/resources/application.yml.bak
+src/main/resources/application-dev.yml.bak
+src/main/resources/application-prod.yml.bak
+
+# 如果你在配置文件中硬编码了 API Key，建议添加：
+# src/main/resources/application.yml
+# src/main/resources/application-dev.yml

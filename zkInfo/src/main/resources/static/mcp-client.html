@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP协议测试客户端</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .tabs {
+            display: flex;
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .tab {
+            padding: 15px 25px;
+            cursor: pointer;
+            border: none;
+            background: none;
+            font-size: 14px;
+            font-weight: 500;
+            color: #6c757d;
+            transition: all 0.3s;
+        }
+        .tab.active {
+            background: white;
+            color: #495057;
+            border-bottom: 2px solid #667eea;
+        }
+        .tab-content {
+            display: none;
+            padding: 20px;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #495057;
+        }
+        input, textarea, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        textarea {
+            height: 120px;
+            resize: vertical;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #5a6fd8;
+        }
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        .response {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .success {
+            border-color: #28a745;
+            background-color: #d4edda;
+        }
+        .error {
+            border-color: #dc3545;
+            background-color: #f8d7da;
+        }
+        .tools-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .tool-card {
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            background: #f8f9fa;
+        }
+        .tool-name {
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 5px;
+        }
+        .tool-description {
+            color: #6c757d;
+            font-size: 13px;
+            margin-bottom: 10px;
+        }
+        .tool-meta {
+            font-size: 11px;
+            color: #868e96;
+        }
+        .status-online {
+            color: #28a745;
+            font-weight: 500;
+        }
+        .status-offline {
+            color: #dc3545;
+            font-weight: 500;
+        }
+        .stream-log {
+            background: #212529;
+            color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 15px;
+        }
+        .stream-entry {
+            margin-bottom: 5px;
+            padding: 2px 0;
+        }
+        .stream-timestamp {
+            color: #6c757d;
+        }
+        .stream-data {
+            color: #28a745;
+        }
+        .stream-error {
+            color: #dc3545;
+        }
+        .preset-selector {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 15px;
+        }
+        .preset-selector label {
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 8px;
+        }
+        .preset-selector select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            background: white;
+            font-size: 14px;
+        }
+        .preset-info {
+            background: #e3f2fd;
+            border: 1px solid #2196f3;
+            border-radius: 4px;
+            padding: 10px;
+            margin-top: 10px;
+            font-size: 13px;
+            color: #1976d2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔧 MCP协议测试客户端</h1>
+            <p>测试zkInfo的标准MCP协议支持 - JSON-RPC 2.0, SSE, WebSocket</p>
+        </div>
+        
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('tools')">工具列表</button>
+            <button class="tab" onclick="switchTab('jsonrpc')">JSON-RPC调用</button>
+            <button class="tab" onclick="switchTab('sse')">SSE流式调用</button>
+            <button class="tab" onclick="switchTab('websocket')">WebSocket</button>
+        </div>
+        
+        <!-- 工具列表标签页 -->
+        <div id="tools" class="tab-content active">
+            <h3>📋 可用的MCP工具</h3>
+            <button onclick="loadTools()">🔄 刷新工具列表</button>
+            <div id="toolsList" class="tools-grid">
+                <!-- 工具列表将在这里动态加载 -->
+            </div>
+        </div>
+        
+        <!-- JSON-RPC调用标签页 -->
+        <div id="jsonrpc" class="tab-content">
+            <h3>🚀 JSON-RPC 2.0 调用</h3>
+            <div class="form-group">
+                <label for="rpcMethod">方法名:</label>
+                <select id="rpcMethod" onchange="updateMethodParams()">
+                    <option value="initialize">initialize - 初始化连接</option>
+                    <option value="tools/list">tools/list - 获取工具列表</option>
+                    <option value="tools/call">tools/call - 调用工具</option>
+                    <option value="ping">ping - 心跳检测</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="rpcParams">参数 (JSON格式):</label>
+                <textarea id="rpcParams" placeholder='{"protocolVersion": "2024-11-05", "clientInfo": {"name": "test-client", "version": "1.0.0"}}'></textarea>
+            </div>
+            <button onclick="sendJsonRpcRequest()">📤 发送请求</button>
+            <div id="jsonrpcResponse" class="response"></div>
+        </div>
+        
+        <!-- SSE流式调用标签页 -->
+        <div id="sse" class="tab-content">
+            <h3>📡 SSE流式调用</h3>
+            <div class="preset-selector">
+                <label for="ssePreset">预设参数:</label>
+                <select id="ssePreset" onchange="loadSsePreset()">
+                    <option value="">选择预设参数...</option>
+                    <option value="user-getById">👤 获取用户信息 (getUserById)</option>
+                    <option value="user-getAll">👥 获取所有用户 (getAllUsers)</option>
+                    <option value="user-create">➕ 创建用户 (createUser)</option>
+                    <option value="user-update">✏️ 更新用户 (updateUser)</option>
+                    <option value="user-delete">🗑️ 删除用户 (deleteUser)</option>
+                    <option value="order-getById">📦 获取订单信息 (getOrderById)</option>
+                    <option value="order-create">🛒 创建订单 (createOrder)</option>
+                    <option value="order-updateStatus">📝 更新订单状态 (updateOrderStatus)</option>
+                    <option value="product-getById">🛍️ 获取商品信息 (getProductById)</option>
+                    <option value="product-search">🔍 搜索商品 (searchProducts)</option>
+                    <option value="product-getByCategory">📂 按分类获取商品 (getProductsByCategory)</option>
+                    <option value="custom">🔧 自定义参数</option>
+                </select>
+                <div id="ssePresetInfo" class="preset-info" style="display: none;">
+                    选择预设参数后，工具名称和参数将自动填充
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="sseToolName">工具名称:</label>
+                <input type="text" id="sseToolName" placeholder="com.zkinfo.demo.service.UserService.getUserById">
+            </div>
+            <div class="form-group">
+                <label for="sseArguments">参数 (JSON格式):</label>
+                <textarea id="sseArguments" placeholder='{"args": [1]}'></textarea>
+            </div>
+            <button onclick="startSseStream()" id="sseButton">🌊 开始流式调用</button>
+            <button onclick="stopSseStream()" disabled id="sseStopButton">⏹️ 停止流式调用</button>
+            <div id="sseLog" class="stream-log">
+                <div class="stream-entry">等待开始流式调用...</div>
+            </div>
+        </div>
+        
+        <!-- WebSocket标签页 -->
+        <div id="websocket" class="tab-content">
+            <h3>🔌 WebSocket连接</h3>
+            <div class="form-group">
+                <button onclick="connectWebSocket()" id="wsConnectButton">🔗 连接WebSocket</button>
+                <button onclick="disconnectWebSocket()" disabled id="wsDisconnectButton">❌ 断开连接</button>
+                <span id="wsStatus">未连接</span>
+            </div>
+            <div class="preset-selector">
+                <label for="wsPreset">预设消息:</label>
+                <select id="wsPreset" onchange="loadWsPreset()">
+                    <option value="">选择预设消息...</option>
+                    <option value="initialize">🚀 初始化连接</option>
+                    <option value="tools-list">📋 获取工具列表</option>
+                    <option value="user-getById">👤 获取用户信息</option>
+                    <option value="user-getAll">👥 获取所有用户</option>
+                    <option value="user-create">➕ 创建用户</option>
+                    <option value="user-update">✏️ 更新用户</option>
+                    <option value="user-delete">🗑️ 删除用户</option>
+                    <option value="order-getById">📦 获取订单信息</option>
+                    <option value="order-create">🛒 创建订单</option>
+                    <option value="order-updateStatus">📝 更新订单状态</option>
+                    <option value="product-getById">🛍️ 获取商品信息</option>
+                    <option value="product-search">🔍 搜索商品</option>
+                    <option value="product-getByCategory">📂 按分类获取商品</option>
+                    <option value="ping">💓 心跳检测</option>
+                    <option value="custom">🔧 自定义消息</option>
+                </select>
+                <div id="wsPresetInfo" class="preset-info" style="display: none;">
+                    选择预设消息后，消息内容将自动填充
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="wsMessage">发送消息 (JSON-RPC格式):</label>
+                <textarea id="wsMessage" placeholder='{"jsonrpc": "2.0", "id": "1", "method": "tools/list", "params": {}}'></textarea>
+            </div>
+            <button onclick="sendWebSocketMessage()" disabled id="wsSendButton">📤 发送消息</button>
+            <div id="wsLog" class="stream-log">
+                <div class="stream-entry">等待WebSocket连接...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentEventSource = null;
+        let currentWebSocket = null;
+        let sseReceivedLastMessage = false; // 跟踪是否已收到最后一条消息
+        
+        // 切换标签页
+        function switchTab(tabName) {
+            // 隐藏所有标签页内容
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // 显示选中的标签页
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
+        
+        // 加载工具列表
+        async function loadTools() {
+            try {
+                const response = await fetch('/mcp/jsonrpc', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        id: 'tools-list',
+                        method: 'tools/list',
+                        params: {}
+                    })
+                });
+                
+                const result = await response.json();
+                displayTools(result.result?.tools || []);
+            } catch (error) {
+                document.getElementById('toolsList').innerHTML = 
+                    `<div class="error">加载工具列表失败: ${error.message}</div>`;
+            }
+        }
+        
+        // 显示工具列表
+        function displayTools(tools) {
+            const container = document.getElementById('toolsList');
+            if (tools.length === 0) {
+                container.innerHTML = '<div>暂无可用工具</div>';
+                return;
+            }
+            
+            container.innerHTML = tools.map(tool => `
+                <div class="tool-card">
+                    <div class="tool-name">${tool.name}</div>
+                    <div class="tool-description">${tool.description || '无描述'}</div>
+                    <div class="tool-meta">
+                        提供者: ${tool.provider || 'N/A'} | 
+                        状态: <span class="${tool.online ? 'status-online' : 'status-offline'}">
+                            ${tool.online ? '在线' : '离线'}
+                        </span> |
+                        流式: ${tool.streamable ? '支持' : '不支持'}
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // 更新方法参数
+        function updateMethodParams() {
+            const method = document.getElementById('rpcMethod').value;
+            const paramsField = document.getElementById('rpcParams');
+            
+            const templates = {
+                'initialize': '{"protocolVersion": "2024-11-05", "clientInfo": {"name": "test-client", "version": "1.0.0"}}',
+                'tools/list': '{}',
+                'tools/call': '{"name": "com.zkinfo.demo.service.UserService.getUserById", "arguments": {"args": [1]}}',
+                'ping': '{}'
+            };
+            
+            paramsField.value = templates[method] || '{}';
+        }
+        
+        // 加载SSE预设参数
+        function loadSsePreset() {
+            const preset = document.getElementById('ssePreset').value;
+            const toolNameField = document.getElementById('sseToolName');
+            const argumentsField = document.getElementById('sseArguments');
+            const presetInfo = document.getElementById('ssePresetInfo');
+            
+            const presets = {
+                'user-getById': {
+                    toolName: 'com.zkinfo.demo.service.UserService.getUserById',
+                    arguments: '{"args": [1]}',
+                    description: '根据用户ID获取用户信息'
+                },
+                'user-getAll': {
+                    toolName: 'com.zkinfo.demo.service.UserService.getAllUsers',
+                    arguments: '{"args": []}',
+                    description: '获取所有用户列表'
+                },
+                'user-create': {
+                    toolName: 'com.zkinfo.demo.service.UserService.createUser',
+                    arguments: '{"args": [{"name": "张三", "email": "zhangsan@example.com", "age": 25}]}',
+                    description: '创建新用户'
+                },
+                'user-update': {
+                    toolName: 'com.zkinfo.demo.service.UserService.updateUser',
+                    arguments: '{"args": [{"id": 1, "username": "alice_updated", "email": "alice_updated@example.com", "phone": "13800138001", "realName": "Alice Wang Updated", "age": 26, "gender": "F", "status": "ACTIVE"}]}',
+                    description: '更新用户信息'
+                },
+                'user-delete': {
+                    toolName: 'com.zkinfo.demo.service.UserService.deleteUser',
+                    arguments: '{"args": [1]}',
+                    description: '删除用户'
+                },
+                'order-getById': {
+                    toolName: 'com.zkinfo.demo.service.OrderService.getOrderById',
+                    arguments: '{"args": ["ORDBB8E7DF1"]}',
+                    description: '根据订单ID获取订单信息'
+                },
+                'order-create': {
+                    toolName: 'com.zkinfo.demo.service.OrderService.createOrder',
+                    arguments: '{"args": [{"userId": 1, "productId": 1, "quantity": 2, "totalAmount": 199.98}]}',
+                    description: '创建新订单'
+                },
+                'order-updateStatus': {
+                    toolName: 'com.zkinfo.demo.service.OrderService.updateOrderStatus',
+                    arguments: '{"args": ["ORDBB8E7DF1", "SHIPPED"]}',
+                    description: '更新订单状态'
+                },
+                'product-getById': {
+                    toolName: 'com.zkinfo.demo.service.ProductService.getProductById',
+                    arguments: '{"args": [1]}',
+                    description: '根据商品ID获取商品信息'
+                },
+                'product-search': {
+                    toolName: 'com.zkinfo.demo.service.ProductService.searchProducts',
+                    arguments: '{"args": ["iPhone"]}',
+                    description: '搜索商品'
+                },
+                'product-getByCategory': {
+                    toolName: 'com.zkinfo.demo.service.ProductService.getProductsByCategory',
+                    arguments: '{"args": ["手机数码"]}',
+                    description: '按分类获取商品'
+                }
+            };
+            
+            if (preset && presets[preset]) {
+                toolNameField.value = presets[preset].toolName;
+                argumentsField.value = presets[preset].arguments;
+                presetInfo.textContent = presets[preset].description;
+                presetInfo.style.display = 'block';
+            } else if (preset === 'custom') {
+                toolNameField.value = '';
+                argumentsField.value = '';
+                presetInfo.style.display = 'none';
+            } else {
+                presetInfo.style.display = 'none';
+            }
+        }
+        
+        // 加载WebSocket预设消息
+        function loadWsPreset() {
+            const preset = document.getElementById('wsPreset').value;
+            const messageField = document.getElementById('wsMessage');
+            const presetInfo = document.getElementById('wsPresetInfo');
+            
+            const presets = {
+                'initialize': {
+                    message: '{"jsonrpc": "2.0", "id": "init-1", "method": "initialize", "params": {"protocolVersion": "2024-11-05", "clientInfo": {"name": "test-client", "version": "1.0.0"}}}',
+                    description: '初始化MCP连接，建立客户端会话'
+                },
+                'tools-list': {
+                    message: '{"jsonrpc": "2.0", "id": "tools-list-1", "method": "tools/list", "params": {}}',
+                    description: '获取所有可用的MCP工具列表'
+                },
+                'user-getById': {
+                    message: '{"jsonrpc": "2.0", "id": "user-1", "method": "tools/call", "params": {"name": "com.zkinfo.demo.service.UserService.getUserById", "arguments": {"args": [1]}}}',
+                    description: '根据用户ID获取用户信息'
+                },
+                'user-getAll': {
+                    message: '{"jsonrpc": "2.0", "id": "user-all-1", "method": "tools/call", "params": {"name": "com.zkinfo.demo.service.UserService.getAllUsers", "arguments": {"args": []}}}',
+                    description: '获取所有用户列表'
+                },
+                'user-create': {
+                    message: '{"jsonrpc": "2.0", "id": "user-create-1", "method": "tools/call", "params": {"name": "com.zkinfo.demo.service.UserService.createUser", "arguments": {"args": [{"name": "张三", "email": "zhangsan@example.com", "age": 25}]}}}',
+                    description: '创建新用户'
+                },
+                'user-update': {
+                    message: '{"jsonrpc": "2.0", "id": "user-update-1", "method": "tools/call", "params": {"name": "com.zkinfo.demo.service.UserService.updateUser", "arguments": {"args": [{"id": 1, "username": "alice_updated", "email": "alice_updated@example.com", "phone": "13800138001", "realName": "Alice Wang Updated", "age": 26, "gender": "F", "status": "ACTIVE"}]}}}',
+                    description: '更新用户信息'
+                },
+                'user-delete': {
+                    message: '{"jsonrpc": "2.0", "id": "user-delete-1", "method": "tools/call", "params": {"name": "com.zkinfo.demo.service.UserService.deleteUser", "arguments": {"args": [1]}}}',
+                    description: '删除用户'
+                },
+                'order-getById': {
+                    message: '{"jsonrpc": "2.0", "id": "order-1", "method": "tools/call", "params": {"name": "com.zkinfo.demo.service.OrderService.getOrderById", "arguments": {"args": ["ORDBB8E7DF1"]}}}',
+                    description: '根据订单ID获取订单信息'
+                },
+                'order-create': {
+                    message: '{"jsonrpc": "2.0", "id": "order-create-1", "method": "tools/call", "params": {"name": "com.zkinfo.demo.service.OrderService.createOrder", "arguments": {"args": [{"userId": 1, "productId": 1, "quantity": 2, "totalAmount": 199.98}]}}}',
+                    description: '创建新订单'
+                },
+                'order-updateStatus': {
+                    message: '{"jsonrpc": "2.0", "id": "order-update-1", "method": "tools/call", "params": {"name": "com.zkinfo.demo.service.OrderService.updateOrderStatus", "arguments": {"args": ["ORDBB8E7DF1", "SHIPPED"]}}}',
+                    description: '更新订单状态'
+                },
+                'product-getById': {
+                    message: '{"jsonrpc": "2.0", "id": "product-1", "method": "tools/call", "params": {"name": "com.zkinfo.demo.service.ProductService.getProductById", "arguments": {"args": [1]}}}',
+                    description: '根据商品ID获取商品信息'
+                },
+                'product-search': {
+                    message: '{"jsonrpc": "2.0", "id": "product-search-1", "method": "tools/call", "params": {"name": "com.zkinfo.demo.service.ProductService.searchProducts", "arguments": {"args": ["iPhone"]}}}',
+                    description: '搜索商品'
+                },
+                'product-getByCategory': {
+                    message: '{"jsonrpc": "2.0", "id": "product-category-1", "method": "tools/call", "params": {"name": "com.zkinfo.demo.service.ProductService.getProductsByCategory", "arguments": {"args": ["手机数码"]}}}',
+                    description: '按分类获取商品'
+                },
+                'ping': {
+                    message: '{"jsonrpc": "2.0", "id": "ping-1", "method": "ping", "params": {}}',
+                    description: '发送心跳检测，测试连接状态'
+                }
+            };
+            
+            if (preset && presets[preset]) {
+                messageField.value = presets[preset].message;
+                presetInfo.textContent = presets[preset].description;
+                presetInfo.style.display = 'block';
+            } else if (preset === 'custom') {
+                messageField.value = '';
+                presetInfo.style.display = 'none';
+            } else {
+                presetInfo.style.display = 'none';
+            }
+        }
+        
+        // 发送JSON-RPC请求
+        async function sendJsonRpcRequest() {
+            const method = document.getElementById('rpcMethod').value;
+            const paramsText = document.getElementById('rpcParams').value;
+            const responseDiv = document.getElementById('jsonrpcResponse');
+            
+            try {
+                const params = paramsText ? JSON.parse(paramsText) : {};
+                const request = {
+                    jsonrpc: '2.0',
+                    id: Date.now().toString(),
+                    method: method,
+                    params: params
+                };
+                
+                responseDiv.innerHTML = '发送请求中...';
+                responseDiv.className = 'response';
+                
+                const response = await fetch('/mcp/jsonrpc', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(request)
+                });
+                
+                const result = await response.json();
+                responseDiv.innerHTML = JSON.stringify(result, null, 2);
+                responseDiv.className = result.error ? 'response error' : 'response success';
+                
+            } catch (error) {
+                responseDiv.innerHTML = `错误: ${error.message}`;
+                responseDiv.className = 'response error';
+            }
+        }
+        
+        // 开始SSE流式调用
+        async function startSseStream() {
+            // 重置标志
+            sseReceivedLastMessage = false;
+            
+            const toolName = document.getElementById('sseToolName').value;
+            const argumentsText = document.getElementById('sseArguments').value;
+            const logDiv = document.getElementById('sseLog');
+            
+            if (!toolName) {
+                alert('请输入工具名称');
+                return;
+            }
+            
+            try {
+                const arguments_ = argumentsText ? JSON.parse(argumentsText) : {};
+                
+                logDiv.innerHTML = '<div class="stream-entry">正在创建流式调用...</div>';
+                
+                // 首先创建流式调用
+                const response = await fetch('/mcp/jsonrpc', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        id: Date.now().toString(),
+                        method: 'tools/call',
+                        params: {
+                            name: toolName,
+                            arguments: arguments_,
+                            stream: true
+                        }
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP错误: ${response.status} ${response.statusText}`);
+                }
+                
+                const result = await response.json();
+                addStreamLog(logDiv, 'info', `服务器响应: ${JSON.stringify(result, null, 2)}`);
+                
+                if (result.result && result.result.streamId) {
+                    // 开始SSE监听
+                    const streamId = result.result.streamId;
+                    currentEventSource = new EventSource(`/mcp/stream/${streamId}`);
+                    
+                    logDiv.innerHTML = `<div class="stream-entry">开始监听流式数据 (Stream ID: ${streamId})...</div>`;
+                    
+                    // 监听open事件
+                    currentEventSource.onopen = function(event) {
+                        addStreamLog(logDiv, 'info', 'SSE连接已建立');
+                    };
+                    
+                    // 监听默认消息事件
+                    currentEventSource.onmessage = function(event) {
+                        try {
+                            const data = JSON.parse(event.data);
+                            addStreamLog(logDiv, 'data', data);
+                            
+                            // 如果是最后一条消息，设置标志并自动关闭连接
+                            if (data.isLast) {
+                                sseReceivedLastMessage = true;
+                                setTimeout(() => stopSseStream(), 1000);
+                            }
+                        } catch (e) {
+                            addStreamLog(logDiv, 'error', `解析数据失败: ${e.message}`);
+                        }
+                    };
+                    
+                    // 监听自定义"data"事件
+                    currentEventSource.addEventListener('data', function(event) {
+                        try {
+                            const data = JSON.parse(event.data);
+                            addStreamLog(logDiv, 'data', data);
+                            
+                            // 如果是最后一条消息，设置标志并自动关闭连接
+                            if (data.isLast) {
+                                sseReceivedLastMessage = true;
+                                setTimeout(() => stopSseStream(), 1000);
+                            }
+                        } catch (e) {
+                            addStreamLog(logDiv, 'error', `解析数据失败: ${e.message}`);
+                        }
+                    });
+                    
+                    // 监听自定义"error"事件
+                    currentEventSource.addEventListener('error', function(event) {
+                        try {
+                            const data = JSON.parse(event.data);
+                            addStreamLog(logDiv, 'error', data);
+                        } catch (e) {
+                            // 事件可能没有data
+                        }
+                    });
+                    
+                    // 监听连接错误
+                    currentEventSource.onerror = function(event) {
+                        // 如果已经收到最后一条消息，这是正常关闭
+                        if (sseReceivedLastMessage) {
+                            addStreamLog(logDiv, 'info', '✅ SSE数据传输完成，连接已关闭');
+                        } else if (currentEventSource.readyState === EventSource.CLOSED) {
+                            // 连接已关闭但没有收到最后一条消息，可能是异常
+                            addStreamLog(logDiv, 'error', '⚠️ SSE连接意外关闭（未收到完整数据）');
+                        } else {
+                            // 其他错误情况
+                            addStreamLog(logDiv, 'error', '❌ SSE连接错误或断开');
+                        }
+                        // 不要立即停止，让用户可以看到消息
+                        setTimeout(() => {
+                            if (currentEventSource && currentEventSource.readyState !== EventSource.OPEN) {
+                                stopSseStream();
+                            }
+                        }, 500);
+                    };
+                    
+                    document.getElementById('sseButton').disabled = true;
+                    document.getElementById('sseStopButton').disabled = false;
+                } else {
+                    logDiv.innerHTML = `<div class="stream-entry stream-error">创建流式调用失败: ${JSON.stringify(result)}</div>`;
+                }
+                
+            } catch (error) {
+                logDiv.innerHTML = `<div class="stream-entry stream-error">错误: ${error.message}</div>`;
+            }
+        }
+        
+        // 停止SSE流式调用
+        function stopSseStream() {
+            if (currentEventSource) {
+                currentEventSource.close();
+                currentEventSource = null;
+            }
+            
+            // 重置标志
+            sseReceivedLastMessage = false;
+            
+            document.getElementById('sseButton').disabled = false;
+            document.getElementById('sseStopButton').disabled = true;
+            
+            const logDiv = document.getElementById('sseLog');
+            addStreamLog(logDiv, 'info', '⏹️ 流式调用已停止');
+        }
+        
+        // 添加流式日志
+        function addStreamLog(logDiv, type, data) {
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = 'stream-entry';
+            
+            let content = `<span class="stream-timestamp">[${timestamp}]</span> `;
+            
+            if (type === 'data') {
+                content += `<span class="stream-data">📦 数据: ${JSON.stringify(data, null, 2)}</span>`;
+            } else if (type === 'error') {
+                content += `<span class="stream-error">❌ 错误: ${typeof data === 'string' ? data : JSON.stringify(data)}</span>`;
+            } else if (type === 'info') {
+                content += `<span style="color: #17a2b8;">ℹ️ ${typeof data === 'string' ? data : JSON.stringify(data, null, 2)}</span>`;
+            } else {
+                content += data;
+            }
+            
+            entry.innerHTML = content;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        // 连接WebSocket
+        function connectWebSocket() {
+            const wsUrl = `ws://${window.location.host}/mcp/ws`;
+            const logDiv = document.getElementById('wsLog');
+            
+            currentWebSocket = new WebSocket(wsUrl);
+            
+            currentWebSocket.onopen = function(event) {
+                addWebSocketLog(logDiv, 'info', 'WebSocket连接已建立');
+                document.getElementById('wsConnectButton').disabled = true;
+                document.getElementById('wsDisconnectButton').disabled = false;
+                document.getElementById('wsSendButton').disabled = false;
+                document.getElementById('wsStatus').textContent = '已连接';
+                document.getElementById('wsStatus').style.color = '#28a745';
+            };
+            
+            currentWebSocket.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                addWebSocketLog(logDiv, 'receive', data);
+            };
+            
+            currentWebSocket.onclose = function(event) {
+                addWebSocketLog(logDiv, 'info', 'WebSocket连接已关闭');
+                disconnectWebSocket();
+            };
+            
+            currentWebSocket.onerror = function(event) {
+                addWebSocketLog(logDiv, 'error', 'WebSocket连接错误');
+            };
+        }
+        
+        // 断开WebSocket
+        function disconnectWebSocket() {
+            if (currentWebSocket) {
+                currentWebSocket.close();
+                currentWebSocket = null;
+            }
+            
+            document.getElementById('wsConnectButton').disabled = false;
+            document.getElementById('wsDisconnectButton').disabled = true;
+            document.getElementById('wsSendButton').disabled = true;
+            document.getElementById('wsStatus').textContent = '未连接';
+            document.getElementById('wsStatus').style.color = '#dc3545';
+        }
+        
+        // 发送WebSocket消息
+        function sendWebSocketMessage() {
+            const messageText = document.getElementById('wsMessage').value;
+            const logDiv = document.getElementById('wsLog');
+            
+            if (!currentWebSocket || currentWebSocket.readyState !== WebSocket.OPEN) {
+                alert('WebSocket未连接');
+                return;
+            }
+            
+            try {
+                const message = JSON.parse(messageText);
+                currentWebSocket.send(JSON.stringify(message));
+                addWebSocketLog(logDiv, 'send', message);
+            } catch (error) {
+                addWebSocketLog(logDiv, 'error', `发送消息失败: ${error.message}`);
+            }
+        }
+        
+        // 添加WebSocket日志
+        function addWebSocketLog(logDiv, type, data) {
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = 'stream-entry';
+            
+            let content = `<span class="stream-timestamp">[${timestamp}]</span> `;
+            
+            if (type === 'send') {
+                content += `<span style="color: #17a2b8;">发送: ${JSON.stringify(data)}</span>`;
+            } else if (type === 'receive') {
+                content += `<span class="stream-data">接收: ${JSON.stringify(data)}</span>`;
+            } else if (type === 'error') {
+                content += `<span class="stream-error">错误: ${data}</span>`;
+            } else {
+                content += data;
+            }
+            
+            entry.innerHTML = content;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        // 页面加载完成后自动加载工具列表
+        window.onload = function() {
+            loadTools();
+        };
+        
+        // 页面卸载时清理资源
+        window.onbeforeunload = function() {
+            stopSseStream();
+            disconnectWebSocket();
+        };
+    </script>
+</body>
+</html>
+
