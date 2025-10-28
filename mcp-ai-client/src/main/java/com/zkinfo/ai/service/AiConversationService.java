@@ -1,5 +1,7 @@
 package com.zkinfo.ai.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zkinfo.ai.model.McpProtocol;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -175,7 +177,7 @@ public class AiConversationService {
     }
 
     /**
-     * 解析参数（简单实现）
+     * 解析参数（使用Jackson进行完整JSON解析）
      */
     private Map<String, Object> parseArguments(String argumentsJson) {
         Map<String, Object> arguments = new HashMap<>();
@@ -184,16 +186,27 @@ public class AiConversationService {
             return arguments;
         }
         
-        // 简单的键值对解析
-        argumentsJson = argumentsJson.replaceAll("[{}]", "");
-        String[] pairs = argumentsJson.split(",");
-        
-        for (String pair : pairs) {
-            String[] kv = pair.split(":");
-            if (kv.length == 2) {
-                String key = kv[0].replaceAll("\"", "").trim();
-                String value = kv[1].replaceAll("\"", "").trim();
-                arguments.put(key, value);
+        try {
+            // 使用Jackson进行完整的JSON解析
+            ObjectMapper objectMapper = new ObjectMapper();
+            TypeReference<Map<String, Object>> typeRef = new TypeReference<Map<String, Object>>() {};
+            arguments = objectMapper.readValue(argumentsJson, typeRef);
+            log.debug("JSON解析成功: {}", arguments);
+            return arguments;
+        } catch (Exception e) {
+            log.warn("JSON解析失败，使用简单解析: {}", e.getMessage());
+            
+            // 回退到简单的键值对解析
+            argumentsJson = argumentsJson.replaceAll("[{}]", "");
+            String[] pairs = argumentsJson.split(",");
+            
+            for (String pair : pairs) {
+                String[] kv = pair.split(":");
+                if (kv.length == 2) {
+                    String key = kv[0].replaceAll("\"", "").trim();
+                    String value = kv[1].replaceAll("\"", "").trim();
+                    arguments.put(key, value);
+                }
             }
         }
         

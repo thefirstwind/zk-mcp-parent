@@ -11,7 +11,10 @@ import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -209,6 +212,20 @@ public class McpExecutorService {
                     types[i] = "char";
                 } else if (clazz == String.class) {
                     types[i] = "java.lang.String";
+                } else if (clazz == LinkedHashMap.class || clazz == HashMap.class) {
+                    // 处理Map类型，尝试推断为具体的业务对象类型
+                    Map<?, ?> map = (Map<?, ?>) args[i];
+                    String inferredType = inferObjectTypeFromMap(map);
+                    if (inferredType != null) {
+                        types[i] = inferredType;
+                        // 尝试转换Map为具体对象
+                        Object convertedObject = convertMapToObject(map, inferredType);
+                        if (convertedObject != null) {
+                            args[i] = convertedObject;
+                        }
+                    } else {
+                        types[i] = "java.util.Map";
+                    }
                 } else {
                     // 其他类型使用完整类名
                     types[i] = clazz.getName();
@@ -217,6 +234,56 @@ public class McpExecutorService {
         }
         
         return types;
+    }
+    
+    /**
+     * 从Map的键推断对象类型
+     */
+    private String inferObjectTypeFromMap(Map<?, ?> map) {
+        if (map == null || map.isEmpty()) {
+            return null;
+        }
+        
+        Set<?> keys = map.keySet();
+        
+        // 检查是否是User对象
+        if (keys.contains("username") && keys.contains("email")) {
+            return "com.zkinfo.demo.model.User";
+        }
+        
+        // 检查是否是Order对象
+        if (keys.contains("userId") && keys.contains("productId") && keys.contains("quantity")) {
+            return "com.zkinfo.demo.model.Order";
+        }
+        
+        // 检查是否是Product对象
+        if (keys.contains("name") && keys.contains("price") && keys.contains("category")) {
+            return "com.zkinfo.demo.model.Product";
+        }
+        
+        return null;
+    }
+    
+    /**
+     * 将Map转换为具体对象
+     */
+    private Object convertMapToObject(Map<?, ?> map, String targetType) {
+        try {
+            // 使用Jackson进行转换
+            com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            objectMapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
+            
+            String json = objectMapper.writeValueAsString(map);
+            Class<?> targetClass = Class.forName(targetType);
+            
+            Object result = objectMapper.readValue(json, targetClass);
+            log.debug("成功将Map转换为对象: {} -> {}", map, result);
+            return result;
+            
+        } catch (Exception e) {
+            log.warn("Map转换为对象失败: targetType={}, map={}, error={}", targetType, map, e.getMessage());
+            return null;
+        }
     }
     
     /**
