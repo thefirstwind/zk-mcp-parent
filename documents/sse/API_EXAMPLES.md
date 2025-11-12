@@ -395,33 +395,6 @@ curl -X GET "http://localhost:9091/mcp/resources" \
 }
 ```
 
-#### 读取指定资源
-```bash
-curl -X GET "http://localhost:9091/mcp/resources/providers%3A%2F%2Fall" \
-  -H "Accept: application/json"
-```
-
-**响应示例：**
-```json
-{
-  "contents": [
-    {
-      "uri": "providers://all",
-      "mimeType": "application/json",
-      "text": "{\"providers\": [{\"interface\": \"com.zkinfo.demo.service.UserService\", \"status\": \"ACTIVE\"}]}"
-    }
-  ]
-}
-```
-
-#### 订阅资源
-```bash
-curl -X POST "http://localhost:9091/mcp/resources/subscribe" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "uri": "providers://all"
-  }'
-```
 
 ### 2.3 Prompts 功能
 
@@ -450,32 +423,9 @@ curl -X GET "http://localhost:9091/mcp/prompts" \
 }
 ```
 
-#### 获取指定提示
-```bash
-curl -X POST "http://localhost:9091/mcp/prompts/get" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "analyze-service-health",
-    "arguments": {
-      "serviceName": "com.zkinfo.demo.service.UserService"
-    }
-  }'
-```
 
 ### 2.4 Logging 功能
 
-#### 记录日志消息
-```bash
-curl -X POST "http://localhost:9091/mcp/logging/log" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "level": "info",
-    "data": {
-      "message": "测试日志消息",
-      "source": "api-test"
-    }
-  }'
-```
 
 #### 获取日志消息
 ```bash

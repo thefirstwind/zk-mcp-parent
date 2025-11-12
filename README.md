@@ -371,6 +371,12 @@ public class MyServiceImpl implements MyService {
 ./start-all-services.sh
 ```
 
+4. **运行测试脚本**
+./run-and-test.sh test-full 2>&1
+
+5. **运行sse测试脚本**
+./cpmprehensive-sse-test.sh
+
 服务会自动注册到 MCP Server，立即可用！
 
 ### 扩展 AI 能力

@@ -16,20 +16,19 @@ AI/Client -> MCP API -> zkInfo执行器 -> Dubbo泛化调用 -> Provider服务 -
 
 ```bash
 # 获取所有应用的MCP工具
-GET http://localhost:9091/api/mcp
+curl -s "http://localhost:9091/api/mcp" | jq '.'
 
 # 获取指定应用的MCP工具
-GET http://localhost:9091/api/applications/demo-provider/mcp
+curl -s "http://localhost:9091/api/applications/demo-provider/mcp" | jq '.'
 ```
 
 **响应示例：**
 ```json
 {
-  "application": "demo-provider",
   "tools": [
     {
       "name": "com.zkinfo.demo.service.ProductService.getProductById",
-      "description": "调用 ProductService 服务的 getProductById 方法",
+      "description": "调用 com.zkinfo.demo.service.ProductService 服务的 getProductById 方法",
       "type": "function",
       "inputSchema": {
         "type": "object",
@@ -47,24 +46,46 @@ GET http://localhost:9091/api/applications/demo-provider/mcp
         },
         "required": ["args"]
       },
+      "version": "1.0.0",
+      "group": "demo",
       "provider": "198.18.0.1:20883",
       "online": true
     }
-  ]
+  ],
+  "services": [
+    {
+      "name": "com.zkinfo.demo.service.ProductService",
+      "description": "Dubbo服务: com.zkinfo.demo.service.ProductService",
+      "interface": "com.zkinfo.demo.service.ProductService",
+      "methods": ["getProductById", "searchProducts", "updateStock"],
+      "version": "1.0.0",
+      "group": "demo",
+      "protocol": "dubbo",
+      "status": "online"
+    }
+  ],
+  "metadata": {
+    "protocolVersion": "1.0",
+    "timestamp": "2025-10-28 11:51:00",
+    "totalTools": 68,
+    "totalServices": 3,
+    "onlineProviders": 12,
+    "totalProviders": 12,
+    "applicationStatus": "online"
+  }
 }
 ```
 
 ### **2. 同步调用MCP工具**
 
 ```bash
-POST http://localhost:9091/api/mcp/call
-Content-Type: application/json
-
-{
-  "toolName": "com.zkinfo.demo.service.ProductService.getProductById",
-  "args": [123],
-  "timeout": 5000
-}
+curl -X POST "http://localhost:9091/api/mcp/call" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "toolName": "com.zkinfo.demo.service.ProductService.getProductById",
+    "args": [1],
+    "timeout": 5000
+  }' | jq '.'
 ```
 
 **响应示例：**
@@ -73,10 +94,17 @@ Content-Type: application/json
   "success": true,
   "executionTime": 156,
   "result": {
-    "id": 123,
-    "name": "iPhone 15 Pro",
-    "price": 999.99,
-    "category": "Electronics"
+    "realName": "Alice Wang",
+    "gender": "F",
+    "phone": "13800138001",
+    "createTime": "2025-10-27T17:54:34.382741",
+    "updateTime": "2025-10-27T17:54:34.382743",
+    "id": 1,
+    "class": "com.zkinfo.demo.model.User",
+    "email": "alice@example.com",
+    "age": 25,
+    "status": "ACTIVE",
+    "username": "alice"
   }
 }
 ```
@@ -84,20 +112,19 @@ Content-Type: application/json
 ### **3. 异步调用MCP工具**
 
 ```bash
-POST http://localhost:9091/api/mcp/call-async
-Content-Type: application/json
-
-{
-  "toolName": "com.zkinfo.demo.service.OrderService.createOrder",
-  "args": [
-    {
-      "userId": 456,
-      "productId": 123,
-      "quantity": 2
-    }
-  ],
-  "timeout": 10000
-}
+curl -X POST "http://localhost:9091/api/mcp/call-async" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "toolName": "com.zkinfo.demo.service.OrderService.createOrder",
+    "args": [
+      {
+        "userId": 456,
+        "productId": 123,
+        "quantity": 2
+      }
+    ],
+    "timeout": 10000
+  }' | jq '.'
 ```
 
 **响应示例：**
@@ -116,7 +143,7 @@ Content-Type: application/json
 ```bash
 # 1. 先查看可用的用户服务工具
 curl -s "http://localhost:9091/api/applications/demo-provider/mcp" | \
-  jq '.tools[] | select(.name | contains("UserService"))'
+  jq '.tools[] | select(.name | contains("UserService"))' | head -20
 
 # 2. 调用获取用户信息
 curl -X POST "http://localhost:9091/api/mcp/call" \
@@ -125,7 +152,7 @@ curl -X POST "http://localhost:9091/api/mcp/call" \
     "toolName": "com.zkinfo.demo.service.UserService.getUserById",
     "args": [1],
     "timeout": 3000
-  }'
+  }' | jq '.'
 ```
 
 ### **示例2：创建订单**
@@ -145,7 +172,7 @@ curl -X POST "http://localhost:9091/api/mcp/call" \
       }
     ],
     "timeout": 5000
-  }'
+  }' | jq '.'
 ```
 
 ### **示例3：搜索产品**
@@ -156,9 +183,9 @@ curl -X POST "http://localhost:9091/api/mcp/call" \
   -H "Content-Type: application/json" \
   -d '{
     "toolName": "com.zkinfo.demo.service.ProductService.searchProducts",
-    "args": ["iPhone", "Electronics", 10],
+    "args": ["iPhone"],
     "timeout": 3000
-  }'
+  }' | jq '.'
 ```
 
 ## 🔄 **AI系统集成示例**
@@ -326,17 +353,17 @@ user_info = safe_call_tool(
 
 ```bash
 # 查看所有服务统计信息
-curl "http://localhost:9091/api/stats"
+curl -s "http://localhost:9091/api/stats" | jq '.'
 
 # 查看特定应用信息
-curl "http://localhost:9091/api/applications/demo-provider"
+curl -s "http://localhost:9091/api/applications" | jq '.[] | select(.applicationName == "demo-provider")'
 ```
 
 ### **2. 调试ZooKeeper结构**
 
 ```bash
-# 查看ZooKeeper树结构
-curl "http://localhost:9091/api/debug/zk-tree"
+# 查看ZooKeeper树结构 (如果支持)
+curl -s "http://localhost:9091/api/debug/zk-tree" 2>/dev/null | jq '.' || echo "该端点可能不可用"
 ```
 
 ## 🎯 **最佳实践**
@@ -352,16 +379,161 @@ curl "http://localhost:9091/api/debug/zk-tree"
 ### **常见错误及解决方案**
 
 1. **"未找到可用的服务提供者"**
-   - 检查服务是否在线：`GET /api/applications`
-   - 确认ZooKeeper连接正常
+   ```bash
+   # 检查服务是否在线
+   curl -s "http://localhost:9091/api/applications" | jq '.[] | {app: .applicationName, status: .status}'
+   
+   # 检查ZooKeeper连接状态
+   curl -s "http://localhost:9091/api/stats" | jq '.zkConnected'
+   ```
 
 2. **"调用超时"**
-   - 增加timeout参数值
-   - 检查网络连接和服务响应时间
+   ```bash
+   # 增加超时时间并测试连接
+   curl -X POST "http://localhost:9091/api/mcp/call" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "toolName": "com.zkinfo.demo.service.UserService.getUserById",
+       "args": [1],
+       "timeout": 10000
+     }' | jq '.'
+   
+   # 检查服务响应时间
+   time curl -s "http://localhost:9091/api/stats" > /dev/null
+   ```
 
 3. **"参数类型错误"**
-   - 检查传递的参数类型和数量
-   - 参考MCP工具的inputSchema定义
+   ```bash
+   # 查看具体工具的参数定义
+   curl -s "http://localhost:9091/api/mcp" | \
+     jq '.[0].tools[] | select(.name == "com.zkinfo.demo.service.UserService.getUserById") | .inputSchema' | head -20
+   
+   # 测试正确的参数格式
+   curl -X POST "http://localhost:9091/api/mcp/call" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "toolName": "com.zkinfo.demo.service.UserService.getUserById",
+       "args": [1],
+       "timeout": 3000
+     }' | jq '.'
+   ```
+
+## 🛠️ **实用Bash脚本示例**
+
+### **快速检查脚本**
+
+```bash
+#!/bin/bash
+# zkinfo-health-check.sh - 快速检查zkInfo服务状态
+
+BASE_URL="http://localhost:9091"
+
+echo "🔍 检查zkInfo服务状态..."
+
+# 检查服务是否运行
+if curl -s "$BASE_URL/api/stats" > /dev/null; then
+    echo "✅ zkInfo服务正在运行"
+else
+    echo "❌ zkInfo服务不可用"
+    exit 1
+fi
+
+# 检查ZooKeeper连接
+ZK_STATUS=$(curl -s "$BASE_URL/api/stats" | jq -r '.zkConnected')
+if [ "$ZK_STATUS" = "true" ]; then
+    echo "✅ ZooKeeper连接正常"
+else
+    echo "❌ ZooKeeper连接异常"
+fi
+
+# 显示服务统计
+echo "
+📊 服务统计:"
+curl -s "$BASE_URL/api/stats" | jq '{
+    在线应用: .onlineApplications,
+    总应用数: .totalApplications,
+    在线提供者: .onlineProviders,
+    总提供者: .totalProviders,
+    MCP工具数: .mcpMetadata.totalTools
+}'
+```
+
+### **批量调用脚本**
+
+```bash
+#!/bin/bash
+# batch-call.sh - 批量调用MCP工具
+
+BASE_URL="http://localhost:9091"
+
+# 定义要调用的工具列表
+declare -a TOOLS=(
+    "com.zkinfo.demo.service.UserService.getAllUsers:[]"
+    "com.zkinfo.demo.service.UserService.getUserById:[1]"
+    "com.zkinfo.demo.service.ProductService.getProductById:[123]"
+)
+
+echo "🚀 开始批量调用MCP工具..."
+
+for tool_call in "${TOOLS[@]}"; do
+    IFS=':' read -r tool_name args <<< "$tool_call"
+    
+    echo "
+🔧 调用: $tool_name"
+    
+    response=$(curl -s -X POST "$BASE_URL/api/mcp/call" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"toolName\": \"$tool_name\",
+            \"args\": $args,
+            \"timeout\": 5000
+        }")
+    
+    success=$(echo "$response" | jq -r '.success // false')
+    
+    if [ "$success" = "true" ]; then
+        echo "✅ 调用成功"
+        echo "$response" | jq '.result' | head -5
+    else
+        echo "❌ 调用失败"
+        echo "$response" | jq '.error // .'
+    fi
+done
+
+echo "
+✨ 批量调用完成！"
+```
+
+### **服务发现脚本**
+
+```bash
+#!/bin/bash
+# discover-services.sh - 发现可用的MCP服务
+
+BASE_URL="http://localhost:9091"
+
+echo "🔍 发现MCP服务..."
+
+# 获取所有应用
+echo "
+📱 可用应用:"
+curl -s "$BASE_URL/api/applications" | jq -r '.[] | "- \(.applicationName) (\(.status))"'
+
+# 获取所有MCP工具
+echo "
+🔧 可用MCP工具:"
+curl -s "$BASE_URL/api/mcp" | jq -r '.[0].tools[] | "- \(.name)"' | sort
+
+# 按服务分组显示
+echo "
+📦 按服务分组:"
+curl -s "$BASE_URL/api/mcp" | jq -r '.[0].services[] | "
+服务: \(.name)
+状态: \(.status)
+方法: \(.methods | join(", "))
+提供者: \(.providers | length)
+"'
+```
 
 通过这套完整的MCP调用机制，zkInfo成功地将传统的Dubbo RPC服务转换为现代化的、AI友好的API接口！🚀
 
