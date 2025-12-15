@@ -36,7 +36,7 @@ public class DubboServiceInfoAdapter {
         serviceEntity.setVersion(providerInfo.getVersion());
         serviceEntity.setGroup(providerInfo.getGroup());
         serviceEntity.setApplication(providerInfo.getApplication());
-        serviceEntity.setApprovalStatus(DubboServiceEntity.ApprovalStatus.PENDING); // 默认为待审批
+        serviceEntity.setApprovalStatus(DubboServiceEntity.ApprovalStatus.INIT); // 默认为初始化状态
         serviceEntity.setCreatedAt(LocalDateTime.now());
         serviceEntity.setUpdatedAt(LocalDateTime.now());
         return serviceEntity;
@@ -84,8 +84,11 @@ public class DubboServiceInfoAdapter {
                 serviceEntity.setApprovalStatus(DubboServiceEntity.ApprovalStatus.REJECTED);
                 break;
             case PENDING:
-            default:
                 serviceEntity.setApprovalStatus(DubboServiceEntity.ApprovalStatus.PENDING);
+                break;
+            case INIT:
+            default:
+                serviceEntity.setApprovalStatus(DubboServiceEntity.ApprovalStatus.INIT);
                 break;
         }
         

@@ -3,6 +3,7 @@ package com.zkinfo.service;
 import com.zkinfo.mapper.DubboServiceMapper;
 import com.zkinfo.mapper.DubboServiceNodeMapper;
 import com.zkinfo.model.DubboServiceEntity;
+import com.zkinfo.model.DubboServiceMethodEntity;
 import com.zkinfo.model.DubboServiceNodeEntity;
 import com.zkinfo.model.ProviderInfo;
 import lombok.extern.slf4j.Slf4j;
@@ -238,16 +239,16 @@ public class DubboServiceDbService {
                 log.debug("成功删除Dubbo服务节点: {}", zkPath);
                 
                 // 查找关联的服务信息
-                DubboServiceEntity serviceEntity = dubboServiceMapper.findById(nodeEntity.getServiceId());
-                if (serviceEntity != null) {
-                    // 检查是否还有其他节点关联此服务
-                    List<DubboServiceNodeEntity> remainingNodes = dubboServiceNodeMapper.findByServiceId(serviceEntity.getId());
-                    if (remainingNodes.isEmpty()) {
-                        // 如果没有其他节点，也删除服务
-                        dubboServiceMapper.deleteById(serviceEntity.getId());
-                        log.debug("成功删除Dubbo服务: {}", serviceEntity.getInterfaceName());
-                    }
-                }
+                // DubboServiceEntity serviceEntity = dubboServiceMapper.findById(nodeEntity.getServiceId());
+                // if (serviceEntity != null) {
+                //     // 检查是否还有其他节点关联此服务
+                //     List<DubboServiceNodeEntity> remainingNodes = dubboServiceNodeMapper.findByServiceId(serviceEntity.getId());
+                //     if (remainingNodes.isEmpty()) {
+                //         // 如果没有其他节点，也删除服务
+                //         dubboServiceMapper.deleteById(serviceEntity.getId());
+                //         log.debug("成功删除Dubbo服务: {}", serviceEntity.getInterfaceName());
+                //     }
+                // }
             }
         } catch (Exception e) {
             log.error("根据ZooKeeper路径移除服务失败: {}", zkPath, e);
@@ -292,6 +293,25 @@ public class DubboServiceDbService {
      */
     public List<DubboServiceNodeEntity> findNodesByServiceId(Long serviceId) {
         return dubboServiceNodeMapper.findByServiceId(serviceId);
+    }
+    
+    /**
+     * 查找所有Dubbo服务信息列表
+     * 
+     * @return 所有Dubbo服务信息列表
+     */
+    public List<DubboServiceEntity> findAll() {
+        return dubboServiceMapper.findAll();
+    }
+    
+    /**
+     * 根据服务ID查找所有方法
+     * 
+     * @param serviceId 服务ID
+     * @return Dubbo服务方法信息列表
+     */
+    public List<DubboServiceMethodEntity> findMethodsByServiceId(Long serviceId) {
+        return dubboServiceMethodService.findMethodsByServiceId(serviceId);
     }
     
     /**

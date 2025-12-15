@@ -55,9 +55,9 @@ public class DubboServiceEntity {
     private String application;
     
     /**
-     * 审批状态: PENDING-待审批, APPROVED-已审批, REJECTED-已拒绝
+     * 审批状态: INIT-初始化, PENDING-待审批, APPROVED-已审批, REJECTED-已拒绝
      */
-    private ApprovalStatus approvalStatus = ApprovalStatus.PENDING;
+    private ApprovalStatus approvalStatus = ApprovalStatus.INIT;
     
     /**
      * 审批人
@@ -98,6 +98,7 @@ public class DubboServiceEntity {
      * 审批状态枚举
      */
     public enum ApprovalStatus {
+        INIT("初始化"),
         PENDING("待审批"),
         APPROVED("已审批"),
         REJECTED("已拒绝");
@@ -124,7 +125,7 @@ public class DubboServiceEntity {
         this.application = providerInfo.getApplication();
         
         // 初始化数据库相关字段
-        this.approvalStatus = ApprovalStatus.PENDING;
+        this.approvalStatus = ApprovalStatus.INIT;
         this.providerCount = 0;
         this.onlineProviderCount = 0;
         this.createdAt = LocalDateTime.now();

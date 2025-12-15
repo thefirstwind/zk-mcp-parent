@@ -30,9 +30,9 @@ public class ProviderInfoEntity extends ProviderInfo {
     private Long id;
     
     /**
-     * 审批状态: PENDING-待审批, APPROVED-已审批, REJECTED-已拒绝
+     * 审批状态: INIT-初始化, PENDING-待审批, APPROVED-已审批, REJECTED-已拒绝
      */
-    private ApprovalStatus approvalStatus = ApprovalStatus.PENDING;
+    private ApprovalStatus approvalStatus = ApprovalStatus.INIT;
     
     /**
      * 审批人
@@ -68,6 +68,7 @@ public class ProviderInfoEntity extends ProviderInfo {
      * 审批状态枚举
      */
     public enum ApprovalStatus {
+        INIT("初始化"),
         PENDING("待审批"),
         APPROVED("已审批"),
         REJECTED("已拒绝");
@@ -102,7 +103,7 @@ public class ProviderInfoEntity extends ProviderInfo {
         this.setZkPath(providerInfo.getZkPath());
         
         // 初始化数据库相关字段
-        this.approvalStatus = ApprovalStatus.PENDING;
+        this.approvalStatus = ApprovalStatus.INIT;
         this.lastSyncTime = LocalDateTime.now();
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();

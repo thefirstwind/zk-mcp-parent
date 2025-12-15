@@ -133,6 +133,16 @@ public class DubboServiceMethodService {
     }
     
     /**
+     * 根据服务ID查找所有方法
+     * 
+     * @param serviceId 服务ID
+     * @return Dubbo服务方法信息列表
+     */
+    public List<DubboServiceMethodEntity> findMethodsByServiceId(Long serviceId) {
+        return dubboServiceMethodMapper.findByServiceId(serviceId);
+    }
+    
+    /**
      * 保存方法参数信息
      * 
      * @param methodId 方法ID
