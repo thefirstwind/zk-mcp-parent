@@ -14,6 +14,29 @@ spring:
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: GMT+8
     default-property-inclusion: non_null
+  datasource:
+    url: jdbc:mysql://localhost:3306/zk_mcp?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=GMT%2B8
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      max-lifetime: 1200000
+      connection-timeout: 30000
+
+# MyBatis配置
+mybatis:
+  mapper-locations: classpath:mybatis/mappers/*.xml
+  type-aliases-package: com.zkinfo.model
+  configuration:
+    map-underscore-to-camel-case: true
+    cache-enabled: false
+    lazy-loading-enabled: false
+    aggressive-lazy-loading: true
+    use-generated-keys: true
+    default-executor-type: simple
 
 # ZooKeeper配置
 zookeeper:
@@ -86,6 +109,11 @@ springdoc:
     - group: 'zkinfo-api'
       display-name: 'ZkInfo API'
       paths-to-match: '/api/**'
+
+# ZkInfo配置
+zkinfo:
+  sync:
+    interval: 300000 # 5分钟同步一次，单位毫秒
 
 ---
 # 开发环境配置

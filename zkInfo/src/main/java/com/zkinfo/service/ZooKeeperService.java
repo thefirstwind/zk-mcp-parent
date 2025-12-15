@@ -1,14 +1,22 @@
 package com.zkinfo.service;
 
 import com.zkinfo.config.ZooKeeperConfig;
+import com.zkinfo.model.DubboServiceEntity;
+import com.zkinfo.model.DubboServiceNodeEntity;
 import com.zkinfo.model.ProviderInfo;
+import com.zkinfo.model.ProviderInfoEntity;
+import com.zkinfo.service.DubboServiceDbService;
+import com.zkinfo.service.ProviderInfoDbService;
 import lombok.extern.slf4j.Slf4j;
+import java.util.Optional;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
-import org.apache.curator.framework.recipes.cache.CuratorCache;
+import org.apache.curator.framework.recipes.cache.TreeCache;
+import org.apache.curator.framework.recipes.cache.TreeCacheEvent;
 import org.apache.curator.framework.recipes.cache.ChildData;
 import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
@@ -48,8 +56,16 @@ public class ZooKeeperService {
     @Autowired
     private ProviderService providerService;
     
+    @Autowired
+    private ProviderInfoDbService providerInfoDbService;
+    
+    @Autowired
+    private DubboServiceDbService dubboServiceDbService;
+    
+    // 移除了filterApprovedOnly配置项，现在总是根据数据库中的审批状态来判断是否watch
+    
     private CuratorFramework client;
-    private final ConcurrentHashMap<String, CuratorCache> pathCaches = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, TreeCache> pathCaches = new ConcurrentHashMap<>();
     
     @PostConstruct
     public void init() {
@@ -128,24 +144,24 @@ public class ZooKeeperService {
             // 首先加载已存在的provider信息
             loadExistingProviders(providersPath, serviceName);
             
-            CuratorCache cache = CuratorCache.build(client, providersPath);
+            TreeCache cache = new TreeCache(client, providersPath);
             
-            cache.listenable().addListener((type, oldData, data) -> {
+            cache.getListenable().addListener((client, event) -> {
                 try {
-                    switch (type) {
-                        case NODE_CREATED:
-                            if (data != null && data.getPath().startsWith(providersPath + "/")) {
-                                handleProviderAdded(data, serviceName);
+                    switch (event.getType()) {
+                        case NODE_ADDED:
+                            if (event.getData() != null && event.getData().getPath().startsWith(providersPath + "/")) {
+                                handleProviderAdded(event.getData(), serviceName);
                             }
                             break;
-                        case NODE_DELETED:
-                            if (oldData != null && oldData.getPath().startsWith(providersPath + "/")) {
-                                handleProviderRemoved(oldData, serviceName);
+                        case NODE_REMOVED:
+                            if (event.getData() != null && event.getData().getPath().startsWith(providersPath + "/")) {
+                                handleProviderRemoved(event.getData(), serviceName);
                             }
                             break;
-                        case NODE_CHANGED:
-                            if (data != null && data.getPath().startsWith(providersPath + "/")) {
-                                handleProviderUpdated(data, serviceName);
+                        case NODE_UPDATED:
+                            if (event.getData() != null && event.getData().getPath().startsWith(providersPath + "/")) {
+                                handleProviderUpdated(event.getData(), serviceName);
                             }
                             break;
                         default:
@@ -185,7 +201,24 @@ public class ZooKeeperService {
                     ProviderInfo providerInfo = parseProviderUrl(providerUrl, serviceName);
                     if (providerInfo != null) {
                         providerInfo.setZkPath(providerPath);
-                        providerService.addProvider(providerInfo);
+                        
+                        // 所有dubbo service都得入库（新表结构）
+                        try {
+                            dubboServiceDbService.saveOrUpdateServiceWithNode(providerInfo);
+                            log.debug("成功同步Provider到新数据库结构: {}", providerPath);
+                        } catch (Exception e) {
+                            log.error("同步Provider到新数据库结构失败: {}", providerPath, e);
+                        }
+
+                        // 检查数据库中的审批状态，只有已审批的Provider才会被添加watch
+                        Optional<ProviderInfoEntity> approvedProvider = 
+                            providerInfoDbService.findByZkPathAndApprovalStatus(providerPath, ProviderInfoEntity.ApprovalStatus.APPROVED);
+                        if (approvedProvider.isPresent()) {
+                            providerService.addProvider(providerInfo);
+                            log.debug("添加已审批Provider到服务监控: {}", providerPath);
+                        } else {
+                            log.debug("跳过未审批Provider的服务监控: {}", providerPath);
+                        }
                     }
                 } catch (Exception e) {
                     log.error("加载Provider失败: {}", providerNode, e);
@@ -201,12 +234,12 @@ public class ZooKeeperService {
      */
     private void watchNewServices(String basePath) {
         try {
-            CuratorCache serviceCache = CuratorCache.build(client, basePath);
+            TreeCache serviceCache = new TreeCache(client, basePath);
             
-            serviceCache.listenable().addListener((type, oldData, data) -> {
-                if (type == org.apache.curator.framework.recipes.cache.CuratorCacheListener.Type.NODE_CREATED && 
-                    data != null && data.getPath().startsWith(basePath + "/")) {
-                    String serviceName = data.getPath().substring(basePath.length() + 1);
+            serviceCache.getListenable().addListener((client, event) -> {
+                if (event.getType() == TreeCacheEvent.Type.NODE_ADDED && 
+                    event.getData() != null && event.getData().getPath().startsWith(basePath + "/")) {
+                    String serviceName = event.getData().getPath().substring(basePath.length() + 1);
                     log.info("发现新服务: {}", serviceName);
                     
                     String servicePath = basePath + "/" + serviceName;
@@ -238,7 +271,24 @@ public class ZooKeeperService {
             ProviderInfo providerInfo = parseProviderUrl(providerUrl, serviceName);
             if (providerInfo != null) {
                 providerInfo.setZkPath(data.getPath());
-                providerService.addProvider(providerInfo);
+                
+                // 所有dubbo service都得入库（新表结构）
+                try {
+                    dubboServiceDbService.saveOrUpdateServiceWithNode(providerInfo);
+                    log.debug("成功同步新Provider到新数据库结构: {}", data.getPath());
+                } catch (Exception e) {
+                    log.error("同步新Provider到新数据库结构失败: {}", data.getPath(), e);
+                }
+                
+                // 检查数据库中的审批状态，只有已审批的Provider才会被添加watch
+                Optional<ProviderInfoEntity> approvedProvider = 
+                    providerInfoDbService.findByZkPathAndApprovalStatus(data.getPath(), ProviderInfoEntity.ApprovalStatus.APPROVED);
+                if (approvedProvider.isPresent()) {
+                    providerService.addProvider(providerInfo);
+                    log.debug("添加新已审批Provider到服务监控: {}", data.getPath());
+                } else {
+                    log.debug("跳过新未审批Provider的服务监控: {}", data.getPath());
+                }
             }
             
         } catch (Exception e) {
@@ -255,6 +305,14 @@ public class ZooKeeperService {
             log.info("Provider移除: {} -> {}", serviceName, zkPath);
             
             providerService.removeProviderByZkPath(zkPath);
+            
+            // 从数据库中移除（新表结构）
+            try {
+                dubboServiceDbService.removeServiceByZkPath(zkPath);
+                log.debug("成功从新数据库结构移除Provider: {}", zkPath);
+            } catch (Exception e) {
+                log.error("从新数据库结构移除Provider失败: {}", zkPath, e);
+            }
             
         } catch (Exception e) {
             log.error("处理Provider移除事件失败", e);
@@ -276,7 +334,26 @@ public class ZooKeeperService {
             ProviderInfo providerInfo = parseProviderUrl(providerUrl, serviceName);
             if (providerInfo != null) {
                 providerInfo.setZkPath(data.getPath());
-                providerService.updateProvider(providerInfo);
+                
+                // 所有dubbo service都得入库（新表结构）
+                try {
+                    dubboServiceDbService.saveOrUpdateServiceWithNode(providerInfo);
+                    log.debug("成功同步更新Provider到新数据库结构: {}", data.getPath());
+                } catch (Exception e) {
+                    log.error("同步更新Provider到新数据库结构失败: {}", data.getPath(), e);
+                }
+                
+                // 检查数据库中的审批状态，只有已审批的Provider才会被添加watch
+                Optional<ProviderInfoEntity> approvedProvider = 
+                    providerInfoDbService.findByZkPathAndApprovalStatus(data.getPath(), ProviderInfoEntity.ApprovalStatus.APPROVED);
+                if (approvedProvider.isPresent()) {
+                    providerService.updateProvider(providerInfo);
+                    log.debug("更新已审批Provider到服务监控: {}", data.getPath());
+                } else {
+                    // 从服务监控中移除（如果之前已添加）
+                    providerService.removeProviderByZkPath(data.getPath());
+                    log.debug("移除未审批Provider的服务监控: {}", data.getPath());
+                }
             }
             
         } catch (Exception e) {
@@ -367,7 +444,7 @@ public class ZooKeeperService {
     public void destroy() {
         try {
             // 关闭所有缓存
-            for (CuratorCache cache : pathCaches.values()) {
+            for (TreeCache cache : pathCaches.values()) {
                 cache.close();
             }
             pathCaches.clear();

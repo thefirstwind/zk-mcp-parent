@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.zkinfo.mapper.DubboServiceMethodMapper">
+    
+    <resultMap id="DubboServiceMethodResultMap" type="com.zkinfo.model.DubboServiceMethodEntity">
+        <id property="id" column="id"/>
+        <result property="serviceId" column="service_id"/>
+        <result property="methodName" column="method_name"/>
+        <result property="returnType" column="return_type"/>
+        <result property="createdAt" column="gmt_created"/>
+        <result property="updatedAt" column="gmt_modified"/>
+    </resultMap>
+    
+    <sql id="methodColumns">
+        id, service_id, method_name, return_type, gmt_created, gmt_modified
+    </sql>
+    
+    <!-- 插入Dubbo服务方法信息 -->
+    <insert id="insert" parameterType="com.zkinfo.model.DubboServiceMethodEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO dubbo_service_methods (
+            service_id, method_name, return_type, gmt_created, gmt_modified
+        ) VALUES (
+            #{serviceId}, #{methodName}, #{returnType}, #{createdAt}, #{updatedAt}
+        )
+    </insert>
+    
+    <!-- 更新Dubbo服务方法信息 -->
+    <update id="update" parameterType="com.zkinfo.model.DubboServiceMethodEntity">
+        UPDATE dubbo_service_methods SET
+            service_id = #{serviceId},
+            method_name = #{methodName},
+            return_type = #{returnType},
+            gmt_modified = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+    
+    <!-- 删除Dubbo服务方法信息 -->
+    <delete id="deleteById" parameterType="long">
+        DELETE FROM dubbo_service_methods WHERE id = #{id}
+    </delete>
+    
+    <!-- 根据服务ID删除Dubbo服务方法信息 -->
+    <delete id="deleteByServiceId" parameterType="long">
+        DELETE FROM dubbo_service_methods WHERE service_id = #{serviceId}
+    </delete>
+    
+    <!-- 根据ID查找Dubbo服务方法 -->
+    <select id="findById" parameterType="long" resultMap="DubboServiceMethodResultMap">
+        SELECT <include refid="methodColumns"/>
+        FROM dubbo_service_methods
+        WHERE id = #{id}
+    </select>
+    
+    <!-- 根据服务ID查找所有方法 -->
+    <select id="findByServiceId" parameterType="long" resultMap="DubboServiceMethodResultMap">
+        SELECT <include refid="methodColumns"/>
+        FROM dubbo_service_methods
+        WHERE service_id = #{serviceId}
+    </select>
+    
+    <!-- 根据服务ID和方法名查找方法 -->
+    <select id="findByServiceIdAndMethodName" resultMap="DubboServiceMethodResultMap">
+        SELECT <include refid="methodColumns"/>
+        FROM dubbo_service_methods
+        WHERE service_id = #{serviceId} AND method_name = #{methodName}
+    </select>
+    
+    <!-- 查找所有Dubbo服务方法 -->
+    <select id="findAll" resultMap="DubboServiceMethodResultMap">
+        SELECT <include refid="methodColumns"/>
+        FROM dubbo_service_methods
+    </select>
+    
+</mapper>
