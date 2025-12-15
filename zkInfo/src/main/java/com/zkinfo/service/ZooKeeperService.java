@@ -13,6 +13,8 @@ import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.framework.recipes.cache.TreeCache;
 import org.apache.curator.framework.recipes.cache.TreeCacheEvent;
+import org.apache.curator.framework.state.ConnectionState;
+import org.apache.curator.framework.imps.CuratorFrameworkState;
 import org.apache.curator.framework.recipes.cache.ChildData;
 import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -437,7 +439,17 @@ public class ZooKeeperService {
      * 检查连接状态
      */
     public boolean isConnected() {
-        return client != null && client.getZookeeperClient().isConnected();
+        return client != null && client.getState() == CuratorFrameworkState.STARTED;
+    }
+    
+    /**
+     * 检查指定路径是否已经被缓存（已添加Watcher）
+     * 
+     * @param path 要检查的路径
+     * @return 如果路径已被缓存返回true，否则返回false
+     */
+    public boolean isPathCached(String path) {
+        return pathCaches.containsKey(path);
     }
     
     @PreDestroy

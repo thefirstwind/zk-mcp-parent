@@ -12,9 +12,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.List;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Dubbo服务方法信息服务类
@@ -44,33 +49,62 @@ public class DubboServiceMethodService {
     @Transactional
     public void saveOrUpdateServiceMethods(ProviderInfo providerInfo, Long serviceId) {
         try {
-            // 删除现有的方法信息
-            deleteMethodsByServiceId(serviceId);
+            // 获取当前服务下已有的方法信息
+            List<DubboServiceMethodEntity> existingMethods = dubboServiceMethodMapper.findByServiceId(serviceId);
             
-            // 解析并保存方法信息
+            // 创建现有方法名到方法实体的映射，便于快速查找
+            Map<String, DubboServiceMethodEntity> existingMethodMap = new HashMap<>();
+            for (DubboServiceMethodEntity method : existingMethods) {
+                existingMethodMap.put(method.getMethodName(), method);
+            }
+            
+            // 解析并处理方法信息
+            Set<String> currentMethodNames = new HashSet<>();
             if (providerInfo.getMethods() != null && !providerInfo.getMethods().isEmpty()) {
                 String[] methods = providerInfo.getMethods().split(",");
                 for (int i = 0; i < methods.length; i++) {
                     String methodName = methods[i].trim();
                     if (!methodName.isEmpty()) {
-                        // 创建方法实体（暂时使用Object作为返回类型，实际应该解析URL参数获取详细信息）
-                        DubboServiceMethodEntity methodEntity = new DubboServiceMethodEntity(
-                            serviceId, methodName, "java.lang.Object");
+                        currentMethodNames.add(methodName);
                         
-                        // 保存方法信息
-                        dubboServiceMethodMapper.insert(methodEntity);
-                        log.debug("保存Dubbo服务方法信息: {} (ID: {})", methodName, methodEntity.getId());
-                        
-                        // 保存参数信息（暂时为空，实际应该解析URL参数获取详细信息）
-                        saveMethodParameters(methodEntity.getId(), new ArrayList<>());
+                        // 检查方法是否已存在
+                        if (existingMethodMap.containsKey(methodName)) {
+                            // 方法已存在，保留原有信息，仅更新时间戳
+                            DubboServiceMethodEntity existingMethod = existingMethodMap.get(methodName);
+                            existingMethod.setUpdatedAt(LocalDateTime.now());
+                            dubboServiceMethodMapper.update(existingMethod);
+                            log.debug("更新已存在的Dubbo服务方法信息: {} (ID: {})", methodName, existingMethod.getId());
+                        } else {
+                            // 新方法，创建并保存
+                            DubboServiceMethodEntity methodEntity = new DubboServiceMethodEntity(
+                                serviceId, methodName, "java.lang.Object");
+                            
+                            // 保存方法信息
+                            dubboServiceMethodMapper.insert(methodEntity);
+                            log.debug("保存新的Dubbo服务方法信息: {} (ID: {})", methodName, methodEntity.getId());
+                            
+                            // 保存参数信息（暂时为空，实际应该解析URL参数获取详细信息）
+                            saveMethodParameters(methodEntity.getId(), new ArrayList<>());
+                        }
                     }
                 }
             }
             
-            log.info("成功保存Dubbo服务方法信息: serviceId={}", serviceId);
+            // 可选：删除已不存在的方法（为了保护用户数据，这里暂不删除，仅记录）
+            for (DubboServiceMethodEntity existingMethod : existingMethods) {
+                if (!currentMethodNames.contains(existingMethod.getMethodName())) {
+                    log.info("检测到已不存在的方法: {} (ID: {})，为保护用户数据暂不删除", 
+                             existingMethod.getMethodName(), existingMethod.getId());
+                    // 如果需要真正删除已不存在的方法，取消下面的注释
+                    // dubboMethodParameterMapper.deleteByMethodId(existingMethod.getId());
+                    // dubboServiceMethodMapper.deleteById(existingMethod.getId());
+                }
+            }
+            
+            log.info("成功保存或更新Dubbo服务方法信息: serviceId={}", serviceId);
         } catch (Exception e) {
-            log.error("保存Dubbo服务方法信息到数据库失败: serviceId={}", serviceId, e);
-            throw new RuntimeException("保存Dubbo服务方法信息失败", e);
+            log.error("保存或更新Dubbo服务方法信息到数据库失败: serviceId={}", serviceId, e);
+            throw new RuntimeException("保存或更新Dubbo服务方法信息失败", e);
         }
     }
     
