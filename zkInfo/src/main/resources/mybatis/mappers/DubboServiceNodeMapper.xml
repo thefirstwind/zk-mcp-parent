@@ -71,13 +71,6 @@
         WHERE service_id = #{serviceId}
     </select>
     
-    <!-- 根据服务ID查找节点 -->
-    <select id="findByServiceId" parameterType="long" resultMap="DubboServiceNodeResultMap">
-        SELECT <include refid="nodeColumns"/>
-        FROM dubbo_service_nodes
-        WHERE service_id = #{serviceId}
-    </select>
-    
     <!-- 查找所有Dubbo服务节点 -->
     <select id="findAll" resultMap="DubboServiceNodeResultMap">
         SELECT <include refid="nodeColumns"/>
