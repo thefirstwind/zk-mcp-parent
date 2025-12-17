@@ -470,6 +470,16 @@ public class ZooKeeperService {
         return true; // 暂时允许所有服务，等待项目数据初始化
     }
     
+    /**
+     * 检查指定路径是否已经添加了缓存监听
+     * 
+     * @param path 路径
+     * @return 是否已添加缓存监听
+     */
+    public boolean isPathCached(String path) {
+        return pathCaches.containsKey(path);
+    }
+    
     @PreDestroy
     public void destroy() {
         try {
