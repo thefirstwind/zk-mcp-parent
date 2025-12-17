@@ -3,8 +3,10 @@ package com.zkinfo.controller;
 import com.zkinfo.model.ApplicationInfo;
 import com.zkinfo.model.McpResponse;
 import com.zkinfo.model.ProviderInfo;
+import com.zkinfo.service.DubboToMcpAutoRegistrationService;
 import com.zkinfo.service.McpConverterService;
 import com.zkinfo.service.McpExecutorService;
+import com.zkinfo.service.NacosMcpRegistrationService;
 import com.zkinfo.service.ProviderService;
 import com.zkinfo.service.ZooKeeperService;
 import lombok.extern.slf4j.Slf4j;
@@ -13,8 +15,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * ZkInfo API 控制器
@@ -43,6 +47,12 @@ public class ApiController {
     
     @Autowired
     private ZooKeeperService zooKeeperService;
+    
+    @Autowired(required = false)
+    private DubboToMcpAutoRegistrationService dubboToMcpAutoRegistrationService;
+    
+    @Autowired(required = false)
+    private NacosMcpRegistrationService nacosMcpRegistrationService;
     
     /**
      * 获取所有应用信息
@@ -165,6 +175,59 @@ public class ApiController {
             return ResponseEntity.ok(providers);
         } catch (Exception e) {
             log.error("获取所有Provider失败", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+    
+    /**
+     * 获取已注册到Nacos的MCP服务列表
+     * 从Nacos直接查询，包含所有类型的注册服务（Dubbo服务和虚拟项目）
+     */
+    @GetMapping("/registered-services")
+    public ResponseEntity<Map<String, Object>> getRegisteredServices() {
+        try {
+            Map<String, Object> result = new HashMap<>();
+            Set<String> allRegisteredServices = new HashSet<>();
+            
+            // 1. 从 DubboToMcpAutoRegistrationService 获取已注册的 Dubbo 服务
+            if (dubboToMcpAutoRegistrationService != null) {
+                Set<String> dubboServices = dubboToMcpAutoRegistrationService.getRegisteredServices();
+                allRegisteredServices.addAll(dubboServices);
+                log.debug("Found {} services from DubboToMcpAutoRegistrationService", dubboServices.size());
+            }
+            
+            // 2. 从 Nacos 直接查询已注册的 MCP 服务（包含虚拟项目）
+            if (nacosMcpRegistrationService != null) {
+                try {
+                    Set<String> nacosServices = nacosMcpRegistrationService.getRegisteredServicesFromNacos();
+                    allRegisteredServices.addAll(nacosServices);
+                    log.debug("Found {} services from Nacos", nacosServices.size());
+                } catch (Exception e) {
+                    log.warn("Failed to query services from Nacos: {}", e.getMessage());
+                }
+            }
+            
+            result.put("registeredServices", allRegisteredServices);
+            result.put("count", allRegisteredServices.size());
+            
+            // 分别统计不同类型的服务
+            Map<String, Integer> serviceTypes = new HashMap<>();
+            if (dubboToMcpAutoRegistrationService != null) {
+                serviceTypes.put("dubboServices", dubboToMcpAutoRegistrationService.getRegisteredServices().size());
+            }
+            if (nacosMcpRegistrationService != null) {
+                try {
+                    Set<String> nacosServices = nacosMcpRegistrationService.getRegisteredServicesFromNacos();
+                    serviceTypes.put("nacosServices", nacosServices.size());
+                } catch (Exception e) {
+                    // 忽略错误
+                }
+            }
+            result.put("serviceTypes", serviceTypes);
+            
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("获取已注册服务列表失败", e);
             return ResponseEntity.internalServerError().build();
         }
     }

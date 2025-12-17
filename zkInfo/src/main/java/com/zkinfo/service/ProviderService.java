@@ -103,9 +103,16 @@ public class ProviderService {
     }
     
     /**
+     * 根据ZK路径获取Provider
+     */
+    public ProviderInfo getProviderByZkPath(String zkPath) {
+        return providersByZkPath.get(zkPath);
+    }
+    
+    /**
      * 根据ZK路径移除Provider
      */
-    public void removeProviderByZkPath(String zkPath) {
+    public ProviderInfo removeProviderByZkPath(String zkPath) {
         try {
             ProviderInfo provider = providersByZkPath.remove(zkPath);
             if (provider != null) {
@@ -127,8 +134,11 @@ public class ProviderService {
                         provider.getAddress());
             }
             
+            return provider;
+            
         } catch (Exception e) {
             log.error("移除Provider失败: {}", zkPath, e);
+            return null;
         }
     }
     

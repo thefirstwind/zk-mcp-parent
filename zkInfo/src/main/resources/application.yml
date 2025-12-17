@@ -14,6 +14,17 @@ spring:
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: GMT+8
     default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+  # 确保WebFlux自动配置被启用，即使同时存在WebMVC
+  main:
+    web-application-type: servlet
+  webflux:
+    base-path: /
+    # 启用 WebFlux 的 DispatcherHandler，即使使用 servlet 模式
+    enabled: true
 
 # ZooKeeper配置
 zookeeper:
@@ -24,6 +35,16 @@ zookeeper:
   retry:
     max-retries: 3
     base-sleep-time: 1000
+
+# Nacos配置
+nacos:
+  server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+  namespace: ${NACOS_NAMESPACE:public}
+  username: ${NACOS_USERNAME:nacos}
+  password: ${NACOS_PASSWORD:nacos}
+  registry:
+    enabled: ${NACOS_REGISTRY_ENABLED:true}
+    service-group: ${NACOS_SERVICE_GROUP:mcp-server}
 
 # 监控配置
 monitor:

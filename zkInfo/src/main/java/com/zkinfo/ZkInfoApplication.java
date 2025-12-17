@@ -1,17 +1,20 @@
 package com.zkinfo;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.mcp.server.autoconfigure.McpWebFluxServerAutoConfiguration;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * ZkInfo应用启动类
  */
 @Slf4j
-@SpringBootApplication
+@SpringBootApplication(exclude = {McpWebFluxServerAutoConfiguration.class})
 @EnableScheduling
+@EnableAsync
 @EnableConfigurationProperties
 public class ZkInfoApplication {
     

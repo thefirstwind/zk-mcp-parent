@@ -15,7 +15,9 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -47,6 +49,18 @@ public class ZooKeeperService {
     
     @Autowired
     private ProviderService providerService;
+    
+    @Autowired(required = false)
+    private DubboToMcpRegistrationService dubboToMcpRegistrationService;
+    
+    @Autowired(required = false)
+    private NacosMcpRegistrationService nacosMcpRegistrationService;
+    
+    @Autowired(required = false)
+    private DubboToMcpAutoRegistrationService autoRegistrationService;
+    
+    @Autowired(required = false)
+    private ServiceCollectionFilterService filterService;
     
     private CuratorFramework client;
     private final ConcurrentHashMap<String, CuratorCache> pathCaches = new ConcurrentHashMap<>();
@@ -99,10 +113,22 @@ public class ZooKeeperService {
             List<String> services = client.getChildren().forPath(providersPath);
             log.info("发现 {} 个服务接口", services.size());
             
+            // 优化：只监听项目包含的服务（如果启用了过滤）
+            int watchedCount = 0;
             for (String service : services) {
                 String servicePath = providersPath + "/" + service;
+                
+                // 检查服务是否在项目中（快速检查，不检查版本）
+                if (filterService != null && !isServiceInProjects(service)) {
+                    log.debug("服务 {} 不在任何项目中，跳过监听", service);
+                    continue;
+                }
+                
                 watchServiceProviders(servicePath, service);
+                watchedCount++;
             }
+            
+            log.info("实际监听 {} 个服务接口（已过滤 {} 个）", watchedCount, services.size() - watchedCount);
             
             // 监听新服务的添加
             watchNewServices(providersPath);
@@ -114,6 +140,7 @@ public class ZooKeeperService {
     
     /**
      * 监听特定服务的Provider变化
+     * 优化：只监听项目包含的服务
      */
     private void watchServiceProviders(String servicePath, String serviceName) {
         try {
@@ -135,7 +162,27 @@ public class ZooKeeperService {
                     switch (type) {
                         case NODE_CREATED:
                             if (data != null && data.getPath().startsWith(providersPath + "/")) {
-                                handleProviderAdded(data, serviceName);
+                                String providerUrl = URLDecoder.decode(
+                                        data.getPath().substring(providersPath.length() + 1),
+                                        StandardCharsets.UTF_8
+                                );
+                                
+                                // 应用过滤规则：只有通过过滤的服务才会被处理
+                                ProviderInfo providerInfo = parseProviderUrl(providerUrl, serviceName);
+                                
+                                if (providerInfo != null) {
+                                    // 应用三层过滤机制
+                                    if (filterService == null || filterService.shouldCollect(
+                                            providerInfo.getInterfaceName(),
+                                            providerInfo.getVersion(),
+                                            providerInfo.getGroup())) {
+                                        handleProviderAdded(data, serviceName);
+                                    } else {
+                                        log.debug("Provider {}/{} 被过滤规则排除，跳过处理", 
+                                                providerInfo.getInterfaceName(),
+                                                providerInfo.getVersion());
+                                    }
+                                }
                             }
                             break;
                         case NODE_DELETED:
@@ -239,6 +286,11 @@ public class ZooKeeperService {
             if (providerInfo != null) {
                 providerInfo.setZkPath(data.getPath());
                 providerService.addProvider(providerInfo);
+                
+                // 自动注册到Nacos（如果启用）
+                if (autoRegistrationService != null) {
+                    autoRegistrationService.handleProviderAdded(providerInfo);
+                }
             }
             
         } catch (Exception e) {
@@ -254,7 +306,16 @@ public class ZooKeeperService {
             String zkPath = data.getPath();
             log.info("Provider移除: {} -> {}", serviceName, zkPath);
             
-            providerService.removeProviderByZkPath(zkPath);
+            // 先获取Provider信息（用于注销）
+            ProviderInfo removedProvider = providerService.getProviderByZkPath(zkPath);
+            
+            // 从ProviderService中移除
+            ProviderInfo actualRemoved = providerService.removeProviderByZkPath(zkPath);
+            
+            // 自动注销Nacos服务（如果启用）
+            if (actualRemoved != null && autoRegistrationService != null) {
+                autoRegistrationService.handleProviderRemoved(actualRemoved);
+            }
             
         } catch (Exception e) {
             log.error("处理Provider移除事件失败", e);
@@ -277,6 +338,11 @@ public class ZooKeeperService {
             if (providerInfo != null) {
                 providerInfo.setZkPath(data.getPath());
                 providerService.updateProvider(providerInfo);
+                
+                // 自动更新Nacos注册（如果启用）
+                if (autoRegistrationService != null) {
+                    autoRegistrationService.handleProviderUpdated(providerInfo);
+                }
             }
             
         } catch (Exception e) {
@@ -315,6 +381,7 @@ public class ZooKeeperService {
             }
             
             // 解析参数
+            java.util.Map<String, String> parameters = new java.util.HashMap<>();
             if (parts.length > 1) {
                 String[] params = parts[1].split("&");
                 for (String param : params) {
@@ -322,6 +389,9 @@ public class ZooKeeperService {
                     if (kv.length == 2) {
                         String key = URLDecoder.decode(kv[0], StandardCharsets.UTF_8);
                         String value = URLDecoder.decode(kv[1], StandardCharsets.UTF_8);
+                        
+                        // 保存所有参数到 parameters Map
+                        parameters.put(key, value);
                         
                         switch (key) {
                             case "version":
@@ -340,6 +410,22 @@ public class ZooKeeperService {
                     }
                 }
             }
+            
+            // 如果 application 为空，尝试从 parameters 中获取（可能参数名不同）
+            if ((provider.getApplication() == null || provider.getApplication().isEmpty()) && !parameters.isEmpty()) {
+                // 尝试常见的 application 参数名变体
+                String app = parameters.get("application") != null ? parameters.get("application") :
+                            parameters.get("dubbo.application.name") != null ? parameters.get("dubbo.application.name") :
+                            parameters.get("application.name") != null ? parameters.get("application.name") :
+                            null;
+                if (app != null && !app.isEmpty()) {
+                    provider.setApplication(app);
+                    log.debug("Extracted application from parameters: {}", app);
+                }
+            }
+            
+            // 保存所有参数
+            provider.setParameters(parameters);
             
             return provider;
             
@@ -361,6 +447,27 @@ public class ZooKeeperService {
      */
     public boolean isConnected() {
         return client != null && client.getZookeeperClient().isConnected();
+    }
+    
+    /**
+     * 检查服务是否在任何项目中（快速检查，不检查版本）
+     * 用于优化ZooKeeper监听，只监听项目包含的服务
+     * 
+     * @param serviceName 服务名称（接口名）
+     * @return true表示服务在项目中，false表示不在
+     */
+    private boolean isServiceInProjects(String serviceName) {
+        if (filterService == null) {
+            // 如果没有过滤服务，默认监听所有服务
+            return true;
+        }
+        
+        // 快速检查：尝试匹配任何版本的服务
+        // 这里使用一个临时版本号来检查服务是否在项目中
+        // 如果filterService的isInDefinedProjects方法支持，可以直接调用
+        // 暂时返回true，让过滤在更细粒度的地方进行
+        // TODO: 实现更精确的项目服务检查（需要数据库支持）
+        return true; // 暂时允许所有服务，等待项目数据初始化
     }
     
     @PreDestroy
