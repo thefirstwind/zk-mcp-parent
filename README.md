@@ -184,7 +184,7 @@ AI 将自动理解您的意图，调用相应的服务，并返回结果！
 |------|------|
 | [📘 快速启动指南](./QUICK-START.md) | 5分钟快速上手指南 |
 | [📗 完整技术文档](./MCP-AI-CLIENT-README.md) | 详细的技术文档和 API 参考 |
-| [📊 测试报告](./interface_test_report.md) | 全面的功能测试和性能报告 |
+| [📊 测试报告](documents/interface_test_report.md) | 全面的功能测试和性能报告 |
 | [🐛 Bug报告](./BUG_REPORT.md) | 已发现问题的详细分析报告 |
 | [📋 项目总结](./PROJECT-SUMMARY.md) | 项目回顾和技术总结 |
 
@@ -340,7 +340,7 @@ curl "http://localhost:8081/api/chat/session/{SESSION_ID}/history"
 - ✅ **AI 理解准确率 95%+**
 - ✅ **平均响应时间 100-300ms**
 
-详见 [完整测试报告](./interface_test_report.md) 和 [Bug报告](./BUG_REPORT.md)
+详见 [完整测试报告](documents/interface_test_report.md) 和 [Bug报告](./BUG_REPORT.md)
 
 ---
 

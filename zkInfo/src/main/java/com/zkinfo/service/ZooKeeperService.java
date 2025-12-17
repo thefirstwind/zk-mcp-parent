@@ -1,31 +1,23 @@
 package com.zkinfo.service;
 
 import com.zkinfo.config.ZooKeeperConfig;
-import com.zkinfo.model.DubboServiceEntity;
-import com.zkinfo.model.DubboServiceNodeEntity;
 import com.zkinfo.model.ProviderInfo;
-import com.zkinfo.model.ProviderInfoEntity;
-import com.zkinfo.service.DubboServiceDbService;
-import com.zkinfo.service.ProviderInfoDbService;
 import lombok.extern.slf4j.Slf4j;
-import java.util.Optional;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
-import org.apache.curator.framework.recipes.cache.TreeCache;
-import org.apache.curator.framework.recipes.cache.TreeCacheEvent;
-import org.apache.curator.framework.state.ConnectionState;
-import org.apache.curator.framework.imps.CuratorFrameworkState;
+import org.apache.curator.framework.recipes.cache.CuratorCache;
 import org.apache.curator.framework.recipes.cache.ChildData;
 import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -58,16 +50,20 @@ public class ZooKeeperService {
     @Autowired
     private ProviderService providerService;
     
-    @Autowired
-    private ProviderInfoDbService providerInfoDbService;
+    @Autowired(required = false)
+    private DubboToMcpRegistrationService dubboToMcpRegistrationService;
     
-    @Autowired
-    private DubboServiceDbService dubboServiceDbService;
+    @Autowired(required = false)
+    private NacosMcpRegistrationService nacosMcpRegistrationService;
     
-    // 移除了filterApprovedOnly配置项，现在总是根据数据库中的审批状态来判断是否watch
+    @Autowired(required = false)
+    private DubboToMcpAutoRegistrationService autoRegistrationService;
+    
+    @Autowired(required = false)
+    private ServiceCollectionFilterService filterService;
     
     private CuratorFramework client;
-    private final ConcurrentHashMap<String, TreeCache> pathCaches = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, CuratorCache> pathCaches = new ConcurrentHashMap<>();
     
     @PostConstruct
     public void init() {
@@ -117,10 +113,22 @@ public class ZooKeeperService {
             List<String> services = client.getChildren().forPath(providersPath);
             log.info("发现 {} 个服务接口", services.size());
             
+            // 优化：只监听项目包含的服务（如果启用了过滤）
+            int watchedCount = 0;
             for (String service : services) {
                 String servicePath = providersPath + "/" + service;
+                
+                // 检查服务是否在项目中（快速检查，不检查版本）
+                if (filterService != null && !isServiceInProjects(service)) {
+                    log.debug("服务 {} 不在任何项目中，跳过监听", service);
+                    continue;
+                }
+                
                 watchServiceProviders(servicePath, service);
+                watchedCount++;
             }
+            
+            log.info("实际监听 {} 个服务接口（已过滤 {} 个）", watchedCount, services.size() - watchedCount);
             
             // 监听新服务的添加
             watchNewServices(providersPath);
@@ -132,6 +140,7 @@ public class ZooKeeperService {
     
     /**
      * 监听特定服务的Provider变化
+     * 优化：只监听项目包含的服务
      */
     private void watchServiceProviders(String servicePath, String serviceName) {
         try {
@@ -146,24 +155,44 @@ public class ZooKeeperService {
             // 首先加载已存在的provider信息
             loadExistingProviders(providersPath, serviceName);
             
-            TreeCache cache = new TreeCache(client, providersPath);
+            CuratorCache cache = CuratorCache.build(client, providersPath);
             
-            cache.getListenable().addListener((client, event) -> {
+            cache.listenable().addListener((type, oldData, data) -> {
                 try {
-                    switch (event.getType()) {
-                        case NODE_ADDED:
-                            if (event.getData() != null && event.getData().getPath().startsWith(providersPath + "/")) {
-                                handleProviderAdded(event.getData(), serviceName);
+                    switch (type) {
+                        case NODE_CREATED:
+                            if (data != null && data.getPath().startsWith(providersPath + "/")) {
+                                String providerUrl = URLDecoder.decode(
+                                        data.getPath().substring(providersPath.length() + 1),
+                                        StandardCharsets.UTF_8
+                                );
+                                
+                                // 应用过滤规则：只有通过过滤的服务才会被处理
+                                ProviderInfo providerInfo = parseProviderUrl(providerUrl, serviceName);
+                                
+                                if (providerInfo != null) {
+                                    // 应用三层过滤机制
+                                    if (filterService == null || filterService.shouldCollect(
+                                            providerInfo.getInterfaceName(),
+                                            providerInfo.getVersion(),
+                                            providerInfo.getGroup())) {
+                                        handleProviderAdded(data, serviceName);
+                                    } else {
+                                        log.debug("Provider {}/{} 被过滤规则排除，跳过处理", 
+                                                providerInfo.getInterfaceName(),
+                                                providerInfo.getVersion());
+                                    }
+                                }
                             }
                             break;
-                        case NODE_REMOVED:
-                            if (event.getData() != null && event.getData().getPath().startsWith(providersPath + "/")) {
-                                handleProviderRemoved(event.getData(), serviceName);
+                        case NODE_DELETED:
+                            if (oldData != null && oldData.getPath().startsWith(providersPath + "/")) {
+                                handleProviderRemoved(oldData, serviceName);
                             }
                             break;
-                        case NODE_UPDATED:
-                            if (event.getData() != null && event.getData().getPath().startsWith(providersPath + "/")) {
-                                handleProviderUpdated(event.getData(), serviceName);
+                        case NODE_CHANGED:
+                            if (data != null && data.getPath().startsWith(providersPath + "/")) {
+                                handleProviderUpdated(data, serviceName);
                             }
                             break;
                         default:
@@ -203,24 +232,7 @@ public class ZooKeeperService {
                     ProviderInfo providerInfo = parseProviderUrl(providerUrl, serviceName);
                     if (providerInfo != null) {
                         providerInfo.setZkPath(providerPath);
-                        
-                        // 所有dubbo service都得入库（新表结构）
-                        try {
-                            dubboServiceDbService.saveOrUpdateServiceWithNode(providerInfo);
-                            log.debug("成功同步Provider到新数据库结构: {}", providerPath);
-                        } catch (Exception e) {
-                            log.error("同步Provider到新数据库结构失败: {}", providerPath, e);
-                        }
-
-                        // 检查数据库中的审批状态，只有已审批的Provider才会被添加watch
-                        Optional<ProviderInfoEntity> approvedProvider = 
-                            providerInfoDbService.findByZkPathAndApprovalStatus(providerPath, ProviderInfoEntity.ApprovalStatus.APPROVED);
-                        if (approvedProvider.isPresent()) {
-                            providerService.addProvider(providerInfo);
-                            log.debug("添加已审批Provider到服务监控: {}", providerPath);
-                        } else {
-                            log.debug("跳过未审批Provider的服务监控: {}", providerPath);
-                        }
+                        providerService.addProvider(providerInfo);
                     }
                 } catch (Exception e) {
                     log.error("加载Provider失败: {}", providerNode, e);
@@ -236,12 +248,12 @@ public class ZooKeeperService {
      */
     private void watchNewServices(String basePath) {
         try {
-            TreeCache serviceCache = new TreeCache(client, basePath);
+            CuratorCache serviceCache = CuratorCache.build(client, basePath);
             
-            serviceCache.getListenable().addListener((client, event) -> {
-                if (event.getType() == TreeCacheEvent.Type.NODE_ADDED && 
-                    event.getData() != null && event.getData().getPath().startsWith(basePath + "/")) {
-                    String serviceName = event.getData().getPath().substring(basePath.length() + 1);
+            serviceCache.listenable().addListener((type, oldData, data) -> {
+                if (type == org.apache.curator.framework.recipes.cache.CuratorCacheListener.Type.NODE_CREATED && 
+                    data != null && data.getPath().startsWith(basePath + "/")) {
+                    String serviceName = data.getPath().substring(basePath.length() + 1);
                     log.info("发现新服务: {}", serviceName);
                     
                     String servicePath = basePath + "/" + serviceName;
@@ -273,23 +285,11 @@ public class ZooKeeperService {
             ProviderInfo providerInfo = parseProviderUrl(providerUrl, serviceName);
             if (providerInfo != null) {
                 providerInfo.setZkPath(data.getPath());
+                providerService.addProvider(providerInfo);
                 
-                // 所有dubbo service都得入库（新表结构）
-                try {
-                    dubboServiceDbService.saveOrUpdateServiceWithNode(providerInfo);
-                    log.debug("成功同步新Provider到新数据库结构: {}", data.getPath());
-                } catch (Exception e) {
-                    log.error("同步新Provider到新数据库结构失败: {}", data.getPath(), e);
-                }
-                
-                // 检查数据库中的审批状态，只有已审批的Provider才会被添加watch
-                Optional<ProviderInfoEntity> approvedProvider = 
-                    providerInfoDbService.findByZkPathAndApprovalStatus(data.getPath(), ProviderInfoEntity.ApprovalStatus.APPROVED);
-                if (approvedProvider.isPresent()) {
-                    providerService.addProvider(providerInfo);
-                    log.debug("添加新已审批Provider到服务监控: {}", data.getPath());
-                } else {
-                    log.debug("跳过新未审批Provider的服务监控: {}", data.getPath());
+                // 自动注册到Nacos（如果启用）
+                if (autoRegistrationService != null) {
+                    autoRegistrationService.handleProviderAdded(providerInfo);
                 }
             }
             
@@ -306,14 +306,15 @@ public class ZooKeeperService {
             String zkPath = data.getPath();
             log.info("Provider移除: {} -> {}", serviceName, zkPath);
             
-            providerService.removeProviderByZkPath(zkPath);
+            // 先获取Provider信息（用于注销）
+            ProviderInfo removedProvider = providerService.getProviderByZkPath(zkPath);
             
-            // 从数据库中移除（新表结构）
-            try {
-                dubboServiceDbService.removeServiceByZkPath(zkPath);
-                log.debug("成功从新数据库结构移除Provider: {}", zkPath);
-            } catch (Exception e) {
-                log.error("从新数据库结构移除Provider失败: {}", zkPath, e);
+            // 从ProviderService中移除
+            ProviderInfo actualRemoved = providerService.removeProviderByZkPath(zkPath);
+            
+            // 自动注销Nacos服务（如果启用）
+            if (actualRemoved != null && autoRegistrationService != null) {
+                autoRegistrationService.handleProviderRemoved(actualRemoved);
             }
             
         } catch (Exception e) {
@@ -336,25 +337,11 @@ public class ZooKeeperService {
             ProviderInfo providerInfo = parseProviderUrl(providerUrl, serviceName);
             if (providerInfo != null) {
                 providerInfo.setZkPath(data.getPath());
+                providerService.updateProvider(providerInfo);
                 
-                // 所有dubbo service都得入库（新表结构）
-                try {
-                    dubboServiceDbService.saveOrUpdateServiceWithNode(providerInfo);
-                    log.debug("成功同步更新Provider到新数据库结构: {}", data.getPath());
-                } catch (Exception e) {
-                    log.error("同步更新Provider到新数据库结构失败: {}", data.getPath(), e);
-                }
-                
-                // 检查数据库中的审批状态，只有已审批的Provider才会被添加watch
-                Optional<ProviderInfoEntity> approvedProvider = 
-                    providerInfoDbService.findByZkPathAndApprovalStatus(data.getPath(), ProviderInfoEntity.ApprovalStatus.APPROVED);
-                if (approvedProvider.isPresent()) {
-                    providerService.updateProvider(providerInfo);
-                    log.debug("更新已审批Provider到服务监控: {}", data.getPath());
-                } else {
-                    // 从服务监控中移除（如果之前已添加）
-                    providerService.removeProviderByZkPath(data.getPath());
-                    log.debug("移除未审批Provider的服务监控: {}", data.getPath());
+                // 自动更新Nacos注册（如果启用）
+                if (autoRegistrationService != null) {
+                    autoRegistrationService.handleProviderUpdated(providerInfo);
                 }
             }
             
@@ -394,6 +381,7 @@ public class ZooKeeperService {
             }
             
             // 解析参数
+            java.util.Map<String, String> parameters = new java.util.HashMap<>();
             if (parts.length > 1) {
                 String[] params = parts[1].split("&");
                 for (String param : params) {
@@ -401,6 +389,9 @@ public class ZooKeeperService {
                     if (kv.length == 2) {
                         String key = URLDecoder.decode(kv[0], StandardCharsets.UTF_8);
                         String value = URLDecoder.decode(kv[1], StandardCharsets.UTF_8);
+                        
+                        // 保存所有参数到 parameters Map
+                        parameters.put(key, value);
                         
                         switch (key) {
                             case "version":
@@ -419,6 +410,22 @@ public class ZooKeeperService {
                     }
                 }
             }
+            
+            // 如果 application 为空，尝试从 parameters 中获取（可能参数名不同）
+            if ((provider.getApplication() == null || provider.getApplication().isEmpty()) && !parameters.isEmpty()) {
+                // 尝试常见的 application 参数名变体
+                String app = parameters.get("application") != null ? parameters.get("application") :
+                            parameters.get("dubbo.application.name") != null ? parameters.get("dubbo.application.name") :
+                            parameters.get("application.name") != null ? parameters.get("application.name") :
+                            null;
+                if (app != null && !app.isEmpty()) {
+                    provider.setApplication(app);
+                    log.debug("Extracted application from parameters: {}", app);
+                }
+            }
+            
+            // 保存所有参数
+            provider.setParameters(parameters);
             
             return provider;
             
@@ -439,24 +446,35 @@ public class ZooKeeperService {
      * 检查连接状态
      */
     public boolean isConnected() {
-        return client != null && client.getState() == CuratorFrameworkState.STARTED;
+        return client != null && client.getZookeeperClient().isConnected();
     }
     
     /**
-     * 检查指定路径是否已经被缓存（已添加Watcher）
+     * 检查服务是否在任何项目中（快速检查，不检查版本）
+     * 用于优化ZooKeeper监听，只监听项目包含的服务
      * 
-     * @param path 要检查的路径
-     * @return 如果路径已被缓存返回true，否则返回false
+     * @param serviceName 服务名称（接口名）
+     * @return true表示服务在项目中，false表示不在
      */
-    public boolean isPathCached(String path) {
-        return pathCaches.containsKey(path);
+    private boolean isServiceInProjects(String serviceName) {
+        if (filterService == null) {
+            // 如果没有过滤服务，默认监听所有服务
+            return true;
+        }
+        
+        // 快速检查：尝试匹配任何版本的服务
+        // 这里使用一个临时版本号来检查服务是否在项目中
+        // 如果filterService的isInDefinedProjects方法支持，可以直接调用
+        // 暂时返回true，让过滤在更细粒度的地方进行
+        // TODO: 实现更精确的项目服务检查（需要数据库支持）
+        return true; // 暂时允许所有服务，等待项目数据初始化
     }
     
     @PreDestroy
     public void destroy() {
         try {
             // 关闭所有缓存
-            for (TreeCache cache : pathCaches.values()) {
+            for (CuratorCache cache : pathCaches.values()) {
                 cache.close();
             }
             pathCaches.clear();
