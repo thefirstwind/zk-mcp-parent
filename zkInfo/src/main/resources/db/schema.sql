@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS `zk_virtual_project_endpoint` (
 -- 4. Dubbo服务表（按服务维度）
 CREATE TABLE IF NOT EXISTS `zk_dubbo_service` (
     `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-    `interface_name` VARCHAR(500) NOT NULL COMMENT '服务接口名',
+    `interface_name` VARCHAR(250) NOT NULL COMMENT '服务接口名',
     `protocol` VARCHAR(50) COMMENT '协议类型',
     `version` VARCHAR(50) COMMENT '服务版本',
     `group` VARCHAR(100) COMMENT '服务分组',
@@ -74,14 +74,16 @@ CREATE TABLE IF NOT EXISTS `zk_dubbo_service` (
     `gmt_modified` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
     KEY `idx_interface_name` (`interface_name`),
+    KEY `idx_application` (`application`),
     KEY `idx_approval_status` (`approval_status`),
-    KEY `idx_service_key` (`interface_name`, `protocol`, `version`, `group`, `application`)
+    KEY `idx_service_key` (`interface_name`, `protocol`, `version`, `group`, `application`),
+    UNIQUE KEY `uk_service` (`interface_name`, `protocol`, `version`, `group`, `application`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Dubbo服务表';
 
 -- 5. Provider信息表（服务提供者详细信息）
 CREATE TABLE IF NOT EXISTS `zk_provider_info` (
     `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-    `interface_name` VARCHAR(500) NOT NULL COMMENT '服务接口名',
+    `interface_name` VARCHAR(250) NOT NULL COMMENT '服务接口名',
     `address` VARCHAR(200) NOT NULL COMMENT '提供者地址 (IP:Port)',
     `protocol` VARCHAR(50) COMMENT '协议类型',
     `version` VARCHAR(50) COMMENT '服务版本',
@@ -89,7 +91,7 @@ CREATE TABLE IF NOT EXISTS `zk_provider_info` (
     `application` VARCHAR(200) COMMENT '应用名称',
     `methods` TEXT COMMENT '服务方法列表（JSON格式）',
     `parameters` TEXT COMMENT '其他参数（JSON格式）',
-    `zk_path` VARCHAR(1000) COMMENT 'ZooKeeper节点路径',
+    `zk_path` VARCHAR(500) COMMENT 'ZooKeeper节点路径',
     `registration_time` DATETIME COMMENT '注册时间',
     `last_heartbeat_time` DATETIME COMMENT '最后心跳时间',
     `is_online` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否在线',
@@ -117,7 +119,7 @@ CREATE TABLE IF NOT EXISTS `zk_dubbo_service_node` (
     `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
     `service_id` BIGINT NOT NULL COMMENT '关联的服务ID',
     `address` VARCHAR(200) NOT NULL COMMENT '提供者地址 (IP:Port)',
-    `zk_path` VARCHAR(1000) COMMENT 'ZooKeeper节点路径',
+    `zk_path` VARCHAR(500) COMMENT 'ZooKeeper节点路径',
     `register_time` DATETIME COMMENT '注册时间',
     `last_heartbeat` DATETIME COMMENT '最后心跳时间',
     `last_sync_time` DATETIME COMMENT '最后同步时间',
@@ -126,7 +128,10 @@ CREATE TABLE IF NOT EXISTS `zk_dubbo_service_node` (
     PRIMARY KEY (`id`),
     KEY `idx_service_id` (`service_id`),
     KEY `idx_zk_path` (`zk_path`),
-    KEY `idx_address` (`address`)
+    KEY `idx_address` (`address`),
+    KEY `idx_register_time` (`register_time`),
+    KEY `idx_last_sync_time` (`last_sync_time`),
+    UNIQUE KEY `uk_zk_path` (`zk_path`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Dubbo服务节点表';
 
 -- 7. Dubbo服务方法表
@@ -147,7 +152,7 @@ CREATE TABLE IF NOT EXISTS `zk_dubbo_service_method` (
 CREATE TABLE IF NOT EXISTS `zk_dubbo_method_parameter` (
     `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
     `method_id` BIGINT NOT NULL COMMENT '关联的方法ID',
-    `parameter_name` VARCHAR(200) NOT NULL COMMENT '参数名',
+    `parameter_name` VARCHAR(200) COMMENT '参数名',
     `parameter_type` VARCHAR(500) NOT NULL COMMENT '参数类型',
     `parameter_order` INT NOT NULL COMMENT '参数顺序',
     `parameter_description` TEXT COMMENT '参数描述',
@@ -155,7 +160,8 @@ CREATE TABLE IF NOT EXISTS `zk_dubbo_method_parameter` (
     `gmt_modified` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
     KEY `idx_method_id` (`method_id`),
-    KEY `idx_parameter_order` (`method_id`, `parameter_order`)
+    KEY `idx_parameter_order` (`method_id`, `parameter_order`),
+    UNIQUE KEY `uk_method_param_order` (`method_id`, `parameter_order`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Dubbo方法参数表';
 
 -- 9. 服务审批表
@@ -200,6 +206,9 @@ CREATE TABLE IF NOT EXISTS `zk_approval_log` (
 
 -- ============================================
 -- 外键约束（可选，根据实际需求决定是否启用）
+-- 
+-- 注意：外键约束可以提高数据完整性，但可能影响性能。
+-- 如果启用外键，建议在应用层也做好数据校验，避免级联删除导致意外数据丢失。
 -- ============================================
 
 -- ALTER TABLE `zk_project_service` ADD CONSTRAINT `fk_project_service_project` 
