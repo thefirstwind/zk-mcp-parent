@@ -41,6 +41,21 @@ public class NacosConfig {
         properties.setProperty("namespace", namespace);
         properties.setProperty("username", username);
         properties.setProperty("password", password);
+        
+        // 解决 gRPC 端口连接问题：设置客户端 IP，避免 SDK 使用 localhost
+        // Nacos SDK 会通过 HTTP 端口获取服务器信息，然后连接 gRPC 端口（9848）
+        // 如果服务器返回 localhost，会导致 gRPC 连接失败
+        String[] addrParts = serverAddr.split(":");
+        if (addrParts.length == 2) {
+            String host = addrParts[0];
+            // 如果配置的是 IP 地址而不是 localhost，设置客户端 IP
+            if (!host.equals("localhost") && !host.equals("127.0.0.1")) {
+                // 设置系统属性，让 Nacos SDK 使用正确的 IP
+                System.setProperty("nacos.client.ip", host);
+                System.setProperty("com.alibaba.nacos.client.naming.client.ip", host);
+                log.info("Setting Nacos client IP for gRPC connection: {}", host);
+            }
+        }
 
         log.info("Initializing Nacos NamingService with serverAddr: {}, namespace: {}, username: {}", 
                 serverAddr, namespace, username);
@@ -60,6 +75,16 @@ public class NacosConfig {
         properties.setProperty("namespace", namespace);
         properties.setProperty("username", username);
         properties.setProperty("password", password);
+        
+        // ConfigService 通常不需要 gRPC，但为了保持一致性，也设置客户端 IP
+        String[] addrParts = serverAddr.split(":");
+        if (addrParts.length == 2) {
+            String host = addrParts[0];
+            if (!host.equals("localhost") && !host.equals("127.0.0.1")) {
+                System.setProperty("nacos.client.ip", host);
+                log.info("Setting Nacos client IP for ConfigService: {}", host);
+            }
+        }
 
         log.info("Initializing Nacos ConfigService with serverAddr: {}, namespace: {}", 
                 serverAddr, namespace);
