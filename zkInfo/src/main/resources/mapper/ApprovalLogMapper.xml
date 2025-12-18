@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pajk.mcpmetainfo.persistence.mapper.ApprovalLogMapper">
+    
+    <resultMap id="ApprovalLogResultMap" type="com.pajk.mcpmetainfo.persistence.entity.ApprovalLog">
+        <id property="id" column="id"/>
+        <result property="providerId" column="provider_id"/>
+        <result property="serviceId" column="service_id"/>
+        <result property="oldStatus" column="old_status"/>
+        <result property="newStatus" column="new_status"/>
+        <result property="approver" column="approver"/>
+        <result property="approvalComment" column="approval_comment"/>
+        <result property="createdAt" column="gmt_created"/>
+    </resultMap>
+    
+    <sql id="logColumns">
+        id, provider_id, service_id, old_status, new_status, approver, approval_comment, gmt_created
+    </sql>
+    
+    <!-- 插入审批日志 -->
+    <insert id="insert" parameterType="com.pajk.mcpmetainfo.persistence.entity.ApprovalLog" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO zk_approval_log (
+            provider_id, service_id, old_status, new_status, approver, approval_comment, gmt_created
+        ) VALUES (
+            #{providerId}, #{serviceId}, #{oldStatus}, #{newStatus}, #{approver}, #{approvalComment}, #{createdAt}
+        )
+    </insert>
+    
+    <!-- 根据Provider ID查找审批日志 -->
+    <select id="findByProviderIdOrderByCreatedAtDesc" parameterType="long" resultMap="ApprovalLogResultMap">
+        SELECT <include refid="logColumns"/>
+        FROM zk_approval_log
+        WHERE provider_id = #{providerId}
+        ORDER BY gmt_created DESC
+    </select>
+    
+</mapper>

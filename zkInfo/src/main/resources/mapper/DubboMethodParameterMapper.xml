@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pajk.mcpmetainfo.persistence.mapper.DubboMethodParameterMapper">
+    
+    <resultMap id="DubboMethodParameterResultMap" type="com.pajk.mcpmetainfo.persistence.entity.DubboMethodParameterEntity">
+        <id property="id" column="id"/>
+        <result property="methodId" column="method_id"/>
+        <result property="parameterName" column="parameter_name"/>
+        <result property="parameterType" column="parameter_type"/>
+        <result property="parameterOrder" column="parameter_order"/>
+        <result property="parameterDescription" column="parameter_description"/>
+        <result property="createdAt" column="gmt_created"/>
+        <result property="updatedAt" column="gmt_modified"/>
+    </resultMap>
+    
+    <sql id="parameterColumns">
+        id, method_id, parameter_name, parameter_type, parameter_order, parameter_description, gmt_created, gmt_modified
+    </sql>
+    
+    <!-- 插入Dubbo服务方法参数信息 -->
+    <insert id="insert" parameterType="com.pajk.mcpmetainfo.persistence.entity.DubboMethodParameterEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO zk_dubbo_method_parameter (
+            method_id, parameter_name, parameter_type, parameter_order, parameter_description, gmt_created, gmt_modified
+        ) VALUES (
+            #{methodId}, #{parameterName}, #{parameterType}, #{parameterOrder}, #{parameterDescription}, #{createdAt}, #{updatedAt}
+        )
+    </insert>
+    
+    <!-- 更新Dubbo服务方法参数信息 -->
+    <update id="update" parameterType="com.pajk.mcpmetainfo.persistence.entity.DubboMethodParameterEntity">
+        UPDATE zk_dubbo_method_parameter SET
+            method_id = #{methodId},
+            parameter_name = #{parameterName},
+            parameter_type = #{parameterType},
+            parameter_order = #{parameterOrder},
+            parameter_description = #{parameterDescription},
+            gmt_modified = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+    
+    <!-- 删除Dubbo服务方法参数信息 -->
+    <delete id="deleteById" parameterType="long">
+        DELETE FROM zk_dubbo_method_parameter WHERE id = #{id}
+    </delete>
+    
+    <!-- 根据方法ID删除Dubbo服务方法参数信息 -->
+    <delete id="deleteByMethodId" parameterType="long">
+        DELETE FROM zk_dubbo_method_parameter WHERE method_id = #{methodId}
+    </delete>
+    
+    <!-- 根据ID查找Dubbo服务方法参数 -->
+    <select id="findById" parameterType="long" resultMap="DubboMethodParameterResultMap">
+        SELECT <include refid="parameterColumns"/>
+        FROM zk_dubbo_method_parameter
+        WHERE id = #{id}
+    </select>
+    
+    <!-- 根据方法ID查找所有参数 -->
+    <select id="findByMethodId" parameterType="long" resultMap="DubboMethodParameterResultMap">
+        SELECT <include refid="parameterColumns"/>
+        FROM zk_dubbo_method_parameter
+        WHERE method_id = #{methodId}
+        ORDER BY parameter_order ASC
+    </select>
+    
+    <!-- 查找所有Dubbo服务方法参数 -->
+    <select id="findAll" resultMap="DubboMethodParameterResultMap">
+        SELECT <include refid="parameterColumns"/>
+        FROM zk_dubbo_method_parameter
+    </select>
+    
+</mapper>

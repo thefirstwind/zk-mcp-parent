@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pajk.mcpmetainfo.persistence.mapper.DubboServiceNodeMapper">
+    
+    <resultMap id="DubboServiceNodeResultMap" type="com.pajk.mcpmetainfo.persistence.entity.DubboServiceNodeEntity">
+        <id property="id" column="id"/>
+        <result property="serviceId" column="service_id"/>
+        <result property="address" column="address"/>
+        <result property="zkPath" column="zk_path"/>
+        <result property="registerTime" column="register_time"/>
+        <result property="lastHeartbeat" column="last_heartbeat"/>
+        <result property="lastSyncTime" column="last_sync_time"/>
+        <result property="createdAt" column="gmt_created"/>
+        <result property="updatedAt" column="gmt_modified"/>
+    </resultMap>
+    
+    <sql id="nodeColumns">
+        id, service_id, address, zk_path, register_time, 
+        last_heartbeat, last_sync_time, gmt_created, gmt_modified
+    </sql>
+    
+    <!-- 插入Dubbo服务节点信息 -->
+    <insert id="insert" parameterType="com.pajk.mcpmetainfo.persistence.entity.DubboServiceNodeEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO zk_dubbo_service_node (
+            service_id, address, zk_path, register_time, 
+            last_heartbeat, last_sync_time, gmt_created, gmt_modified
+        ) VALUES (
+            #{serviceId}, #{address}, #{zkPath}, #{registerTime}, 
+            #{lastHeartbeat}, #{lastSyncTime}, #{createdAt}, #{updatedAt}
+        )
+    </insert>
+    
+    <!-- 更新Dubbo服务节点信息 -->
+    <update id="update" parameterType="com.pajk.mcpmetainfo.persistence.entity.DubboServiceNodeEntity">
+        UPDATE zk_dubbo_service_node SET
+            service_id = #{serviceId},
+            address = #{address},
+            zk_path = #{zkPath},
+            register_time = #{registerTime},
+            last_heartbeat = #{lastHeartbeat},
+            last_sync_time = #{lastSyncTime},
+            gmt_modified = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+    
+    <!-- 删除Dubbo服务节点信息 -->
+    <delete id="deleteById" parameterType="long">
+        DELETE FROM zk_dubbo_service_node WHERE id = #{id}
+    </delete>
+    
+    <!-- 根据ID查找Dubbo服务节点 -->
+    <select id="findById" parameterType="long" resultMap="DubboServiceNodeResultMap">
+        SELECT <include refid="nodeColumns"/>
+        FROM zk_dubbo_service_node
+        WHERE id = #{id}
+    </select>
+    
+    <!-- 根据ZK路径查找Dubbo服务节点 -->
+    <select id="findByZkPath" parameterType="string" resultMap="DubboServiceNodeResultMap">
+        SELECT <include refid="nodeColumns"/>
+        FROM zk_dubbo_service_node
+        WHERE zk_path = #{zkPath}
+    </select>
+    
+    <!-- 根据服务ID查找所有节点 -->
+    <select id="findByServiceId" parameterType="long" resultMap="DubboServiceNodeResultMap">
+        SELECT <include refid="nodeColumns"/>
+        FROM zk_dubbo_service_node
+        WHERE service_id = #{serviceId}
+    </select>
+    
+    <!-- 查找所有Dubbo服务节点 -->
+    <select id="findAll" resultMap="DubboServiceNodeResultMap">
+        SELECT <include refid="nodeColumns"/>
+        FROM zk_dubbo_service_node
+    </select>
+    
+</mapper>

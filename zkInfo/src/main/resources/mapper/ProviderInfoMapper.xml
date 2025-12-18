@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pajk.mcpmetainfo.persistence.mapper.ProviderInfoMapper">
+    
+    <resultMap id="ProviderInfoResultMap" type="com.pajk.mcpmetainfo.persistence.entity.ProviderInfoEntity">
+        <id property="id" column="id"/>
+        <result property="interfaceName" column="interface_name"/>
+        <result property="address" column="address"/>
+        <result property="protocol" column="protocol"/>
+        <result property="version" column="version"/>
+        <result property="group" column="group"/>
+        <result property="application" column="application"/>
+        <result property="methods" column="methods"/>
+        <result property="parameters" column="parameters" typeHandler="com.pajk.mcpmetainfo.persistence.typehandler.JsonMapTypeHandler"/>
+        <result property="zkPath" column="zk_path"/>
+        <result property="registerTime" column="registration_time"/>
+        <result property="lastHeartbeat" column="last_heartbeat_time"/>
+        <result property="online" column="is_online"/>
+        <result property="isHealthy" column="is_healthy"/>
+        <result property="approvalStatus" column="approval_status"/>
+        <result property="approver" column="approver"/>
+        <result property="approvalTime" column="approval_time"/>
+        <result property="approvalComment" column="approval_comment"/>
+        <result property="lastSyncTime" column="last_sync_time"/>
+        <result property="createdAt" column="gmt_created"/>
+        <result property="updatedAt" column="gmt_modified"/>
+    </resultMap>
+    
+    <sql id="providerColumns">
+        id, interface_name, address, protocol, version, `group`, application, methods, parameters, zk_path,
+        registration_time, last_heartbeat_time, is_online, is_healthy,
+        approval_status, approver, approval_time, approval_comment, last_sync_time,
+        gmt_created, gmt_modified
+    </sql>
+    
+    <!-- 插入Provider信息 -->
+    <insert id="insert" parameterType="com.pajk.mcpmetainfo.persistence.entity.ProviderInfoEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO zk_provider_info (
+            interface_name, address, protocol, version, `group`, application, methods, parameters, zk_path,
+            registration_time, last_heartbeat_time, is_online, is_healthy,
+            approval_status, approver, approval_time, approval_comment, last_sync_time,
+            gmt_created, gmt_modified
+        ) VALUES (
+            #{interfaceName}, #{address}, #{protocol}, #{version}, #{group}, #{application}, 
+            #{methods}, #{parameters,typeHandler=com.pajk.mcpmetainfo.persistence.typehandler.JsonMapTypeHandler}, #{zkPath},
+            #{registerTime}, #{lastHeartbeat}, #{online}, #{isHealthy},
+            #{approvalStatus}, #{approver}, #{approvalTime}, #{approvalComment}, #{lastSyncTime},
+            #{createdAt}, #{updatedAt}
+        )
+    </insert>
+    
+    <!-- 更新Provider信息 -->
+    <update id="update" parameterType="com.pajk.mcpmetainfo.persistence.entity.ProviderInfoEntity">
+        UPDATE zk_provider_info SET
+            interface_name = #{interfaceName},
+            address = #{address},
+            protocol = #{protocol},
+            version = #{version},
+            `group` = #{group},
+            application = #{application},
+            methods = #{methods},
+            parameters = #{parameters,typeHandler=com.pajk.mcpmetainfo.persistence.typehandler.JsonMapTypeHandler},
+            zk_path = #{zkPath},
+            registration_time = #{registerTime},
+            last_heartbeat_time = #{lastHeartbeat},
+            is_online = #{online},
+            is_healthy = #{isHealthy},
+            approval_status = #{approvalStatus},
+            approver = #{approver},
+            approval_time = #{approvalTime},
+            approval_comment = #{approvalComment},
+            last_sync_time = #{lastSyncTime},
+            gmt_modified = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+    
+    <!-- 根据ID查找Provider -->
+    <select id="findById" parameterType="long" resultMap="ProviderInfoResultMap">
+        SELECT <include refid="providerColumns"/>
+        FROM zk_provider_info
+        WHERE id = #{id}
+    </select>
+    
+    <!-- 根据zkPath查找Provider -->
+    <select id="findByZkPath" resultMap="ProviderInfoResultMap">
+        SELECT <include refid="providerColumns"/>
+        FROM zk_provider_info
+        WHERE zk_path = #{zkPath}
+    </select>
+    
+    <!-- 根据接口名、地址、协议、版本查找Provider -->
+    <select id="findByInterfaceAddressProtocolVersion" resultMap="ProviderInfoResultMap">
+        SELECT <include refid="providerColumns"/>
+        FROM zk_provider_info
+        WHERE interface_name = #{interfaceName} AND address = #{address} AND protocol = #{protocol} AND version = #{version}
+    </select>
+    
+    <!-- 查找所有已审批的Provider -->
+    <select id="findApprovedProviders" resultMap="ProviderInfoResultMap">
+        SELECT <include refid="providerColumns"/>
+        FROM zk_provider_info
+        WHERE approval_status = 'APPROVED'
+    </select>
+    
+    <!-- 根据审批状态查找Provider -->
+    <select id="findByApprovalStatus" parameterType="string" resultMap="ProviderInfoResultMap">
+        SELECT <include refid="providerColumns"/>
+        FROM zk_provider_info
+        WHERE approval_status = #{approvalStatus}
+    </select>
+    
+    <!-- 查找所有Provider -->
+    <select id="findAll" resultMap="ProviderInfoResultMap">
+        SELECT <include refid="providerColumns"/>
+        FROM zk_provider_info
+    </select>
+    
+    <!-- 标记 Provider 为离线 -->
+    <update id="markProviderOffline">
+        UPDATE zk_provider_info SET
+            is_online = 0,
+            last_heartbeat_time = #{offlineTime},
+            gmt_modified = NOW()
+        WHERE zk_path = #{zkPath}
+    </update>
+    
+    <!-- 更新最后心跳时间 -->
+    <update id="updateLastHeartbeat">
+        UPDATE zk_provider_info SET
+            last_heartbeat_time = #{lastHeartbeat},
+            is_online = 1,
+            gmt_modified = NOW()
+        WHERE zk_path = #{zkPath}
+    </update>
+    
+    <!-- 更新 Provider 健康状态 -->
+    <update id="updateProviderHealthStatus">
+        UPDATE zk_provider_info SET
+            is_healthy = #{healthy},
+            gmt_modified = NOW()
+        WHERE zk_path = #{zkPath}
+    </update>
+    
+    <!-- 查找健康检查超时的 Provider（超过指定分钟数未更新心跳） -->
+    <select id="findProvidersByHealthCheckTimeout" resultMap="ProviderInfoResultMap">
+        SELECT <include refid="providerColumns"/>
+        FROM zk_provider_info
+        WHERE is_online = 1
+          AND last_heartbeat_time IS NOT NULL
+          AND TIMESTAMPDIFF(MINUTE, last_heartbeat_time, NOW()) > #{timeoutMinutes}
+    </select>
+    
+    <!-- 删除指定时间之前的离线 Provider 记录 -->
+    <delete id="deleteOfflineProvidersBefore">
+        DELETE FROM zk_provider_info
+        WHERE is_online = 0
+          AND last_heartbeat_time IS NOT NULL
+          AND last_heartbeat_time < #{beforeTime}
+    </delete>
+    
+    <!-- 统计在线 Provider 数量 -->
+    <select id="countOnlineProviders" resultType="int">
+        SELECT COUNT(*) FROM zk_provider_info WHERE is_online = 1
+    </select>
+    
+    <!-- 统计健康的 Provider 数量 -->
+    <select id="countHealthyProviders" resultType="int">
+        SELECT COUNT(*) FROM zk_provider_info WHERE is_online = 1 AND is_healthy = 1
+    </select>
+    
+</mapper>
