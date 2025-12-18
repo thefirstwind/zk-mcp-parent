@@ -157,7 +157,7 @@
         DELETE FROM zk_provider_info
         WHERE is_online = 0
           AND last_heartbeat_time IS NOT NULL
-          AND last_heartbeat_time < #{beforeTime}
+          AND last_heartbeat_time &lt; #{beforeTime}
     </delete>
     
     <!-- 统计在线 Provider 数量 -->

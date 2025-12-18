@@ -7,15 +7,21 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.context.annotation.ComponentScan;
+import org.mybatis.spring.boot.autoconfigure.MybatisAutoConfiguration;
 
 /**
  * ZkInfo应用启动类
  */
 @Slf4j
-@SpringBootApplication(exclude = {McpWebFluxServerAutoConfiguration.class})
+@SpringBootApplication(exclude = {McpWebFluxServerAutoConfiguration.class,MybatisAutoConfiguration.class})
 @EnableScheduling
 @EnableAsync
 @EnableConfigurationProperties
+@ComponentScan(basePackages = {
+    "com.pajk.mcpmetainfo.core",
+    "com.pajk.mcpmetainfo.persistence"
+})
 public class ZkInfoApplication {
     
     public static void main(String[] args) {
