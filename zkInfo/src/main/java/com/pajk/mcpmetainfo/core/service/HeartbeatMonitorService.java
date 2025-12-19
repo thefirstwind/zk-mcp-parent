@@ -46,7 +46,7 @@ import java.util.concurrent.TimeUnit;
  * @since 2024-01-01
  */
 @Slf4j
-@Service
+// @Service
 public class HeartbeatMonitorService {
     
     @Autowired

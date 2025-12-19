@@ -5,9 +5,13 @@ import com.pajk.mcpmetainfo.core.model.ProviderInfo;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
-import org.apache.curator.framework.recipes.cache.CuratorCache;
+import org.apache.curator.framework.recipes.cache.PathChildrenCache;
+import org.apache.curator.framework.recipes.cache.PathChildrenCacheEvent;
+import org.apache.curator.framework.recipes.cache.PathChildrenCacheListener;
 import org.apache.curator.framework.recipes.cache.ChildData;
-import org.apache.curator.retry.ExponentialBackoffRetry;
+import org.apache.curator.framework.state.ConnectionState;
+import org.apache.curator.framework.state.ConnectionStateListener;
+import org.apache.curator.retry.RetryForever;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -15,7 +19,6 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -63,16 +66,22 @@ public class ZooKeeperService {
     private ServiceCollectionFilterService filterService;
     
     private CuratorFramework client;
-    private final ConcurrentHashMap<String, CuratorCache> pathCaches = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, PathChildrenCache> pathCaches = new ConcurrentHashMap<>();
     
     @PostConstruct
     public void init() {
         try {
             // 创建ZooKeeper客户端
-            ExponentialBackoffRetry retryPolicy = new ExponentialBackoffRetry(
-                    config.getRetry().getBaseSleepTime(),
-                    config.getRetry().getMaxRetries()
-            );
+            // 对于连接重试，使用RetryForever确保连接能够持续重试
+            // 对于操作重试，使用ExponentialBackoffRetry
+            // 这里使用RetryForever来处理连接问题，它会无限重试直到连接成功
+            RetryForever retryPolicy = new RetryForever(config.getRetry().getBaseSleepTime());
+            
+            log.info("初始化ZooKeeper客户端 - 连接地址: {}, 会话超时: {}ms, 连接超时: {}ms, 重试间隔: {}ms", 
+                    config.getConnectString(), 
+                    config.getSessionTimeout(), 
+                    config.getConnectionTimeout(),
+                    config.getRetry().getBaseSleepTime());
             
             client = CuratorFrameworkFactory.builder()
                     .connectString(config.getConnectString())
@@ -82,6 +91,29 @@ public class ZooKeeperService {
                     .build();
             
             client.start();
+            
+            // 添加连接状态监听器
+            client.getConnectionStateListenable().addListener(new ConnectionStateListener() {
+                @Override
+                public void stateChanged(CuratorFramework client, ConnectionState newState) {
+                    logConnectionStateChange(newState);
+                    
+                    // 当重新连接时，确保所有缓存都正常工作
+                    if (newState == ConnectionState.RECONNECTED) {
+                        log.info("ZooKeeper连接已恢复，检查缓存状态...");
+                        // PathChildrenCache会自动恢复，但我们可以验证一下
+                        verifyCachesAfterReconnect();
+                    } else if (newState == ConnectionState.SUSPENDED) {
+                        log.warn("ZooKeeper连接已暂停，等待重连... (连接地址: {})", config.getConnectString());
+                        // 记录暂停时间，用于诊断
+                        logConnectionDiagnostics();
+                    } else if (newState == ConnectionState.LOST) {
+                        log.error("ZooKeeper会话已丢失，需要重新初始化");
+                        // 会话丢失时，需要重新初始化
+                        handleSessionLost();
+                    }
+                }
+            });
             
             // 等待连接建立
             client.blockUntilConnected();
@@ -99,7 +131,7 @@ public class ZooKeeperService {
     /**
      * 开始监听Provider节点
      */
-    private void startWatchingProviders() {
+    public void startWatchingProviders() {
         try {
             String providersPath = config.getBasePath();
             
@@ -155,55 +187,61 @@ public class ZooKeeperService {
             // 首先加载已存在的provider信息
             loadExistingProviders(providersPath, serviceName);
             
-            CuratorCache cache = CuratorCache.build(client, providersPath);
+            // 使用 PathChildrenCache 监听子节点变化（Curator 4.x 兼容）
+            PathChildrenCache cache = new PathChildrenCache(client, providersPath, true);
             
-            cache.listenable().addListener((type, oldData, data) -> {
-                try {
-                    switch (type) {
-                        case NODE_CREATED:
-                            if (data != null && data.getPath().startsWith(providersPath + "/")) {
-                                String providerUrl = URLDecoder.decode(
-                                        data.getPath().substring(providersPath.length() + 1),
-                                        StandardCharsets.UTF_8
-                                );
-                                
-                                // 应用过滤规则：只有通过过滤的服务才会被处理
-                                ProviderInfo providerInfo = parseProviderUrl(providerUrl, serviceName);
-                                
-                                if (providerInfo != null) {
-                                    // 应用三层过滤机制
-                                    if (filterService == null || filterService.shouldCollect(
-                                            providerInfo.getInterfaceName(),
-                                            providerInfo.getVersion(),
-                                            providerInfo.getGroup())) {
-                                        handleProviderAdded(data, serviceName);
-                                    } else {
-                                        log.debug("Provider {}/{} 被过滤规则排除，跳过处理", 
+            cache.getListenable().addListener(new PathChildrenCacheListener() {
+                @Override
+                public void childEvent(CuratorFramework client, PathChildrenCacheEvent event) throws Exception {
+                    try {
+                        ChildData data = event.getData();
+                        
+                        switch (event.getType()) {
+                            case CHILD_ADDED:
+                                if (data != null && data.getPath().startsWith(providersPath + "/")) {
+                                    String providerUrl = URLDecoder.decode(
+                                            data.getPath().substring(providersPath.length() + 1),
+                                            StandardCharsets.UTF_8
+                                    );
+                                    
+                                    // 应用过滤规则：只有通过过滤的服务才会被处理
+                                    ProviderInfo providerInfo = parseProviderUrl(providerUrl, serviceName);
+                                    
+                                    if (providerInfo != null) {
+                                        // 应用三层过滤机制
+                                        if (filterService == null || filterService.shouldCollect(
                                                 providerInfo.getInterfaceName(),
-                                                providerInfo.getVersion());
+                                                providerInfo.getVersion(),
+                                                providerInfo.getGroup())) {
+                                            handleProviderAdded(data, serviceName);
+                                        } else {
+                                            log.debug("Provider {}/{} 被过滤规则排除，跳过处理", 
+                                                    providerInfo.getInterfaceName(),
+                                                    providerInfo.getVersion());
+                                        }
                                     }
                                 }
-                            }
-                            break;
-                        case NODE_DELETED:
-                            if (oldData != null && oldData.getPath().startsWith(providersPath + "/")) {
-                                handleProviderRemoved(oldData, serviceName);
-                            }
-                            break;
-                        case NODE_CHANGED:
-                            if (data != null && data.getPath().startsWith(providersPath + "/")) {
-                                handleProviderUpdated(data, serviceName);
-                            }
-                            break;
-                        default:
-                            break;
+                                break;
+                            case CHILD_REMOVED:
+                                if (data != null && data.getPath().startsWith(providersPath + "/")) {
+                                    handleProviderRemoved(data, serviceName);
+                                }
+                                break;
+                            case CHILD_UPDATED:
+                                if (data != null && data.getPath().startsWith(providersPath + "/")) {
+                                    handleProviderUpdated(data, serviceName);
+                                }
+                                break;
+                            default:
+                                break;
+                        }
+                    } catch (Exception e) {
+                        log.error("处理Provider事件失败", e);
                     }
-                } catch (Exception e) {
-                    log.error("处理Provider事件失败", e);
                 }
             });
             
-            cache.start();
+            cache.start(PathChildrenCache.StartMode.BUILD_INITIAL_CACHE);
             pathCaches.put(providersPath, cache);
             
             log.info("开始监听服务 {} 的Provider变化: {}", serviceName, providersPath);
@@ -248,20 +286,26 @@ public class ZooKeeperService {
      */
     private void watchNewServices(String basePath) {
         try {
-            CuratorCache serviceCache = CuratorCache.build(client, basePath);
+            // 使用 PathChildrenCache 监听子节点变化（Curator 4.x 兼容）
+            PathChildrenCache serviceCache = new PathChildrenCache(client, basePath, true);
             
-            serviceCache.listenable().addListener((type, oldData, data) -> {
-                if (type == org.apache.curator.framework.recipes.cache.CuratorCacheListener.Type.NODE_CREATED && 
-                    data != null && data.getPath().startsWith(basePath + "/")) {
-                    String serviceName = data.getPath().substring(basePath.length() + 1);
-                    log.info("发现新服务: {}", serviceName);
-                    
-                    String servicePath = basePath + "/" + serviceName;
-                    watchServiceProviders(servicePath, serviceName);
+            serviceCache.getListenable().addListener(new PathChildrenCacheListener() {
+                @Override
+                public void childEvent(CuratorFramework client, PathChildrenCacheEvent event) throws Exception {
+                    if (event.getType() == PathChildrenCacheEvent.Type.CHILD_ADDED) {
+                        ChildData data = event.getData();
+                        if (data != null && data.getPath().startsWith(basePath + "/")) {
+                            String serviceName = data.getPath().substring(basePath.length() + 1);
+                            log.info("发现新服务: {}", serviceName);
+                            
+                            String servicePath = basePath + "/" + serviceName;
+                            watchServiceProviders(servicePath, serviceName);
+                        }
+                    }
                 }
             });
             
-            serviceCache.start();
+            serviceCache.start(PathChildrenCache.StartMode.BUILD_INITIAL_CACHE);
             pathCaches.put(basePath, serviceCache);
             
         } catch (Exception e) {
@@ -480,11 +524,100 @@ public class ZooKeeperService {
         return pathCaches.containsKey(path);
     }
     
+    /**
+     * 记录连接状态变化
+     */
+    private void logConnectionStateChange(ConnectionState newState) {
+        switch (newState) {
+            case CONNECTED:
+                log.info("ZooKeeper连接状态: CONNECTED");
+                break;
+            case SUSPENDED:
+                log.warn("ZooKeeper连接状态: SUSPENDED (连接已暂停)");
+                break;
+            case RECONNECTED:
+                log.info("ZooKeeper连接状态: RECONNECTED (连接已恢复)");
+                break;
+            case LOST:
+                log.error("ZooKeeper连接状态: LOST (会话已丢失)");
+                break;
+            case READ_ONLY:
+                log.warn("ZooKeeper连接状态: READ_ONLY (只读模式)");
+                break;
+            default:
+                log.info("ZooKeeper连接状态: {}", newState);
+                break;
+        }
+    }
+    
+    /**
+     * 验证重连后的缓存状态
+     */
+    private void verifyCachesAfterReconnect() {
+        try {
+            int activeCaches = 0;
+            for (Map.Entry<String, PathChildrenCache> entry : pathCaches.entrySet()) {
+                PathChildrenCache cache = entry.getValue();
+                if (cache != null) {
+                    activeCaches++;
+                }
+            }
+            log.info("重连后验证: 当前有 {} 个活跃的缓存监听器", activeCaches);
+        } catch (Exception e) {
+            log.error("验证缓存状态失败", e);
+        }
+    }
+    
+    /**
+     * 记录连接诊断信息
+     */
+    private void logConnectionDiagnostics() {
+        try {
+            if (client != null) {
+                boolean isConnected = client.getZookeeperClient().isConnected();
+                String zkState = client.getZookeeperClient().getZooKeeper().getState().toString();
+                log.debug("连接诊断 - 是否连接: {}, ZooKeeper状态: {}, 连接地址: {}", 
+                        isConnected, zkState, config.getConnectString());
+            }
+        } catch (Exception e) {
+            log.debug("获取连接诊断信息失败", e);
+        }
+    }
+    
+    /**
+     * 处理会话丢失
+     */
+    private void handleSessionLost() {
+        log.warn("检测到ZooKeeper会话丢失，尝试重新初始化...");
+        try {
+            // 关闭所有现有缓存
+            for (PathChildrenCache cache : pathCaches.values()) {
+                try {
+                    cache.close();
+                } catch (Exception e) {
+                    log.warn("关闭缓存失败", e);
+                }
+            }
+            pathCaches.clear();
+            
+            // 等待连接恢复
+            if (client != null) {
+                client.blockUntilConnected();
+                log.info("ZooKeeper连接已恢复，重新建立监听...");
+                
+                // 重新开始监听
+                startWatchingProviders();
+            }
+        } catch (Exception e) {
+            log.error("重新初始化ZooKeeper监听失败", e);
+        }
+    }
+    
     @PreDestroy
     public void destroy() {
         try {
             // 关闭所有缓存
-            for (CuratorCache cache : pathCaches.values()) {
+            for (PathChildrenCache cache : pathCaches.values()) {
                 cache.close();
             }
             pathCaches.clear();

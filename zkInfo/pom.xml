@@ -37,16 +37,35 @@
         </dependency>
 
         <!-- ZooKeeper Client -->
+        <!-- 使用 Curator 4.3.0 以兼容 ZooKeeper 3.5 服务器 -->
+        <!-- Curator 5.x 自带 ZooKeeper 3.7.1 客户端，与服务器 3.5 可能存在协议不兼容 -->
         <dependency>
             <groupId>org.apache.curator</groupId>
             <artifactId>curator-framework</artifactId>
-            <version>5.5.0</version>
+            <version>4.3.0</version>
         </dependency>
         
         <dependency>
             <groupId>org.apache.curator</groupId>
             <artifactId>curator-recipes</artifactId>
-            <version>5.5.0</version>
+            <version>4.3.0</version>
+        </dependency>
+        
+        <!-- 显式指定 ZooKeeper 客户端版本为 3.5.x 以匹配服务器版本 -->
+        <dependency>
+            <groupId>org.apache.zookeeper</groupId>
+            <artifactId>zookeeper</artifactId>
+            <version>3.5.10</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-log4j12</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>log4j</groupId>
+                    <artifactId>log4j</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <!-- JSON Processing -->
@@ -110,6 +129,20 @@
             <groupId>org.apache.dubbo</groupId>
             <artifactId>dubbo-registry-zookeeper</artifactId>
             <version>2.7.22</version>
+            <!-- 排除旧版本的 curator-x-discovery，使用我们指定的版本 -->
+            <exclusions>
+                <exclusion>
+                    <groupId>org.apache.curator</groupId>
+                    <artifactId>curator-x-discovery</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        
+        <!-- 添加兼容的 curator-x-discovery -->
+        <dependency>
+            <groupId>org.apache.curator</groupId>
+            <artifactId>curator-x-discovery</artifactId>
+            <version>4.3.0</version>
         </dependency>
 
         <!-- Database Dependencies -->

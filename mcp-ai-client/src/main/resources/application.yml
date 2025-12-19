@@ -36,7 +36,7 @@ logging:
     com.zkinfo: DEBUG
     org.springframework.ai: DEBUG
   pattern:
-    console: '%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n'
+    console: '%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36}:%line - %msg%n'
   file:
     name: logs/mcp-ai-client.log
     max-size: 10MB

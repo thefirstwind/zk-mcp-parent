@@ -415,6 +415,46 @@ public class ApiController {
     }
     
     /**
+     * 触发开始监听Provider节点
+     * 
+     * 手动触发ZooKeeper Provider节点的监听，用于重新初始化监听或修复监听状态
+     * 
+     * @return 操作结果
+     */
+    @PostMapping("/zk/start-watching")
+    public ResponseEntity<Map<String, Object>> startWatchingProviders() {
+        try {
+            log.info("手动触发开始监听Provider节点");
+            
+            // 检查ZooKeeper连接状态
+            if (!zooKeeperService.isConnected()) {
+                Map<String, Object> error = new HashMap<>();
+                error.put("success", false);
+                error.put("error", "ZooKeeper未连接，无法开始监听");
+                return ResponseEntity.status(503).body(error);
+            }
+            
+            // 触发监听
+            zooKeeperService.startWatchingProviders();
+            
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("message", "已成功开始监听Provider节点");
+            result.put("zkConnected", zooKeeperService.isConnected());
+            
+            return ResponseEntity.ok(result);
+            
+        } catch (Exception e) {
+            log.error("触发开始监听Provider节点失败", e);
+            Map<String, Object> error = new HashMap<>();
+            error.put("success", false);
+            error.put("error", "触发监听失败: " + e.getMessage());
+            error.put("exceptionType", e.getClass().getSimpleName());
+            return ResponseEntity.status(500).body(error);
+        }
+    }
+    
+    /**
      * MCP 调用请求实体
      */
     public static class McpCallRequest {

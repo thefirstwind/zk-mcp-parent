@@ -19,9 +19,9 @@ spring:
     deserialization:
       fail-on-unknown-properties: false
   datasource:
-    url: jdbc:mysql://${MYSQL_HOST:192.168.0.101}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:mcp_bridge}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=GMT%2B8&allowPublicKeyRetrieval=true
-    username: ${MYSQL_USERNAME:mcp_user}
-    password: ${MYSQL_PASSWORD:mcp_user}
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:mcp_bridge}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=GMT%2B8&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:qwer1234}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 20
@@ -56,17 +56,17 @@ mybatis:
 
 # ZooKeeper配置
 zookeeper:
-  connect-string: ${ZK_CONNECT_STRING:192.168.0.101:2181}
-  session-timeout: 30000
-  connection-timeout: 15000
+  connect-string: ${ZK_CONNECT_STRING:localhost:2181}
+  session-timeout: 60000  # 增加到60秒，减少会话超时导致的连接中断
+  connection-timeout: 30000  # 增加到30秒，给连接更多时间
   base-path: /dubbo
   retry:
-    max-retries: 3
-    base-sleep-time: 1000
+    max-retries: 3  # 注意：使用RetryForever时此参数不再使用
+    base-sleep-time: 3000  # 增加到3秒，减少重试频率，降低服务器压力
 
 # Nacos配置
 nacos:
-  server-addr: ${NACOS_SERVER_ADDR:192.168.0.101:8848}
+  server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
   namespace: ${NACOS_NAMESPACE:public}
   username: ${NACOS_USERNAME:nacos}
   password: ${NACOS_PASSWORD:nacos}
@@ -91,8 +91,8 @@ logging:
     org.apache.curator: INFO
     org.apache.zookeeper: WARN
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n"
-    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n"
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50}:%line - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50}:%line - %msg%n"
   file:
     name: logs/zkinfo.log
     max-size: 100MB
@@ -149,7 +149,7 @@ spring:
       on-profile: dev
 
 zookeeper:
-  connect-string: ${ZK_CONNECT_STRING:192.168.0.101:2181}
+  connect-string: ${ZK_CONNECT_STRING:localhost:2181}
 
 logging:
   level:
@@ -163,7 +163,7 @@ spring:
       on-profile: prod
 
 zookeeper:
-  connect-string: ${ZK_CONNECT_STRING:192.168.0.101:2181}
+  connect-string: ${ZK_CONNECT_STRING:localhost:2181}
 
 logging:
   level:

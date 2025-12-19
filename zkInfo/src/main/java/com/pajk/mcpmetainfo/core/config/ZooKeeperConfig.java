@@ -19,13 +19,15 @@ public class ZooKeeperConfig {
     
     /**
      * 会话超时时间(毫秒)
+     * 默认60秒，减少会话超时导致的连接中断
      */
-    private int sessionTimeout = 30000;
+    private int sessionTimeout = 60000;
     
     /**
      * 连接超时时间(毫秒)
+     * 默认30秒，给连接更多时间
      */
-    private int connectionTimeout = 15000;
+    private int connectionTimeout = 30000;
     
     /**
      * 基础路径
@@ -46,7 +48,9 @@ public class ZooKeeperConfig {
         
         /**
          * 基础睡眠时间(毫秒)
+         * 默认3秒，减少重试频率，降低服务器压力
+         * 注意：使用RetryForever时，maxRetries参数不再使用
          */
-        private int baseSleepTime = 1000;
+        private int baseSleepTime = 3000;
     }
 }
