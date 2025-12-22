@@ -65,6 +65,9 @@ public class ZooKeeperService {
     @Autowired(required = false)
     private ServiceCollectionFilterService filterService;
     
+    @Autowired
+    private DubboServiceDbService dubboServiceDbService;
+    
     private CuratorFramework client;
     private final ConcurrentHashMap<String, PathChildrenCache> pathCaches = new ConcurrentHashMap<>();
     
@@ -92,29 +95,6 @@ public class ZooKeeperService {
             
             client.start();
             
-            // 添加连接状态监听器
-            client.getConnectionStateListenable().addListener(new ConnectionStateListener() {
-                @Override
-                public void stateChanged(CuratorFramework client, ConnectionState newState) {
-                    logConnectionStateChange(newState);
-                    
-                    // 当重新连接时，确保所有缓存都正常工作
-                    if (newState == ConnectionState.RECONNECTED) {
-                        log.info("ZooKeeper连接已恢复，检查缓存状态...");
-                        // PathChildrenCache会自动恢复，但我们可以验证一下
-                        verifyCachesAfterReconnect();
-                    } else if (newState == ConnectionState.SUSPENDED) {
-                        log.warn("ZooKeeper连接已暂停，等待重连... (连接地址: {})", config.getConnectString());
-                        // 记录暂停时间，用于诊断
-                        logConnectionDiagnostics();
-                    } else if (newState == ConnectionState.LOST) {
-                        log.error("ZooKeeper会话已丢失，需要重新初始化");
-                        // 会话丢失时，需要重新初始化
-                        handleSessionLost();
-                    }
-                }
-            });
-            
             // 等待连接建立
             client.blockUntilConnected();
             log.info("ZooKeeper客户端连接成功: {}", config.getConnectString());
@@ -130,6 +110,7 @@ public class ZooKeeperService {
     
     /**
      * 开始监听Provider节点
+     * 注意：只监听已审批的服务（状态为APPROVED）
      */
     public void startWatchingProviders() {
         try {
@@ -145,22 +126,35 @@ public class ZooKeeperService {
             List<String> services = client.getChildren().forPath(providersPath);
             log.info("发现 {} 个服务接口", services.size());
             
-            // 优化：只监听项目包含的服务（如果启用了过滤）
+            // 获取所有已审批的服务
+            List<com.pajk.mcpmetainfo.persistence.entity.DubboServiceEntity> approvedServices = 
+                dubboServiceDbService.findApprovedServices();
+            java.util.Set<String> approvedServiceNames = approvedServices.stream()
+                .map(com.pajk.mcpmetainfo.persistence.entity.DubboServiceEntity::getInterfaceName)
+                .collect(java.util.stream.Collectors.toSet());
+            
+            log.info("已审批的服务数量: {}", approvedServiceNames.size());
+            
+            // 只监听已审批的服务
             int watchedCount = 0;
+            int savedCount = 0;
             for (String service : services) {
                 String servicePath = providersPath + "/" + service;
                 
-                // 检查服务是否在项目中（快速检查，不检查版本）
-                if (filterService != null && !isServiceInProjects(service)) {
-                    log.debug("服务 {} 不在任何项目中，跳过监听", service);
-                    continue;
+                // 检查服务是否已审批
+                if (approvedServiceNames.contains(service)) {
+                    // 已审批的服务，创建watcher
+                    watchServiceProviders(servicePath, service);
+                    watchedCount++;
+                } else {
+                    // 未审批的服务，只保存到数据库，不创建watcher
+                    // 在初始化扫描时，所有服务都应该保存到数据库，状态为INIT
+                    saveServiceProvidersToDatabase(servicePath, service);
+                    savedCount++;
                 }
-                
-                watchServiceProviders(servicePath, service);
-                watchedCount++;
             }
             
-            log.info("实际监听 {} 个服务接口（已过滤 {} 个）", watchedCount, services.size() - watchedCount);
+            log.info("实际监听 {} 个已审批服务接口，保存 {} 个未审批服务到数据库", watchedCount, savedCount);
             
             // 监听新服务的添加
             watchNewServices(providersPath);
@@ -253,6 +247,7 @@ public class ZooKeeperService {
     
     /**
      * 加载已存在的Provider信息
+     * 在初始化扫描时，保存到数据库，状态为INIT
      */
     private void 
     loadExistingProviders(String providersPath, String serviceName) {
@@ -270,7 +265,27 @@ public class ZooKeeperService {
                     ProviderInfo providerInfo = parseProviderUrl(providerUrl, serviceName);
                     if (providerInfo != null) {
                         providerInfo.setZkPath(providerPath);
-                        providerService.addProvider(providerInfo);
+                        
+                        // 保存到数据库，状态为INIT
+                        try {
+                            dubboServiceDbService.saveOrUpdateServiceWithNode(providerInfo);
+                            log.debug("成功保存Provider到数据库: {}", providerPath);
+                        } catch (Exception e) {
+                            log.error("保存Provider到数据库失败: {}", providerPath, e);
+                        }
+                        
+                        // 只有已审批的服务才添加到ProviderService进行监控
+                        // 检查服务是否已审批
+                        com.pajk.mcpmetainfo.persistence.entity.DubboServiceEntity serviceEntity = 
+                            dubboServiceDbService.findByServiceKey(providerInfo).orElse(null);
+                        if (serviceEntity != null && 
+                            serviceEntity.getApprovalStatus() == 
+                            com.pajk.mcpmetainfo.persistence.entity.DubboServiceEntity.ApprovalStatus.APPROVED) {
+                            providerService.addProvider(providerInfo);
+                            log.debug("添加已审批Provider到服务监控: {}", providerPath);
+                        } else {
+                            log.debug("跳过未审批Provider的服务监控: {}", providerPath);
+                        }
                     }
                 } catch (Exception e) {
                     log.error("加载Provider失败: {}", providerNode, e);
@@ -282,7 +297,52 @@ public class ZooKeeperService {
     }
     
     /**
+     * 保存服务Provider到数据库（不创建watcher）
+     * 用于初始化扫描时，保存未审批的服务
+     */
+    private void saveServiceProvidersToDatabase(String servicePath, String serviceName) {
+        try {
+            String providersPath = servicePath + "/providers";
+            
+            // 检查providers路径是否存在
+            if (client.checkExists().forPath(providersPath) == null) {
+                log.debug("服务 {} 的providers路径不存在: {}", serviceName, providersPath);
+                return;
+            }
+            
+            // 加载已存在的provider信息并保存到数据库
+            List<String> existingProviders = client.getChildren().forPath(providersPath);
+            log.info("发现服务 {} 已有 {} 个Provider，保存到数据库", serviceName, existingProviders.size());
+            
+            for (String providerNode : existingProviders) {
+                try {
+                    String providerPath = providersPath + "/" + providerNode;
+                    String providerUrl = URLDecoder.decode(providerNode, StandardCharsets.UTF_8);
+                    
+                    ProviderInfo providerInfo = parseProviderUrl(providerUrl, serviceName);
+                    if (providerInfo != null) {
+                        providerInfo.setZkPath(providerPath);
+                        
+                        // 保存到数据库，状态为INIT
+                        try {
+                            dubboServiceDbService.saveOrUpdateServiceWithNode(providerInfo);
+                            log.debug("成功保存未审批Provider到数据库: {}", providerPath);
+                        } catch (Exception e) {
+                            log.error("保存未审批Provider到数据库失败: {}", providerPath, e);
+                        }
+                    }
+                } catch (Exception e) {
+                    log.error("保存Provider到数据库失败: {}", providerNode, e);
+                }
+            }
+        } catch (Exception e) {
+            log.error("保存服务 {} 的Provider到数据库失败", serviceName, e);
+        }
+    }
+    
+    /**
      * 监听新服务的添加
+     * 只有已审批的服务才创建watcher，未审批的服务只保存到数据库
      */
     private void watchNewServices(String basePath) {
         try {
@@ -299,7 +359,23 @@ public class ZooKeeperService {
                             log.info("发现新服务: {}", serviceName);
                             
                             String servicePath = basePath + "/" + serviceName;
-                            watchServiceProviders(servicePath, serviceName);
+                            
+                            // 检查服务是否已审批
+                            List<com.pajk.mcpmetainfo.persistence.entity.DubboServiceEntity> approvedServices = 
+                                dubboServiceDbService.findApprovedServices();
+                            java.util.Set<String> approvedServiceNames = approvedServices.stream()
+                                .map(com.pajk.mcpmetainfo.persistence.entity.DubboServiceEntity::getInterfaceName)
+                                .collect(java.util.stream.Collectors.toSet());
+                            
+                            if (approvedServiceNames.contains(serviceName)) {
+                                // 已审批的服务，创建watcher
+                                watchServiceProviders(servicePath, serviceName);
+                                log.info("为新发现的已审批服务 {} 创建watcher", serviceName);
+                            } else {
+                                // 未审批的服务，只保存到数据库
+                                saveServiceProvidersToDatabase(servicePath, serviceName);
+                                log.info("新发现的服务 {} 未审批，已保存到数据库", serviceName);
+                            }
                         }
                     }
                 }
@@ -316,6 +392,7 @@ public class ZooKeeperService {
     
     /**
      * 处理Provider添加事件
+     * 保存到数据库，只有已审批的服务才添加到ProviderService进行监控
      */
     private void handleProviderAdded(ChildData data, String serviceName) {
         try {
@@ -329,11 +406,34 @@ public class ZooKeeperService {
             ProviderInfo providerInfo = parseProviderUrl(providerUrl, serviceName);
             if (providerInfo != null) {
                 providerInfo.setZkPath(data.getPath());
-                providerService.addProvider(providerInfo);
                 
-                // 自动注册到Nacos（如果启用）
-                if (autoRegistrationService != null) {
-                    autoRegistrationService.handleProviderAdded(providerInfo);
+                // 保存到数据库
+                try {
+                    dubboServiceDbService.saveOrUpdateServiceWithNode(providerInfo);
+                    log.debug("成功保存Provider到数据库: {}", data.getPath());
+                } catch (Exception e) {
+                    log.error("保存Provider到数据库失败: {}", data.getPath(), e);
+                }
+                
+                // 只有已审批的服务才添加到ProviderService进行监控
+                java.util.Optional<com.pajk.mcpmetainfo.persistence.entity.DubboServiceEntity> serviceEntityOpt = 
+                    dubboServiceDbService.findByServiceKey(providerInfo);
+                if (serviceEntityOpt.isPresent()) {
+                    com.pajk.mcpmetainfo.persistence.entity.DubboServiceEntity serviceEntity = serviceEntityOpt.get();
+                    if (serviceEntity.getApprovalStatus() == 
+                        com.pajk.mcpmetainfo.persistence.entity.DubboServiceEntity.ApprovalStatus.APPROVED) {
+                        providerService.addProvider(providerInfo);
+                        log.debug("添加已审批Provider到服务监控: {}", data.getPath());
+                        
+                        // 自动注册到Nacos（如果启用）
+                        if (autoRegistrationService != null) {
+                            autoRegistrationService.handleProviderAdded(providerInfo);
+                        }
+                    } else {
+                        log.debug("跳过未审批Provider的服务监控: {}", data.getPath());
+                    }
+                } else {
+                    log.debug("服务信息不存在，跳过监控: {}", data.getPath());
                 }
             }
             
@@ -368,6 +468,7 @@ public class ZooKeeperService {
     
     /**
      * 处理Provider更新事件
+     * 保存到数据库，只有已审批的服务才更新到ProviderService
      */
     private void handleProviderUpdated(ChildData data, String serviceName) {
         try {
@@ -381,11 +482,34 @@ public class ZooKeeperService {
             ProviderInfo providerInfo = parseProviderUrl(providerUrl, serviceName);
             if (providerInfo != null) {
                 providerInfo.setZkPath(data.getPath());
-                providerService.updateProvider(providerInfo);
                 
-                // 自动更新Nacos注册（如果启用）
-                if (autoRegistrationService != null) {
-                    autoRegistrationService.handleProviderUpdated(providerInfo);
+                // 保存到数据库
+                try {
+                    dubboServiceDbService.saveOrUpdateServiceWithNode(providerInfo);
+                    log.debug("成功更新Provider到数据库: {}", data.getPath());
+                } catch (Exception e) {
+                    log.error("更新Provider到数据库失败: {}", data.getPath(), e);
+                }
+                
+                // 只有已审批的服务才更新到ProviderService
+                java.util.Optional<com.pajk.mcpmetainfo.persistence.entity.DubboServiceEntity> serviceEntityOpt = 
+                    dubboServiceDbService.findByServiceKey(providerInfo);
+                if (serviceEntityOpt.isPresent()) {
+                    com.pajk.mcpmetainfo.persistence.entity.DubboServiceEntity serviceEntity = serviceEntityOpt.get();
+                    if (serviceEntity.getApprovalStatus() == 
+                        com.pajk.mcpmetainfo.persistence.entity.DubboServiceEntity.ApprovalStatus.APPROVED) {
+                        providerService.updateProvider(providerInfo);
+                        log.debug("更新已审批Provider到服务监控: {}", data.getPath());
+                        
+                        // 自动更新Nacos注册（如果启用）
+                        if (autoRegistrationService != null) {
+                            autoRegistrationService.handleProviderUpdated(providerInfo);
+                        }
+                    } else {
+                        // 从未审批变为已审批时，需要从监控中移除（如果之前已添加）
+                        providerService.removeProviderByZkPath(data.getPath());
+                        log.debug("移除未审批Provider的服务监控: {}", data.getPath());
+                    }
                 }
             }
             
@@ -550,68 +674,6 @@ public class ZooKeeperService {
         }
     }
     
-    /**
-     * 验证重连后的缓存状态
-     */
-    private void verifyCachesAfterReconnect() {
-        try {
-            int activeCaches = 0;
-            for (Map.Entry<String, PathChildrenCache> entry : pathCaches.entrySet()) {
-                PathChildrenCache cache = entry.getValue();
-                if (cache != null) {
-                    activeCaches++;
-                }
-            }
-            log.info("重连后验证: 当前有 {} 个活跃的缓存监听器", activeCaches);
-        } catch (Exception e) {
-            log.error("验证缓存状态失败", e);
-        }
-    }
-    
-    /**
-     * 记录连接诊断信息
-     */
-    private void logConnectionDiagnostics() {
-        try {
-            if (client != null) {
-                boolean isConnected = client.getZookeeperClient().isConnected();
-                String zkState = client.getZookeeperClient().getZooKeeper().getState().toString();
-                log.debug("连接诊断 - 是否连接: {}, ZooKeeper状态: {}, 连接地址: {}", 
-                        isConnected, zkState, config.getConnectString());
-            }
-        } catch (Exception e) {
-            log.debug("获取连接诊断信息失败", e);
-        }
-    }
-    
-    /**
-     * 处理会话丢失
-     */
-    private void handleSessionLost() {
-        log.warn("检测到ZooKeeper会话丢失，尝试重新初始化...");
-        try {
-            // 关闭所有现有缓存
-            for (PathChildrenCache cache : pathCaches.values()) {
-                try {
-                    cache.close();
-                } catch (Exception e) {
-                    log.warn("关闭缓存失败", e);
-                }
-            }
-            pathCaches.clear();
-            
-            // 等待连接恢复
-            if (client != null) {
-                client.blockUntilConnected();
-                log.info("ZooKeeper连接已恢复，重新建立监听...");
-                
-                // 重新开始监听
-                startWatchingProviders();
-            }
-        } catch (Exception e) {
-            log.error("重新初始化ZooKeeper监听失败", e);
-        }
-    }
     
     @PreDestroy
     public void destroy() {

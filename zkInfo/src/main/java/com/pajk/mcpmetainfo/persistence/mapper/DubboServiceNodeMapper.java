@@ -19,6 +19,8 @@ public interface DubboServiceNodeMapper {
     
     DubboServiceNodeEntity findByZkPath(@Param("zkPath") String zkPath);
     
+    DubboServiceNodeEntity findByServiceIdAndAddress(@Param("serviceId") Long serviceId, @Param("address") String address);
+    
     List<DubboServiceNodeEntity> findByServiceId(@Param("serviceId") Long serviceId);
     
     List<DubboServiceNodeEntity> findAll();

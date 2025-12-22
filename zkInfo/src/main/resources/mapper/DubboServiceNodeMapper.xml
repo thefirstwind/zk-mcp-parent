@@ -64,6 +64,13 @@
         WHERE zk_path = #{zkPath}
     </select>
     
+    <!-- 根据服务ID和地址查找Dubbo服务节点（使用索引优化） -->
+    <select id="findByServiceIdAndAddress" resultMap="DubboServiceNodeResultMap">
+        SELECT <include refid="nodeColumns"/>
+        FROM zk_dubbo_service_node
+        WHERE service_id = #{serviceId} AND address = #{address}
+    </select>
+    
     <!-- 根据服务ID查找所有节点 -->
     <select id="findByServiceId" parameterType="long" resultMap="DubboServiceNodeResultMap">
         SELECT <include refid="nodeColumns"/>

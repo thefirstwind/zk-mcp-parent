@@ -27,6 +27,22 @@ public interface DubboServiceMapper {
     
     List<DubboServiceEntity> findAll();
     
+    /**
+     * 分页查询Dubbo服务列表
+     * 
+     * @param offset 偏移量
+     * @param limit 每页大小
+     * @return Dubbo服务列表
+     */
+    List<DubboServiceEntity> findWithPagination(@Param("offset") int offset, @Param("limit") int limit);
+    
+    /**
+     * 查询Dubbo服务总数
+     * 
+     * @return 总记录数
+     */
+    long countAll();
+    
     void updateProviderCounts(@Param("id") Long id, 
                              @Param("providerCount") Integer providerCount, 
                              @Param("onlineProviderCount") Integer onlineProviderCount);

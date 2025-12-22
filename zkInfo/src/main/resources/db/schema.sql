@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS `zk_provider_info` (
     `application` VARCHAR(200) COMMENT '应用名称',
     `methods` TEXT COMMENT '服务方法列表（JSON格式）',
     `parameters` TEXT COMMENT '其他参数（JSON格式）',
-    `zk_path` VARCHAR(500) COMMENT 'ZooKeeper节点路径',
+    `zk_path` VARCHAR(2000) COMMENT 'ZooKeeper节点路径',
     `registration_time` DATETIME COMMENT '注册时间',
     `last_heartbeat_time` DATETIME COMMENT '最后心跳时间',
     `is_online` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否在线',
@@ -119,7 +119,7 @@ CREATE TABLE IF NOT EXISTS `zk_dubbo_service_node` (
     `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
     `service_id` BIGINT NOT NULL COMMENT '关联的服务ID',
     `address` VARCHAR(200) NOT NULL COMMENT '提供者地址 (IP:Port)',
-    `zk_path` VARCHAR(500) COMMENT 'ZooKeeper节点路径',
+    `zk_path` VARCHAR(2000) COMMENT 'ZooKeeper节点路径',
     `register_time` DATETIME COMMENT '注册时间',
     `last_heartbeat` DATETIME COMMENT '最后心跳时间',
     `last_sync_time` DATETIME COMMENT '最后同步时间',
@@ -127,11 +127,9 @@ CREATE TABLE IF NOT EXISTS `zk_dubbo_service_node` (
     `gmt_modified` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
     KEY `idx_service_id` (`service_id`),
-    KEY `idx_zk_path` (`zk_path`),
     KEY `idx_address` (`address`),
     KEY `idx_register_time` (`register_time`),
-    KEY `idx_last_sync_time` (`last_sync_time`),
-    UNIQUE KEY `uk_zk_path` (`zk_path`)
+    KEY `idx_last_sync_time` (`last_sync_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Dubbo服务节点表';
 
 -- 7. Dubbo服务方法表

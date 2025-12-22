@@ -148,6 +148,28 @@ public class ZkWatcherSchedulerService {
     }
     
     /**
+     * 为已审批的服务添加Watcher（公共方法，供Controller调用）
+     * 
+     * @param servicePath 服务路径
+     * @param service Dubbo服务实体
+     */
+    public void addWatcherForApprovedService(String servicePath, DubboServiceEntity service) {
+        // 检查服务是否已审批
+        if (service.getApprovalStatus() != DubboServiceEntity.ApprovalStatus.APPROVED) {
+            log.warn("服务 {} 未审批，不能添加Watcher", service.getInterfaceName());
+            return;
+        }
+        
+        // 检查是否已经添加了Watcher
+        if (isWatcherAdded(servicePath)) {
+            log.debug("服务 {} 已经添加了Watcher，跳过", servicePath);
+            return;
+        }
+        
+        addWatcherForService(servicePath, service);
+    }
+    
+    /**
      * 为指定服务添加Watcher
      * 
      * @param servicePath 服务路径

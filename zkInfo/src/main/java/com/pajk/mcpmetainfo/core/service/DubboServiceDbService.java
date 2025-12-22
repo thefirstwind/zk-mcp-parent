@@ -90,19 +90,20 @@ public class DubboServiceDbService {
      */
     public DubboServiceNodeEntity saveServiceNode(ProviderInfo providerInfo, Long serviceId) {
         try {
-            // 根据ZooKeeper路径查找是否存在记录
-            DubboServiceNodeEntity existingEntity = dubboServiceNodeMapper.findByZkPath(providerInfo.getZkPath());
+            // 使用 serviceId + address 查询（使用索引优化，避免使用过长的 zkPath）
+            DubboServiceNodeEntity existingEntity = dubboServiceNodeMapper.findByServiceIdAndAddress(
+                serviceId, providerInfo.getAddress());
             
             DubboServiceNodeEntity entity;
             if (existingEntity != null) {
                 // 如果存在，则更新现有记录
                 entity = existingEntity;
                 entity.updateFromProviderInfo(providerInfo);
-                log.debug("更新Dubbo服务节点信息到数据库: {}", providerInfo.getZkPath());
+                log.debug("更新Dubbo服务节点信息到数据库: serviceId={}, address={}", serviceId, providerInfo.getAddress());
             } else {
                 // 如果不存在，则创建新记录
                 entity = new DubboServiceNodeEntity(providerInfo, serviceId);
-                log.debug("保存新的Dubbo服务节点信息到数据库: {}", providerInfo.getZkPath());
+                log.debug("保存新的Dubbo服务节点信息到数据库: serviceId={}, address={}", serviceId, providerInfo.getAddress());
             }
             
             // 保存到数据库
@@ -112,11 +113,11 @@ public class DubboServiceDbService {
                 dubboServiceNodeMapper.update(entity);
             }
             
-            log.info("成功保存Dubbo服务节点信息: {} (ID: {})", providerInfo.getZkPath(), entity.getId());
+            log.info("成功保存Dubbo服务节点信息: serviceId={}, address={} (ID: {})", serviceId, providerInfo.getAddress(), entity.getId());
             
             return entity;
         } catch (Exception e) {
-            log.error("保存Dubbo服务节点信息到数据库失败: {}", providerInfo.getZkPath(), e);
+            log.error("保存Dubbo服务节点信息到数据库失败: serviceId={}, address={}", serviceId, providerInfo.getAddress(), e);
             throw new RuntimeException("保存Dubbo服务节点信息失败", e);
         }
     }
@@ -231,12 +232,36 @@ public class DubboServiceDbService {
      */
     public void removeServiceByZkPath(String zkPath) {
         try {
-            // 先查找节点信息
-            DubboServiceNodeEntity nodeEntity = dubboServiceNodeMapper.findByZkPath(zkPath);
+            // 从 zkPath 解析出 address 和 serviceId
+            // zkPath 格式: /interfaceName/address:port/protocol/version/...
+            String address = parseAddressFromZkPath(zkPath);
+            if (address == null) {
+                log.warn("无法从 zkPath 解析出 address: {}", zkPath);
+                return;
+            }
+            
+            // 解析出服务信息以查找 serviceId
+            ProviderInfo providerInfo = parseProviderInfoFromZkPath(zkPath);
+            if (providerInfo == null) {
+                log.warn("无法从 zkPath 解析出服务信息: {}", zkPath);
+                return;
+            }
+            
+            // 查找服务ID
+            Optional<DubboServiceEntity> serviceEntityOpt = findByServiceKey(providerInfo);
+            if (!serviceEntityOpt.isPresent()) {
+                log.warn("找不到对应的服务: {}", zkPath);
+                return;
+            }
+            
+            Long serviceId = serviceEntityOpt.get().getId();
+            
+            // 使用 serviceId + address 查询节点（使用索引优化）
+            DubboServiceNodeEntity nodeEntity = dubboServiceNodeMapper.findByServiceIdAndAddress(serviceId, address);
             if (nodeEntity != null) {
                 // 删除节点
                 dubboServiceNodeMapper.deleteById(nodeEntity.getId());
-                log.debug("成功删除Dubbo服务节点: {}", zkPath);
+                log.debug("成功删除Dubbo服务节点: serviceId={}, address={}", serviceId, address);
                 
                 // 查找关联的服务信息
                 // DubboServiceEntity serviceEntity = dubboServiceMapper.findById(nodeEntity.getServiceId());
@@ -281,8 +306,37 @@ public class DubboServiceDbService {
      * @return Dubbo服务节点信息实体
      */
     public Optional<DubboServiceNodeEntity> findNodeByZkPath(String zkPath) {
-        DubboServiceNodeEntity entity = dubboServiceNodeMapper.findByZkPath(zkPath);
-        return Optional.ofNullable(entity);
+        try {
+            // 从 zkPath 解析出 address 和 serviceId
+            String address = parseAddressFromZkPath(zkPath);
+            if (address == null) {
+                log.warn("无法从 zkPath 解析出 address: {}", zkPath);
+                return Optional.empty();
+            }
+            
+            // 解析出服务信息以查找 serviceId
+            ProviderInfo providerInfo = parseProviderInfoFromZkPath(zkPath);
+            if (providerInfo == null) {
+                log.warn("无法从 zkPath 解析出服务信息: {}", zkPath);
+                return Optional.empty();
+            }
+            
+            // 查找服务ID
+            Optional<DubboServiceEntity> serviceEntityOpt = findByServiceKey(providerInfo);
+            if (!serviceEntityOpt.isPresent()) {
+                log.debug("找不到对应的服务: {}", zkPath);
+                return Optional.empty();
+            }
+            
+            Long serviceId = serviceEntityOpt.get().getId();
+            
+            // 使用 serviceId + address 查询节点（使用索引优化）
+            DubboServiceNodeEntity entity = dubboServiceNodeMapper.findByServiceIdAndAddress(serviceId, address);
+            return Optional.ofNullable(entity);
+        } catch (Exception e) {
+            log.error("根据ZooKeeper路径查找Dubbo服务节点失败: {}", zkPath, e);
+            return Optional.empty();
+        }
     }
     
     /**
@@ -302,6 +356,36 @@ public class DubboServiceDbService {
      */
     public List<DubboServiceEntity> findAll() {
         return dubboServiceMapper.findAll();
+    }
+    
+    /**
+     * 分页查询Dubbo服务信息列表
+     * 
+     * @param page 页码（从1开始）
+     * @param size 每页大小
+     * @return 分页结果
+     */
+    public com.pajk.mcpmetainfo.core.model.PageResult<DubboServiceEntity> findWithPagination(int page, int size) {
+        try {
+            // 参数校验
+            if (page < 1) page = 1;
+            if (size < 1) size = 10;
+            if (size > 100) size = 100; // 限制最大页面大小
+            
+            // 计算偏移量
+            int offset = (page - 1) * size;
+            
+            // 查询总数
+            long total = dubboServiceMapper.countAll();
+            
+            // 分页查询数据
+            List<DubboServiceEntity> data = dubboServiceMapper.findWithPagination(offset, size);
+            
+            return new com.pajk.mcpmetainfo.core.model.PageResult<>(data, total, page, size);
+        } catch (Exception e) {
+            log.error("分页查询Dubbo服务信息失败: page={}, size={}", page, size, e);
+            throw new RuntimeException("分页查询Dubbo服务信息失败", e);
+        }
     }
     
     /**
@@ -327,5 +411,71 @@ public class DubboServiceDbService {
             log.error("删除Dubbo服务节点失败: ID={}", nodeId, e);
             throw new RuntimeException("删除Dubbo服务节点失败", e);
         }
+    }
+    
+    /**
+     * 从 zkPath 解析出 address
+     * zkPath 格式: /interfaceName/address:port/protocol/version/...
+     * 
+     * @param zkPath ZooKeeper路径
+     * @return address (IP:Port) 或 null
+     */
+    private String parseAddressFromZkPath(String zkPath) {
+        if (zkPath == null || zkPath.isEmpty()) {
+            return null;
+        }
+        
+        try {
+            String[] parts = zkPath.split("/");
+            if (parts.length >= 3) {
+                // parts[0] 是空字符串（因为路径以 / 开头）
+                // parts[1] 是 interfaceName
+                // parts[2] 是 address:port
+                return parts[2];
+            }
+        } catch (Exception e) {
+            log.warn("解析 zkPath 中的 address 失败: {}", zkPath, e);
+        }
+        
+        return null;
+    }
+    
+    /**
+     * 从 zkPath 解析出 ProviderInfo
+     * zkPath 格式: /interfaceName/address:port/protocol/version/...
+     * 
+     * @param zkPath ZooKeeper路径
+     * @return ProviderInfo 或 null
+     */
+    private ProviderInfo parseProviderInfoFromZkPath(String zkPath) {
+        if (zkPath == null || zkPath.isEmpty()) {
+            return null;
+        }
+        
+        try {
+            String[] parts = zkPath.split("/");
+            if (parts.length >= 5) {
+                // parts[0] 是空字符串（因为路径以 / 开头）
+                // parts[1] 是 interfaceName
+                // parts[2] 是 address:port
+                // parts[3] 是 protocol
+                // parts[4] 是 version
+                
+                ProviderInfo providerInfo = new ProviderInfo();
+                providerInfo.setInterfaceName(parts[1]);
+                providerInfo.setAddress(parts[2]);
+                providerInfo.setProtocol(parts[3]);
+                providerInfo.setVersion(parts[4]);
+                
+                // 如果路径中有更多部分，可能是 group 或其他参数
+                // 这里简化处理，如果需要更完整的解析，可以进一步处理
+                
+                return providerInfo;
+            }
+        } catch (Exception e) {
+            log.warn("解析 zkPath 为 ProviderInfo 失败: {}", zkPath, e);
+        }
+        
+        return null;
     }
 }

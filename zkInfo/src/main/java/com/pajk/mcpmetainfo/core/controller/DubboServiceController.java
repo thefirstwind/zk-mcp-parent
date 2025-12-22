@@ -9,12 +9,12 @@ import com.pajk.mcpmetainfo.persistence.entity.DubboServiceNodeEntity;
 import com.pajk.mcpmetainfo.core.service.DubboServiceDbService;
 import com.pajk.mcpmetainfo.core.service.DubboServiceMethodService;
 import com.pajk.mcpmetainfo.core.service.ZkWatcherSchedulerService;
+import com.pajk.mcpmetainfo.core.model.PageResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -46,9 +46,12 @@ public class DubboServiceController {
     @Autowired
     private DubboServiceMapper dubboServiceMapper;
     
+    @Autowired
+    private com.pajk.mcpmetainfo.core.config.ZooKeeperConfig zooKeeperConfig;
+    
     /**
      * 审核Dubbo服务
-     * 审核通过后更新节点的IP信息并添加ZooKeeper watcher
+     * 审核通过后添加ZooKeeper watcher
      * 
      * @param id 服务ID
      * @param approver 审批人
@@ -64,17 +67,37 @@ public class DubboServiceController {
             // 审批服务
             DubboServiceEntity approvedService = dubboServiceDbService.approveService(id, approver, true, comment);
             
-            // TODO: 更新节点的IP信息（需要具体实现）
-            // 这里可以调用相应的服务方法来更新节点IP信息
+            // 审批通过后，立即为该服务添加ZooKeeper watcher
+            try {
+                String servicePath = buildServicePath(approvedService);
+                zkWatcherSchedulerService.addWatcherForApprovedService(servicePath, approvedService);
+                log.info("成功为已审批服务添加Watcher: {} (ID: {})", approvedService.getInterfaceName(), id);
+            } catch (Exception e) {
+                log.warn("为已审批服务添加Watcher失败，将在下次定时任务中重试: {} (ID: {})", 
+                    approvedService.getInterfaceName(), id, e);
+            }
             
-            // 添加ZooKeeper watcher（参考ZkWatcherSchedulerService）
-            // 注意：实际的watcher添加逻辑通常由定时任务处理，这里可以根据需求决定是否立即触发
-            
-            return ResponseEntity.ok("Dubbo服务审批成功");
+            return ResponseEntity.ok("Dubbo服务审批成功，已添加ZooKeeper watcher");
         } catch (Exception e) {
             log.error("审批Dubbo服务失败", e);
             return ResponseEntity.status(500).body("审批失败: " + e.getMessage());
         }
+    }
+    
+    /**
+     * 构建服务在ZooKeeper中的路径
+     * 
+     * @param service Dubbo服务实体
+     * @return ZooKeeper中providers目录的路径
+     */
+    private String buildServicePath(DubboServiceEntity service) {
+        StringBuilder path = new StringBuilder(zooKeeperConfig.getBasePath());
+        
+        if (service.getInterfaceName() != null && !service.getInterfaceName().isEmpty()) {
+            path.append("/").append(service.getInterfaceName()).append("/providers");
+        }
+        
+        return path.toString();
     }
     
     /**
@@ -140,33 +163,16 @@ public class DubboServiceController {
      * 
      * @param page 页码（从1开始）
      * @param size 每页大小
-     * @return Dubbo服务列表
+     * @return 分页结果
      */
     @GetMapping
-    public ResponseEntity<List<DubboServiceEntity>> getServices(
+    public ResponseEntity<PageResult<DubboServiceEntity>> getServices(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int size) {
         try {
-            // 参数校验
-            if (page < 1) page = 1;
-            if (size < 1) size = 10;
-            if (size > 100) size = 100; // 限制最大页面大小
-            
-            // 计算偏移量
-            int offset = (page - 1) * size;
-            
-            // 获取所有服务（在实际项目中，应该在Mapper中实现分页查询）
-            List<DubboServiceEntity> allServices = dubboServiceDbService.findAll();
-            
-            // 手动分页
-            int totalCount = allServices.size();
-            int fromIndex = Math.min(offset, totalCount);
-            int toIndex = Math.min(offset + size, totalCount);
-            
-            List<DubboServiceEntity> paginatedServices = 
-                fromIndex < totalCount ? allServices.subList(fromIndex, toIndex) : new ArrayList<>();
-            
-            return ResponseEntity.ok(paginatedServices);
+            // 使用数据库分页查询
+            PageResult<DubboServiceEntity> result = dubboServiceDbService.findWithPagination(page, size);
+            return ResponseEntity.ok(result);
         } catch (Exception e) {
             log.error("分页查询Dubbo服务列表失败", e);
             return ResponseEntity.status(500).build();

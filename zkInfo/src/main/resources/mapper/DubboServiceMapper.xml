@@ -98,4 +98,18 @@
         FROM zk_dubbo_service
     </select>
     
+    <!-- 分页查询Dubbo服务列表 -->
+    <select id="findWithPagination" resultMap="DubboServiceResultMap">
+        SELECT <include refid="serviceColumns"/>
+        FROM zk_dubbo_service
+        ORDER BY gmt_created DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+    
+    <!-- 查询Dubbo服务总数 -->
+    <select id="countAll" resultType="long">
+        SELECT COUNT(*)
+        FROM zk_dubbo_service
+    </select>
+    
 </mapper>
