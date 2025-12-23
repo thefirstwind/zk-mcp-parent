@@ -56,7 +56,7 @@ public class DubboServiceEntity {
     private String application;
     
     /**
-     * 审批状态: INIT-初始化, PENDING-待审批, APPROVED-已审批, REJECTED-已拒绝
+     * 审批状态: INIT-初始化, PENDING-待审批, APPROVED-已审批, REJECTED-已拒绝, OFFLINE-已下线
      */
     private ApprovalStatus approvalStatus = ApprovalStatus.INIT;
     
@@ -102,7 +102,8 @@ public class DubboServiceEntity {
         INIT("初始化"),
         PENDING("待审批"),
         APPROVED("已审批"),
-        REJECTED("已拒绝");
+        REJECTED("已拒绝"),
+        OFFLINE("已下线");
         
         private final String description;
         

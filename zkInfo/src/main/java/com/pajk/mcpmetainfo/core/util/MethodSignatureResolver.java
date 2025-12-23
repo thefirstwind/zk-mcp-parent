@@ -13,7 +13,6 @@ import org.springframework.stereotype.Component;
 import java.util.*;
 import java.util.Comparator;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 /**
  * 方法签名解析器
@@ -119,13 +118,8 @@ public class MethodSignatureResolver {
         }
         
         try {
-            // 1. 根据 interfaceName 查找服务（可能需要匹配多个版本/分组）
-            // 简化实现：查找第一个匹配的服务
-            List<DubboServiceEntity> services = dubboServiceDbService.findAll();
-            DubboServiceEntity matchedService = services.stream()
-                    .filter(s -> interfaceName.equals(s.getInterfaceName()))
-                    .findFirst()
-                    .orElse(null);
+            // 1. 根据 interfaceName 直接查询服务（优化：避免加载所有数据）
+            DubboServiceEntity matchedService = dubboServiceDbService.findByInterfaceName(interfaceName);
             
             if (matchedService == null) {
                 log.debug("⚠️ Service not found in database: {}", interfaceName);

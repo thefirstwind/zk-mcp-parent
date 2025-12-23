@@ -90,12 +90,32 @@
         SELECT <include refid="serviceColumns"/>
         FROM zk_dubbo_service
         WHERE approval_status = #{approvalStatus}
+        ORDER BY gmt_created DESC
+        LIMIT 1000
     </select>
     
-    <!-- 查找所有Dubbo服务 -->
-    <select id="findAll" resultMap="DubboServiceResultMap">
+    <!-- 根据审批状态分页查找Dubbo服务 -->
+    <select id="findByApprovalStatusWithPagination" resultMap="DubboServiceResultMap">
         SELECT <include refid="serviceColumns"/>
         FROM zk_dubbo_service
+        WHERE approval_status = #{approvalStatus}
+        ORDER BY gmt_created DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+    
+    <!-- 根据审批状态统计数量 -->
+    <select id="countByApprovalStatus" parameterType="string" resultType="long">
+        SELECT COUNT(*)
+        FROM zk_dubbo_service
+        WHERE approval_status = #{approvalStatus}
+    </select>
+    
+    <!-- 根据接口名查找Dubbo服务列表 -->
+    <select id="findByInterfaceName" parameterType="string" resultMap="DubboServiceResultMap">
+        SELECT <include refid="serviceColumns"/>
+        FROM zk_dubbo_service
+        WHERE interface_name = #{interfaceName}
+        LIMIT 1
     </select>
     
     <!-- 分页查询Dubbo服务列表 -->

@@ -65,10 +65,12 @@
         ORDER BY parameter_order ASC
     </select>
     
-    <!-- 查找所有Dubbo服务方法参数 -->
+    <!-- 查找所有Dubbo服务方法参数（限制最多10000条，避免内存溢出） -->
     <select id="findAll" resultMap="DubboMethodParameterResultMap">
         SELECT <include refid="parameterColumns"/>
         FROM zk_dubbo_method_parameter
+        ORDER BY gmt_created DESC
+        LIMIT 10000
     </select>
     
 </mapper>

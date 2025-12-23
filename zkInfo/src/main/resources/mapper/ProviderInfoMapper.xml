@@ -111,10 +111,12 @@
         WHERE approval_status = #{approvalStatus}
     </select>
     
-    <!-- 查找所有Provider -->
+    <!-- 查找所有Provider（限制最多5000条，避免内存溢出） -->
     <select id="findAll" resultMap="ProviderInfoResultMap">
         SELECT <include refid="providerColumns"/>
         FROM zk_provider_info
+        ORDER BY gmt_created DESC
+        LIMIT 5000
     </select>
     
     <!-- 标记 Provider 为离线 -->

@@ -167,11 +167,17 @@ public class ApiController {
     
     /**
      * 获取所有Provider列表
+     * 注意：此接口返回内存中的所有Provider，如果数据量很大可能影响性能
+     * 建议使用分页查询接口或搜索接口
      */
     @GetMapping("/providers")
     public ResponseEntity<List<ProviderInfo>> getAllProviders() {
         try {
             List<ProviderInfo> providers = providerService.getAllProviders();
+            // 如果数据量过大，记录警告日志
+            if (providers.size() > 1000) {
+                log.warn("⚠️ getAllProviders返回了大量数据: {} 条，可能影响性能，建议使用分页查询", providers.size());
+            }
             return ResponseEntity.ok(providers);
         } catch (Exception e) {
             log.error("获取所有Provider失败", e);

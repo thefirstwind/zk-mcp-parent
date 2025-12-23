@@ -10,11 +10,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -172,8 +169,16 @@ public class DubboServiceMethodService {
     @Transactional
     public void saveMethodParameters(Long methodId, List<DubboMethodParameterEntity> parameters) {
         try {
+            LocalDateTime now = LocalDateTime.now();
             for (DubboMethodParameterEntity parameter : parameters) {
                 parameter.setMethodId(methodId);
+                // 如果时间字段为null，设置为当前时间
+                if (parameter.getCreatedAt() == null) {
+                    parameter.setCreatedAt(now);
+                }
+                if (parameter.getUpdatedAt() == null) {
+                    parameter.setUpdatedAt(now);
+                }
                 dubboMethodParameterMapper.insert(parameter);
                 log.debug("保存Dubbo方法参数信息: {} (ID: {})", parameter.getParameterName(), parameter.getId());
             }

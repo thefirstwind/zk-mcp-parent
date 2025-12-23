@@ -7,8 +7,6 @@ import com.pajk.mcpmetainfo.persistence.entity.ProviderInfoEntity;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Dubbo服务信息适配器
@@ -53,9 +51,8 @@ public class DubboServiceInfoAdapter {
         DubboServiceNodeEntity nodeEntity = new DubboServiceNodeEntity();
         nodeEntity.setServiceId(serviceId);
         nodeEntity.setAddress(providerInfo.getAddress());
-        nodeEntity.setRegisterTime(providerInfo.getRegisterTime());
-        nodeEntity.setLastHeartbeat(providerInfo.getLastHeartbeat());
         nodeEntity.setZkPath(providerInfo.getZkPath());
+        nodeEntity.setLastSyncTime(LocalDateTime.now());
         nodeEntity.setCreatedAt(LocalDateTime.now());
         nodeEntity.setUpdatedAt(LocalDateTime.now());
         return nodeEntity;
@@ -110,9 +107,8 @@ public class DubboServiceInfoAdapter {
         DubboServiceNodeEntity nodeEntity = new DubboServiceNodeEntity();
         nodeEntity.setServiceId(serviceId);
         nodeEntity.setAddress(providerInfoEntity.getAddress());
-        nodeEntity.setRegisterTime(providerInfoEntity.getRegisterTime());
-        nodeEntity.setLastHeartbeat(providerInfoEntity.getLastHeartbeat());
         nodeEntity.setZkPath(providerInfoEntity.getZkPath());
+        nodeEntity.setLastSyncTime(LocalDateTime.now());
         nodeEntity.setCreatedAt(providerInfoEntity.getCreatedAt());
         nodeEntity.setUpdatedAt(providerInfoEntity.getUpdatedAt());
         return nodeEntity;

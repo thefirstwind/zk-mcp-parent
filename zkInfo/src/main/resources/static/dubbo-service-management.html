@@ -1,0 +1,1258 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dubbo服务管理</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .user-info {
+            font-size: 14px;
+            opacity: 0.9;
+            margin-top: 10px;
+        }
+
+        .user-info span {
+            margin-right: 15px;
+        }
+
+        .tabs {
+            display: flex;
+            background: white;
+            border-radius: 10px;
+            padding: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border-radius: 5px;
+            margin-right: 10px;
+            transition: all 0.3s;
+            font-weight: 500;
+        }
+
+        .tab:hover {
+            background: #f0f0f0;
+        }
+
+        .tab.active {
+            background: #667eea;
+            color: white;
+        }
+
+        .content-panel {
+            display: none;
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .content-panel.active {
+            display: block;
+        }
+
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .search-box {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        input[type="text"], input[type="number"], textarea, select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+        }
+
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #218838;
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c82333;
+        }
+
+        .btn-warning {
+            background: #ffc107;
+            color: #333;
+        }
+
+        .btn-warning:hover {
+            background: #e0a800;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        tr:hover {
+            background: #f8f9fa;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .status-INIT {
+            background: #e9ecef;
+            color: #495057;
+        }
+
+        .status-PENDING {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status-APPROVED {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-REJECTED {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .status-OFFLINE {
+            background: #6c757d;
+            color: white;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            overflow: auto;
+        }
+
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-header {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #495057;
+        }
+
+        .form-group input, .form-group textarea, .form-group select {
+            width: 100%;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 2px solid #f0f0f0;
+        }
+
+        .alert {
+            padding: 12px 20px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .alert-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6c757d;
+        }
+
+        .empty-state svg {
+            width: 100px;
+            height: 100px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        .method-parameters {
+            margin-top: 20px;
+        }
+
+        .parameter-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            background: #f8f9fa;
+        }
+
+        .parameter-item > div {
+            flex: 1;
+            margin-right: 10px;
+        }
+
+        .detail-view {
+            padding: 20px;
+        }
+
+        .detail-row {
+            display: flex;
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .detail-label {
+            font-weight: 600;
+            width: 150px;
+            color: #495057;
+        }
+
+        .detail-value {
+            flex: 1;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔧 Dubbo服务管理</h1>
+            <div class="user-info">
+                <span>用户ID: <strong id="currentStaffId">-</strong></span>
+                <span>角色: <strong id="currentRole">-</strong></span>
+            </div>
+        </div>
+
+        <div class="tabs">
+            <div class="tab active" data-tab="services">服务列表</div>
+            <div class="tab" data-tab="pending">待审批</div>
+            <div class="tab" data-tab="approved">已审批</div>
+        </div>
+
+        <!-- 服务列表 -->
+        <div id="services-panel" class="content-panel active">
+            <div class="toolbar">
+                <div class="search-box">
+                    <input type="number" id="page-size" value="10" min="1" max="100" style="width: 80px;">
+                    <span>条/页</span>
+                </div>
+                <div>
+                    <button class="btn btn-primary" id="refresh-services">刷新</button>
+                </div>
+            </div>
+
+            <div id="services-alert"></div>
+            <div id="services-table-container">
+                <div class="loading">加载中...</div>
+            </div>
+        </div>
+
+        <!-- 待审批列表 -->
+        <div id="pending-panel" class="content-panel">
+            <div class="toolbar">
+                <div class="search-box">
+                    <input type="number" id="pending-page-size" value="10" min="1" max="100" style="width: 80px;">
+                    <span>条/页</span>
+                </div>
+                <div>
+                    <button class="btn btn-primary" id="refresh-pending">刷新</button>
+                </div>
+            </div>
+
+            <div id="pending-alert"></div>
+            <div id="pending-table-container">
+                <div class="loading">加载中...</div>
+            </div>
+        </div>
+
+        <!-- 已审批列表 -->
+        <div id="approved-panel" class="content-panel">
+            <div class="toolbar">
+                <div class="search-box">
+                    <input type="number" id="approved-page-size" value="10" min="1" max="100" style="width: 80px;">
+                    <span>条/页</span>
+                </div>
+                <div>
+                    <button class="btn btn-primary" id="refresh-approved">刷新</button>
+                </div>
+            </div>
+
+            <div id="approved-alert"></div>
+            <div id="approved-table-container">
+                <div class="loading">加载中...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 服务详情模态框 -->
+    <div id="service-detail-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">服务详情</div>
+            <div id="service-detail-content"></div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('service-detail-modal')">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 审批模态框 -->
+    <div id="approval-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">审批服务</div>
+            <form id="approval-form">
+                <input type="hidden" id="approval-service-id">
+                <div class="form-group">
+                    <label>审批意见</label>
+                    <textarea id="approval-comment" rows="4" placeholder="请输入审批意见（可选）"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('approval-modal')">取消</button>
+                    <button type="button" class="btn btn-danger" onclick="rejectService()">拒绝</button>
+                    <button type="button" class="btn btn-success" onclick="approveService()">通过</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 参数编辑模态框 -->
+    <div id="parameter-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header" id="parameter-modal-title">新增参数</div>
+            <form id="parameter-form">
+                <input type="hidden" id="parameter-id">
+                <input type="hidden" id="parameter-method-id">
+                <div class="form-group">
+                    <label>参数名 *</label>
+                    <input type="text" id="parameter-name" required>
+                </div>
+                <div class="form-group">
+                    <label>参数类型 *</label>
+                    <input type="text" id="parameter-type" required>
+                </div>
+                <div class="form-group">
+                    <label>参数顺序 *</label>
+                    <input type="number" id="parameter-order" required min="0">
+                </div>
+                <div class="form-group">
+                    <label>参数描述</label>
+                    <textarea id="parameter-description" rows="3"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('parameter-modal')">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api/dubbo-services';
+        let currentUser = null;
+        let currentPage = { services: 1, pending: 1, approved: 1 };
+        let pageSize = { services: 10, pending: 10, approved: 10 };
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            loadCurrentUser();
+            setupTabs();
+            setupEventListeners();
+            loadServices();
+        });
+
+        // 加载当前用户信息
+        async function loadCurrentUser() {
+            try {
+                const response = await fetch(`${API_BASE}/current-user`);
+                if (response.ok) {
+                    currentUser = await response.json();
+                    document.getElementById('currentStaffId').textContent = currentUser.staffId || '-';
+                    document.getElementById('currentRole').textContent = currentUser.roleDescription || '-';
+                } else {
+                    showAlert('services-alert', '无法获取用户信息', 'error');
+                }
+            } catch (error) {
+                console.error('加载用户信息失败:', error);
+                showAlert('services-alert', '加载用户信息失败', 'error');
+            }
+        }
+
+        // 检查权限
+        function hasPermission(permission) {
+            if (!currentUser || !currentUser.permissions) return false;
+            return currentUser.permissions[permission] === true;
+        }
+
+        // 设置标签页
+        function setupTabs() {
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.addEventListener('click', function() {
+                    const tabName = this.getAttribute('data-tab');
+                    switchTab(tabName);
+                });
+            });
+        }
+
+        // 当前标签页
+        let currentTab = 'services';
+        
+        // 切换标签页
+        function switchTab(tabName) {
+            currentTab = tabName;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.content-panel').forEach(p => p.classList.remove('active'));
+            
+            document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+            document.getElementById(`${tabName}-panel`).classList.add('active');
+            
+            if (tabName === 'services') {
+                loadServices();
+            } else if (tabName === 'pending') {
+                loadPendingServices();
+            } else if (tabName === 'approved') {
+                loadApprovedServices();
+            }
+        }
+
+        // 设置事件监听
+        function setupEventListeners() {
+            document.getElementById('refresh-services').addEventListener('click', function() {
+                loadServices(currentPage.services);
+            });
+            document.getElementById('refresh-pending').addEventListener('click', function() {
+                loadPendingServices(currentPage.pending);
+            });
+            document.getElementById('refresh-approved').addEventListener('click', function() {
+                loadApprovedServices(currentPage.approved);
+            });
+            
+            document.getElementById('parameter-form').addEventListener('submit', saveParameter);
+        }
+
+        // 加载服务列表
+        async function loadServices(page = 1) {
+            currentPage.services = page;
+            const size = pageSize.services;
+            const container = document.getElementById('services-table-container');
+            container.innerHTML = '<div class="loading">加载中...</div>';
+
+            try {
+                const response = await fetch(`${API_BASE}?page=${page}&size=${size}`);
+                if (!response.ok) {
+                    if (response.status === 403) {
+                        container.innerHTML = '<div class="alert alert-error">权限不足</div>';
+                        return;
+                    }
+                    throw new Error('加载失败');
+                }
+                
+                const result = await response.json();
+                renderServicesTable(result, container, 'services');
+            } catch (error) {
+                console.error('加载服务列表失败:', error);
+                container.innerHTML = '<div class="alert alert-error">加载失败: ' + error.message + '</div>';
+            }
+        }
+
+        // 加载待审批服务
+        async function loadPendingServices(page = 1) {
+            currentPage.pending = page;
+            const size = pageSize.pending;
+            const container = document.getElementById('pending-table-container');
+            container.innerHTML = '<div class="loading">加载中...</div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/pending?page=${page}&size=${size}`);
+                if (!response.ok) {
+                    if (response.status === 403) {
+                        container.innerHTML = '<div class="alert alert-error">权限不足</div>';
+                        return;
+                    }
+                    throw new Error('加载失败');
+                }
+                
+                const result = await response.json();
+                renderServicesTable(result, container, 'pending');
+            } catch (error) {
+                console.error('加载待审批服务失败:', error);
+                container.innerHTML = '<div class="alert alert-error">加载失败: ' + error.message + '</div>';
+            }
+        }
+
+        // 加载已审批服务
+        async function loadApprovedServices(page = 1) {
+            currentPage.approved = page;
+            const size = pageSize.approved;
+            const container = document.getElementById('approved-table-container');
+            container.innerHTML = '<div class="loading">加载中...</div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/approved?page=${page}&size=${size}`);
+                if (!response.ok) {
+                    if (response.status === 403) {
+                        container.innerHTML = '<div class="alert alert-error">权限不足</div>';
+                        return;
+                    }
+                    throw new Error('加载失败');
+                }
+                
+                const result = await response.json();
+                renderServicesTable(result, container, 'approved');
+            } catch (error) {
+                console.error('加载已审批服务失败:', error);
+                container.innerHTML = '<div class="alert alert-error">加载失败: ' + error.message + '</div>';
+            }
+        }
+
+        // 渲染服务表格
+        function renderServicesTable(result, container, type) {
+            if (!result.data || result.data.length === 0) {
+                container.innerHTML = '<div class="empty-state">暂无数据</div>';
+                return;
+            }
+
+            let html = '<table><thead><tr>';
+            html += '<th style="width: 30px;"></th><th>ID</th><th>接口名</th><th>协议</th><th>版本</th><th>分组</th><th>应用</th>';
+            html += '<th>状态</th><th>Provider数</th><th>在线数</th><th>审批人</th><th>审批时间</th><th>操作</th>';
+            html += '</tr></thead><tbody>';
+
+            result.data.forEach(service => {
+                const status = service.approvalStatus || 'INIT';
+                const statusText = {
+                    'INIT': '初始化',
+                    'PENDING': '待审批',
+                    'APPROVED': '已审批',
+                    'REJECTED': '已拒绝',
+                    'OFFLINE': '已下线'
+                }[status] || status;
+
+                html += '<tr class="service-row" data-service-id="' + service.id + '">';
+                html += '<td><button class="btn-expand" onclick="toggleNodes(' + service.id + ', this)" style="background: none; border: none; cursor: pointer; font-size: 14px; padding: 4px;">▶</button></td>';
+                html += `<td>${service.id}</td>`;
+                html += `<td>${escapeHtml(service.interfaceName || '-')}</td>`;
+                html += `<td>${escapeHtml(service.protocol || '-')}</td>`;
+                html += `<td>${escapeHtml(service.version || '-')}</td>`;
+                html += `<td>${escapeHtml(service.group || '-')}</td>`;
+                html += `<td>${escapeHtml(service.application || '-')}</td>`;
+                html += `<td><span class="status-badge status-${status}">${statusText}</span></td>`;
+                html += `<td>${service.providerCount || 0}</td>`;
+                html += `<td>${service.onlineProviderCount || 0}</td>`;
+                html += `<td>${escapeHtml(service.approver || '-')}</td>`;
+                html += `<td>${service.approvalTime ? formatDateTime(service.approvalTime) : '-'}</td>`;
+                html += '<td>';
+                html += `<button class="btn btn-secondary" onclick="viewServiceDetail(${service.id})" style="padding: 4px 8px; font-size: 12px;">详情</button> `;
+                
+                if (status === 'PENDING' && hasPermission('APPROVE_SERVICE')) {
+                    html += `<button class="btn btn-warning" onclick="openApprovalModal(${service.id})" style="padding: 4px 8px; font-size: 12px;">审批</button> `;
+                }
+                
+                // 已审批状态显示同步节点和下线按钮，不显示提交审核按钮
+                if (status === 'APPROVED') {
+                    if (hasPermission('VIEW_SERVICE')) {
+                        html += `<button class="btn btn-info" onclick="syncNodes(${service.id})" style="padding: 4px 8px; font-size: 12px;">同步节点</button> `;
+                    }
+                    if (hasPermission('APPROVE_SERVICE')) {
+                        html += `<button class="btn btn-danger" onclick="offlineService(${service.id})" style="padding: 4px 8px; font-size: 12px;">下线</button> `;
+                    }
+                } else if (status === 'OFFLINE' && hasPermission('APPROVE_SERVICE')) {
+                    // 已下线状态显示上线按钮
+                    html += `<button class="btn btn-success" onclick="onlineService(${service.id})" style="padding: 4px 8px; font-size: 12px;">上线</button> `;
+                } else if (status !== 'PENDING' && status !== 'APPROVED' && status !== 'OFFLINE' && hasPermission('SUBMIT_FOR_REVIEW')) {
+                    // 非待审批、非已审批、非已下线状态才显示提交审核按钮
+                    html += `<button class="btn btn-primary" onclick="submitForReview(${service.id})" style="padding: 4px 8px; font-size: 12px;">提交审核</button> `;
+                }
+                
+                html += '</td>';
+                html += '</tr>';
+                // 节点列表行（初始隐藏）
+                html += '<tr class="nodes-row" id="nodes-row-' + service.id + '" style="display: none;">';
+                html += '<td colspan="13"><div id="nodes-content-' + service.id + '" style="padding: 10px; background: #f8f9fa;">加载中...</div></td>';
+                html += '</tr>';
+            });
+
+            html += '</tbody></table>';
+
+            // 分页
+            if (result.totalPages > 1) {
+                html += '<div class="pagination">';
+                html += `<button class="btn btn-secondary" ${result.currentPage <= 1 ? 'disabled' : ''} onclick="load${type.charAt(0).toUpperCase() + type.slice(1)}Services(${result.currentPage - 1})">上一页</button>`;
+                html += `<span>第 ${result.currentPage} / ${result.totalPages} 页 (共 ${result.totalElements} 条)</span>`;
+                html += `<button class="btn btn-secondary" ${result.currentPage >= result.totalPages ? 'disabled' : ''} onclick="load${type.charAt(0).toUpperCase() + type.slice(1)}Services(${result.currentPage + 1})">下一页</button>`;
+                html += '</div>';
+            }
+
+            container.innerHTML = html;
+        }
+
+        // 查看服务详情
+        async function viewServiceDetail(serviceId) {
+            try {
+                const response = await fetch(`${API_BASE}/${serviceId}`);
+                if (!response.ok) {
+                    if (response.status === 403) {
+                        alert('权限不足');
+                        return;
+                    }
+                    throw new Error('加载失败');
+                }
+                
+                const service = await response.json();
+                renderServiceDetail(service);
+                openModal('service-detail-modal');
+            } catch (error) {
+                console.error('加载服务详情失败:', error);
+                alert('加载失败: ' + error.message);
+            }
+        }
+
+        // 渲染服务详情
+        async function renderServiceDetail(service) {
+            const container = document.getElementById('service-detail-content');
+            
+            // 保存serviceId到全局变量以便后续操作使用
+            window.currentServiceId = service.id;
+            
+            let html = `<div class="detail-view" data-service-id="${service.id}">`;
+            html += '<div class="detail-row"><div class="detail-label">ID:</div><div class="detail-value">' + service.id + '</div></div>';
+            html += '<div class="detail-row"><div class="detail-label">接口名:</div><div class="detail-value">' + escapeHtml(service.interfaceName || '-') + '</div></div>';
+            html += '<div class="detail-row"><div class="detail-label">协议:</div><div class="detail-value">' + escapeHtml(service.protocol || '-') + '</div></div>';
+            html += '<div class="detail-row"><div class="detail-label">版本:</div><div class="detail-value">' + escapeHtml(service.version || '-') + '</div></div>';
+            html += '<div class="detail-row"><div class="detail-label">分组:</div><div class="detail-value">' + escapeHtml(service.group || '-') + '</div></div>';
+            html += '<div class="detail-row"><div class="detail-label">应用:</div><div class="detail-value">' + escapeHtml(service.application || '-') + '</div></div>';
+            html += '<div class="detail-row"><div class="detail-label">状态:</div><div class="detail-value">' + (service.approvalStatus || 'INIT') + '</div></div>';
+            html += '<div class="detail-row"><div class="detail-label">Provider数:</div><div class="detail-value">' + (service.providerCount || 0) + '</div></div>';
+            html += '<div class="detail-row"><div class="detail-label">在线数:</div><div class="detail-value">' + (service.onlineProviderCount || 0) + '</div></div>';
+            html += '<div class="detail-row"><div class="detail-label">审批人:</div><div class="detail-value">' + escapeHtml(service.approver || '-') + '</div></div>';
+            html += '<div class="detail-row"><div class="detail-label">审批时间:</div><div class="detail-value">' + (service.approvalTime ? formatDateTime(service.approvalTime) : '-') + '</div></div>';
+            html += '<div class="detail-row"><div class="detail-label">审批意见:</div><div class="detail-value">' + escapeHtml(service.approvalComment || '-') + '</div></div>';
+            html += '<div class="detail-row"><div class="detail-label">创建时间:</div><div class="detail-value">' + (service.createdAt ? formatDateTime(service.createdAt) : '-') + '</div></div>';
+            html += '<div class="detail-row"><div class="detail-label">更新时间:</div><div class="detail-value">' + (service.updatedAt ? formatDateTime(service.updatedAt) : '-') + '</div></div>';
+            
+            // 加载方法列表
+            try {
+                const methodsResponse = await fetch(`${API_BASE}/${service.id}/methods`);
+                if (methodsResponse.ok) {
+                    const methods = await methodsResponse.json();
+                    html += '<div class="detail-row"><div class="detail-label">方法列表:</div><div class="detail-value">';
+                    if (methods && methods.length > 0) {
+                        html += '<div class="method-parameters">';
+                        for (const method of methods) {
+                            html += `<div style="margin-bottom: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 5px;">`;
+                            html += `<strong>${escapeHtml(method.methodName)}</strong> → ${escapeHtml(method.returnType || 'void')}`;
+                            
+                            // 加载参数列表
+                            try {
+                                const paramsResponse = await fetch(`${API_BASE}/methods/${method.id}/parameters`);
+                                if (paramsResponse.ok) {
+                                    const parameters = await paramsResponse.json();
+                                    if (parameters && parameters.length > 0) {
+                                        html += '<div style="margin-top: 10px;">';
+                                        html += '<table style="width: 100%; font-size: 12px;"><thead><tr><th>顺序</th><th>参数名</th><th>类型</th><th>描述</th><th>操作</th></tr></thead><tbody>';
+                                        parameters.forEach(param => {
+                                            html += '<tr>';
+                                            html += `<td>${param.parameterOrder}</td>`;
+                                            html += `<td>${escapeHtml(param.parameterName)}</td>`;
+                                            html += `<td>${escapeHtml(param.parameterType)}</td>`;
+                                            html += `<td>${escapeHtml(param.parameterDescription || '-')}</td>`;
+                                            html += '<td>';
+                                            if (hasPermission('UPDATE_PARAMETER')) {
+                                                html += `<button class="btn btn-secondary" onclick="editParameter(${param.id}, ${method.id})" style="padding: 2px 6px; font-size: 11px;">编辑</button> `;
+                                            }
+                                            if (hasPermission('DELETE_PARAMETER')) {
+                                                html += `<button class="btn btn-danger" onclick="deleteParameter(${param.id})" style="padding: 2px 6px; font-size: 11px;">删除</button>`;
+                                            }
+                                            html += '</td>';
+                                            html += '</tr>';
+                                        });
+                                        html += '</tbody></table>';
+                                        html += '</div>';
+                                    }
+                                }
+                            } catch (e) {
+                                console.error('加载参数失败:', e);
+                            }
+                            
+                            if (hasPermission('CREATE_PARAMETER')) {
+                                html += `<button class="btn btn-primary" onclick="addParameter(${method.id})" style="margin-top: 5px; padding: 4px 8px; font-size: 11px;">添加参数</button>`;
+                            }
+                            
+                            html += '</div>';
+                        }
+                        html += '</div>';
+                    } else {
+                        html += '暂无方法';
+                    }
+                    html += '</div></div>';
+                }
+            } catch (e) {
+                console.error('加载方法列表失败:', e);
+            }
+            
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        // 打开审批模态框
+        function openApprovalModal(serviceId) {
+            document.getElementById('approval-service-id').value = serviceId;
+            document.getElementById('approval-comment').value = '';
+            openModal('approval-modal');
+        }
+
+        // 审批服务
+        async function approveService() {
+            const serviceId = document.getElementById('approval-service-id').value;
+            const comment = document.getElementById('approval-comment').value;
+            const approver = currentUser ? currentUser.staffId : '';
+
+            try {
+                const url = `${API_BASE}/${serviceId}/approve?approver=${encodeURIComponent(approver)}${comment ? '&comment=' + encodeURIComponent(comment) : ''}`;
+                const response = await fetch(url, { method: 'POST' });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(errorText || '审批失败');
+                }
+                
+                alert('审批成功');
+                closeModal('approval-modal');
+                // 重新加载当前标签页
+                if (currentTab === 'pending') {
+                    loadPendingServices(currentPage.pending);
+                } else if (currentTab === 'approved') {
+                    loadApprovedServices(currentPage.approved);
+                } else {
+                    loadServices(currentPage.services);
+                }
+            } catch (error) {
+                console.error('审批失败:', error);
+                alert('审批失败: ' + error.message);
+            }
+        }
+
+        // 拒绝服务
+        async function rejectService() {
+            const serviceId = document.getElementById('approval-service-id').value;
+            const comment = document.getElementById('approval-comment').value;
+            const approver = currentUser ? currentUser.staffId : '';
+
+            try {
+                const url = `${API_BASE}/${serviceId}/reject?approver=${encodeURIComponent(approver)}${comment ? '&comment=' + encodeURIComponent(comment) : ''}`;
+                const response = await fetch(url, { method: 'POST' });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(errorText || '拒绝失败');
+                }
+                
+                alert('拒绝成功');
+                closeModal('approval-modal');
+                // 重新加载当前标签页
+                if (currentTab === 'pending') {
+                    loadPendingServices(currentPage.pending);
+                } else if (currentTab === 'approved') {
+                    loadApprovedServices(currentPage.approved);
+                } else {
+                    loadServices(currentPage.services);
+                }
+            } catch (error) {
+                console.error('拒绝失败:', error);
+                alert('拒绝失败: ' + error.message);
+            }
+        }
+
+        // 提交审核
+        async function submitForReview(serviceId) {
+            if (!confirm('确认提交审核？')) return;
+            
+            const submitter = currentUser ? currentUser.staffId : '';
+
+            try {
+                const url = `${API_BASE}/${serviceId}/submit-for-review?submitter=${encodeURIComponent(submitter)}`;
+                const response = await fetch(url, { method: 'POST' });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(errorText || '提交失败');
+                }
+                
+                alert('提交成功');
+                // 重新加载当前标签页
+                if (currentTab === 'pending') {
+                    loadPendingServices(currentPage.pending);
+                } else if (currentTab === 'approved') {
+                    loadApprovedServices(currentPage.approved);
+                } else {
+                    loadServices(currentPage.services);
+                }
+            } catch (error) {
+                console.error('提交失败:', error);
+                alert('提交失败: ' + error.message);
+            }
+        }
+
+        // 同步节点
+        async function syncNodes(serviceId) {
+            if (!confirm('确认同步节点？这将重新同步该服务的节点信息。')) return;
+
+            try {
+                const url = `${API_BASE}/${serviceId}/sync-nodes`;
+                const response = await fetch(url, { method: 'POST' });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(errorText || '同步失败');
+                }
+                
+                const result = await response.text();
+                alert(result || '同步成功');
+                // 重新加载当前标签页
+                if (currentTab === 'approved') {
+                    loadApprovedServices(currentPage.approved);
+                } else if (currentTab === 'pending') {
+                    loadPendingServices(currentPage.pending);
+                } else {
+                    loadServices(currentPage.services);
+                }
+            } catch (error) {
+                console.error('同步节点失败:', error);
+                alert('同步失败: ' + error.message);
+            }
+        }
+
+        // 下线服务
+        async function offlineService(serviceId) {
+            if (!confirm('确认下线该服务？下线后将注销对应的MCP服务，且服务状态将变为已下线。')) return;
+
+            try {
+                const url = `${API_BASE}/${serviceId}/offline`;
+                const response = await fetch(url, { method: 'POST' });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(errorText || '下线失败');
+                }
+                
+                const result = await response.text();
+                alert(result || '服务已下线');
+                // 重新加载当前标签页
+                if (currentTab === 'approved') {
+                    loadApprovedServices(currentPage.approved);
+                } else if (currentTab === 'pending') {
+                    loadPendingServices(currentPage.pending);
+                } else {
+                    loadServices(currentPage.services);
+                }
+            } catch (error) {
+                console.error('下线服务失败:', error);
+                alert('下线失败: ' + error.message);
+            }
+        }
+
+        // 上线服务
+        async function onlineService(serviceId) {
+            if (!confirm('确认上线该服务？上线后将恢复为已审批状态，并重新注册到MCP。')) return;
+
+            try {
+                const url = `${API_BASE}/${serviceId}/online`;
+                const response = await fetch(url, { method: 'POST' });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(errorText || '上线失败');
+                }
+                
+                const result = await response.text();
+                alert(result || '服务已上线');
+                // 重新加载当前标签页
+                if (currentTab === 'approved') {
+                    loadApprovedServices(currentPage.approved);
+                } else if (currentTab === 'pending') {
+                    loadPendingServices(currentPage.pending);
+                } else {
+                    loadServices(currentPage.services);
+                }
+            } catch (error) {
+                console.error('上线服务失败:', error);
+                alert('上线失败: ' + error.message);
+            }
+        }
+
+        // 切换节点列表显示/隐藏
+        async function toggleNodes(serviceId, button) {
+            const nodesRow = document.getElementById('nodes-row-' + serviceId);
+            const nodesContent = document.getElementById('nodes-content-' + serviceId);
+            
+            if (nodesRow.style.display === 'none') {
+                // 展开：加载节点列表
+                nodesRow.style.display = 'table-row';
+                button.textContent = '▼';
+                
+                // 如果还没有加载过节点数据，则加载
+                if (nodesContent.textContent === '加载中...' || nodesContent.dataset.loaded !== 'true') {
+                    await loadNodes(serviceId);
+                    nodesContent.dataset.loaded = 'true';
+                }
+            } else {
+                // 折叠：隐藏节点列表
+                nodesRow.style.display = 'none';
+                button.textContent = '▶';
+            }
+        }
+
+        // 加载节点列表
+        async function loadNodes(serviceId) {
+            const nodesContent = document.getElementById('nodes-content-' + serviceId);
+            nodesContent.innerHTML = '<div style="text-align: center; padding: 20px;">加载中...</div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/${serviceId}/nodes`);
+                if (!response.ok) {
+                    throw new Error('加载节点列表失败');
+                }
+                
+                const nodes = await response.json();
+                
+                if (!nodes || nodes.length === 0) {
+                    nodesContent.innerHTML = '<div style="text-align: center; padding: 20px; color: #999;">暂无节点信息</div>';
+                    return;
+                }
+                
+                let html = '<div style="margin-left: 20px;"><h4 style="margin-bottom: 10px;">节点列表 (' + nodes.length + ' 个)</h4>';
+                html += '<table style="width: 100%; border-collapse: collapse; background: white; border-radius: 4px;">';
+                html += '<thead><tr style="background: #e9ecef;">';
+                html += '<th style="padding: 8px; text-align: left; border-bottom: 1px solid #dee2e6;">ID</th>';
+                html += '<th style="padding: 8px; text-align: left; border-bottom: 1px solid #dee2e6;">地址</th>';
+                html += '<th style="padding: 8px; text-align: left; border-bottom: 1px solid #dee2e6;">ZooKeeper路径</th>';
+                html += '<th style="padding: 8px; text-align: left; border-bottom: 1px solid #dee2e6;">最后同步</th>';
+                html += '</tr></thead><tbody>';
+                
+                nodes.forEach(node => {
+                    html += '<tr style="border-bottom: 1px solid #f0f0f0;">';
+                    html += `<td style="padding: 8px;">${node.id || '-'}</td>`;
+                    html += `<td style="padding: 8px;">${escapeHtml(node.address || '-')}</td>`;
+                    html += `<td style="padding: 8px; word-break: break-all; max-width: 400px; font-size: 12px;">${escapeHtml(node.zkPath || '-')}</td>`;
+                    html += `<td style="padding: 8px;">${node.lastSyncTime ? formatDateTime(node.lastSyncTime) : '-'}</td>`;
+                    html += '</tr>';
+                });
+                
+                html += '</tbody></table></div>';
+                nodesContent.innerHTML = html;
+                
+            } catch (error) {
+                console.error('加载节点列表失败:', error);
+                nodesContent.innerHTML = '<div style="text-align: center; padding: 20px; color: #dc3545;">加载失败: ' + error.message + '</div>';
+            }
+        }
+
+        // 添加参数
+        function addParameter(methodId) {
+            document.getElementById('parameter-modal-title').textContent = '新增参数';
+            document.getElementById('parameter-id').value = '';
+            document.getElementById('parameter-method-id').value = methodId;
+            document.getElementById('parameter-name').value = '';
+            document.getElementById('parameter-type').value = '';
+            document.getElementById('parameter-order').value = '0';
+            document.getElementById('parameter-description').value = '';
+            openModal('parameter-modal');
+        }
+
+        // 编辑参数
+        async function editParameter(parameterId, methodId) {
+            try {
+                const response = await fetch(`${API_BASE}/parameters/${parameterId}`);
+                if (!response.ok) throw new Error('加载失败');
+                
+                const param = await response.json();
+                document.getElementById('parameter-modal-title').textContent = '编辑参数';
+                document.getElementById('parameter-id').value = param.id;
+                document.getElementById('parameter-method-id').value = methodId;
+                document.getElementById('parameter-name').value = param.parameterName || '';
+                document.getElementById('parameter-type').value = param.parameterType || '';
+                document.getElementById('parameter-order').value = param.parameterOrder || 0;
+                document.getElementById('parameter-description').value = param.parameterDescription || '';
+                openModal('parameter-modal');
+            } catch (error) {
+                console.error('加载参数失败:', error);
+                alert('加载失败: ' + error.message);
+            }
+        }
+
+        // 保存参数
+        async function saveParameter(e) {
+            e.preventDefault();
+            
+            const parameterId = document.getElementById('parameter-id').value;
+            const methodId = document.getElementById('parameter-method-id').value;
+            const parameter = {
+                methodId: parseInt(methodId),
+                parameterName: document.getElementById('parameter-name').value,
+                parameterType: document.getElementById('parameter-type').value,
+                parameterOrder: parseInt(document.getElementById('parameter-order').value),
+                parameterDescription: document.getElementById('parameter-description').value
+            };
+
+            try {
+                let response;
+                if (parameterId) {
+                    // 更新
+                    response = await fetch(`${API_BASE}/parameters/${parameterId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(parameter)
+                    });
+                } else {
+                    // 创建
+                    response = await fetch(`${API_BASE}/parameters`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(parameter)
+                    });
+                }
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(errorText || '保存失败');
+                }
+                
+                alert('保存成功');
+                closeModal('parameter-modal');
+                // 重新加载服务详情
+                if (window.currentServiceId) {
+                    viewServiceDetail(window.currentServiceId);
+                }
+            } catch (error) {
+                console.error('保存参数失败:', error);
+                alert('保存失败: ' + error.message);
+            }
+        }
+
+        // 删除参数
+        async function deleteParameter(parameterId) {
+            if (!confirm('确认删除该参数？')) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/parameters/${parameterId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(errorText || '删除失败');
+                }
+                
+                alert('删除成功');
+                // 重新加载服务详情
+                if (window.currentServiceId) {
+                    viewServiceDetail(window.currentServiceId);
+                }
+            } catch (error) {
+                console.error('删除参数失败:', error);
+                alert('删除失败: ' + error.message);
+            }
+        }
+
+        // 打开模态框
+        function openModal(modalId) {
+            document.getElementById(modalId).classList.add('active');
+        }
+
+        // 关闭模态框
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+        }
+
+        // 显示提示
+        function showAlert(containerId, message, type) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = `<div class="alert alert-${type}">${escapeHtml(message)}</div>`;
+            setTimeout(() => {
+                container.innerHTML = '';
+            }, 5000);
+        }
+
+        // 转义HTML
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // 格式化日期时间
+        function formatDateTime(dateTimeStr) {
+            if (!dateTimeStr) return '-';
+            try {
+                const date = new Date(dateTimeStr);
+                return date.toLocaleString('zh-CN');
+            } catch (e) {
+                return dateTimeStr;
+            }
+        }
+    </script>
+</body>
+</html>
+

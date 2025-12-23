@@ -47,16 +47,6 @@ public class DubboServiceNodeEntity {
     private String zkPath;
     
     /**
-     * 注册时间
-     */
-    private LocalDateTime registerTime;
-    
-    /**
-     * 最后心跳时间
-     */
-    private LocalDateTime lastHeartbeat;
-    
-    /**
      * 最后同步时间
      */
     private LocalDateTime lastSyncTime;
@@ -78,8 +68,6 @@ public class DubboServiceNodeEntity {
         this.serviceId = serviceId;
         this.address = providerInfo.getAddress();
         this.zkPath = providerInfo.getZkPath();
-        this.registerTime = providerInfo.getRegisterTime();
-        this.lastHeartbeat = providerInfo.getLastHeartbeat();
         
         // 初始化数据库相关字段
         this.lastSyncTime = LocalDateTime.now();
@@ -93,8 +81,6 @@ public class DubboServiceNodeEntity {
     public void updateFromProviderInfo(ProviderInfo providerInfo) {
         this.address = providerInfo.getAddress();
         this.zkPath = providerInfo.getZkPath();
-        this.registerTime = providerInfo.getRegisterTime();
-        this.lastHeartbeat = providerInfo.getLastHeartbeat();
         
         // 更新同步时间
         this.lastSyncTime = LocalDateTime.now();

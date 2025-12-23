@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS `zk_dubbo_service` (
     `version` VARCHAR(50) COMMENT '服务版本',
     `group` VARCHAR(100) COMMENT '服务分组',
     `application` VARCHAR(200) COMMENT '应用名称',
-    `approval_status` VARCHAR(20) NOT NULL DEFAULT 'INIT' COMMENT '审批状态: INIT-初始化, PENDING-待审批, APPROVED-已审批, REJECTED-已拒绝',
+    `approval_status` VARCHAR(20) NOT NULL DEFAULT 'INIT' COMMENT '审批状态: INIT-初始化, PENDING-待审批, APPROVED-已审批, REJECTED-已拒绝, OFFLINE-已下线',
     `approver` VARCHAR(100) COMMENT '审批人',
     `approval_time` DATETIME COMMENT '审批时间',
     `approval_comment` TEXT COMMENT '审批意见',
@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS `zk_provider_info` (
     `last_heartbeat_time` DATETIME COMMENT '最后心跳时间',
     `is_online` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否在线',
     `is_healthy` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否健康',
-    `approval_status` VARCHAR(20) NOT NULL DEFAULT 'INIT' COMMENT '审批状态: INIT-初始化, PENDING-待审批, APPROVED-已审批, REJECTED-已拒绝',
+    `approval_status` VARCHAR(20) NOT NULL DEFAULT 'INIT' COMMENT '审批状态: INIT-初始化, PENDING-待审批, APPROVED-已审批, REJECTED-已拒绝, OFFLINE-已下线',
     `approver` VARCHAR(100) COMMENT '审批人',
     `approval_time` DATETIME COMMENT '审批时间',
     `approval_comment` TEXT COMMENT '审批意见',
@@ -120,15 +120,12 @@ CREATE TABLE IF NOT EXISTS `zk_dubbo_service_node` (
     `service_id` BIGINT NOT NULL COMMENT '关联的服务ID',
     `address` VARCHAR(200) NOT NULL COMMENT '提供者地址 (IP:Port)',
     `zk_path` VARCHAR(2000) COMMENT 'ZooKeeper节点路径',
-    `register_time` DATETIME COMMENT '注册时间',
-    `last_heartbeat` DATETIME COMMENT '最后心跳时间',
     `last_sync_time` DATETIME COMMENT '最后同步时间',
     `gmt_created` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `gmt_modified` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
     KEY `idx_service_id` (`service_id`),
     KEY `idx_address` (`address`),
-    KEY `idx_register_time` (`register_time`),
     KEY `idx_last_sync_time` (`last_sync_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Dubbo服务节点表';
 

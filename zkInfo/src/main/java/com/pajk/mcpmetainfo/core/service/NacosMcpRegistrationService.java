@@ -7,6 +7,9 @@ import com.alibaba.nacos.api.naming.pojo.Instance;
 import com.alibaba.nacos.api.naming.pojo.ListView;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pajk.mcpmetainfo.core.model.ProviderInfo;
+import com.pajk.mcpmetainfo.persistence.entity.DubboMethodParameterEntity;
+import com.pajk.mcpmetainfo.persistence.entity.DubboServiceEntity;
+import com.pajk.mcpmetainfo.persistence.entity.DubboServiceMethodEntity;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,6 +22,7 @@ import java.time.Instant;
 import com.pajk.mcpmetainfo.core.util.McpToolSchemaGenerator;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.Comparator;
 
 /**
  * Nacos MCP服务注册服务
@@ -40,6 +44,12 @@ public class NacosMcpRegistrationService {
     
     @org.springframework.beans.factory.annotation.Autowired
     private com.pajk.mcpmetainfo.core.util.McpToolSchemaGenerator mcpToolSchemaGenerator;
+    
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.pajk.mcpmetainfo.core.service.DubboServiceDbService dubboServiceDbService;
+    
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.pajk.mcpmetainfo.core.service.DubboServiceMethodService dubboServiceMethodService;
 
     @Value("${server.port:9091}")
     private int serverPort;
@@ -188,8 +198,8 @@ public class NacosMcpRegistrationService {
                     tool.put("description", String.format("调用 %s 服务的 %s 方法", 
                             provider.getInterfaceName(), methodName));
                     
-                    // 根据实际方法参数生成 inputSchema
-                    Map<String, Object> inputSchema = mcpToolSchemaGenerator.createInputSchemaFromMethod(
+                    // 根据数据库中持久化的参数信息生成 inputSchema
+                    Map<String, Object> inputSchema = createInputSchemaFromDatabase(
                             provider.getInterfaceName(), methodName);
                     tool.put("inputSchema", inputSchema);
                     
@@ -211,6 +221,162 @@ public class NacosMcpRegistrationService {
         }
         
         return tools;
+    }
+    
+    /**
+     * 从数据库中持久化的 DubboMethodParameterEntity 数据创建 inputSchema
+     * 
+     * @param interfaceName 接口全限定名
+     * @param methodName 方法名
+     * @return inputSchema Map
+     */
+    private Map<String, Object> createInputSchemaFromDatabase(String interfaceName, String methodName) {
+        Map<String, Object> inputSchema = new HashMap<>();
+        inputSchema.put("type", "object");
+        
+        Map<String, Object> properties = new HashMap<>();
+        List<String> required = new ArrayList<>();
+        
+        try {
+            // 如果数据库服务不可用，回退到使用 mcpToolSchemaGenerator
+            if (dubboServiceDbService == null || dubboServiceMethodService == null) {
+                log.debug("⚠️ Database services not available, falling back to mcpToolSchemaGenerator");
+                return mcpToolSchemaGenerator.createInputSchemaFromMethod(interfaceName, methodName);
+            }
+            
+            // 1. 根据 interfaceName 查找服务
+            DubboServiceEntity service = dubboServiceDbService.findByInterfaceName(interfaceName);
+            if (service == null) {
+                log.debug("⚠️ Service not found in database: {}, falling back to mcpToolSchemaGenerator", 
+                        interfaceName);
+                return mcpToolSchemaGenerator.createInputSchemaFromMethod(interfaceName, methodName);
+            }
+            
+            Long serviceId = service.getId();
+            log.debug("✅ Found service in database: {} (ID: {})", interfaceName, serviceId);
+            
+            // 2. 根据 serviceId 和 methodName 查找方法
+            DubboServiceMethodEntity method = dubboServiceMethodService.findByServiceIdAndMethodName(
+                    serviceId, methodName);
+            if (method == null) {
+                log.debug("⚠️ Method not found in database: {}.{}, falling back to mcpToolSchemaGenerator", 
+                        interfaceName, methodName);
+                return mcpToolSchemaGenerator.createInputSchemaFromMethod(interfaceName, methodName);
+            }
+            
+            log.debug("✅ Found method in database: {}.{} (ID: {})", interfaceName, methodName, method.getId());
+            
+            // 3. 根据 methodId 查找参数列表
+            List<DubboMethodParameterEntity> parameters = dubboServiceMethodService.findParametersByMethodId(
+                    method.getId());
+            
+            if (parameters == null || parameters.isEmpty()) {
+                log.debug("⚠️ No parameters found in database for {}.{}, creating schema without parameters", 
+                        interfaceName, methodName);
+                // 无参数方法，properties 为空
+            } else {
+                // 按 parameterOrder 排序
+                parameters.sort(Comparator.comparing(DubboMethodParameterEntity::getParameterOrder));
+                
+                log.debug("✅ Found {} parameters in database for {}.{}", 
+                        parameters.size(), interfaceName, methodName);
+                
+                // 4. 为每个参数创建属性
+                for (DubboMethodParameterEntity param : parameters) {
+                    String paramName = param.getParameterName();
+                    String paramType = param.getParameterType();
+                    String paramDescription = param.getParameterDescription();
+                    
+                    // 如果参数名为空，使用默认名称
+                    if (paramName == null || paramName.isEmpty()) {
+                        paramName = "param" + param.getParameterOrder();
+                    }
+                    
+                    log.debug("    Parameter[{}]: {} ({})", param.getParameterOrder(), paramName, paramType);
+                    
+                    Map<String, Object> paramProperty = new HashMap<>();
+                    
+                    // 设置描述：优先使用数据库中的描述，否则根据类型生成
+                    if (paramDescription != null && !paramDescription.isEmpty()) {
+                        paramProperty.put("description", paramDescription);
+                    } else {
+                        paramProperty.put("description", getParameterDescriptionFromType(paramType, paramName));
+                    }
+                    
+                    // 根据参数类型设置 type
+                    String jsonType = getJsonTypeFromJavaTypeName(paramType);
+                    paramProperty.put("type", jsonType);
+                    
+                    // 如果是数组或集合类型，设置 items
+                    if (paramType != null && (paramType.endsWith("[]") || paramType.contains("List") || 
+                            paramType.contains("Set") || paramType.contains("Collection"))) {
+                        Map<String, Object> items = new HashMap<>();
+                        items.put("type", "any");
+                        paramProperty.put("items", items);
+                    }
+                    
+                    properties.put(paramName, paramProperty);
+                    required.add(paramName);
+                }
+            }
+        } catch (Exception e) {
+            log.error("❌ Error creating inputSchema from database for {}.{}: {}, falling back to mcpToolSchemaGenerator", 
+                    interfaceName, methodName, e.getMessage(), e);
+            // 发生错误时，回退到使用 mcpToolSchemaGenerator
+            return mcpToolSchemaGenerator.createInputSchemaFromMethod(interfaceName, methodName);
+        }
+        
+        inputSchema.put("properties", properties);
+        if (!required.isEmpty()) {
+            inputSchema.put("required", required);
+        }
+        
+        return inputSchema;
+    }
+    
+    /**
+     * 获取参数描述（基于类型名）
+     */
+    private String getParameterDescriptionFromType(String typeName, String paramName) {
+        if (typeName == null || typeName.isEmpty()) {
+            return String.format("参数 %s", paramName);
+        }
+        String simpleType = typeName.contains(".") ? 
+                typeName.substring(typeName.lastIndexOf(".") + 1) : typeName;
+        return String.format("%s 类型的参数 %s", simpleType, paramName);
+    }
+    
+    /**
+     * 将 Java 类型名转换为 JSON Schema 类型
+     */
+    private String getJsonTypeFromJavaTypeName(String javaTypeName) {
+        if (javaTypeName == null || javaTypeName.isEmpty()) {
+            return "any";
+        }
+        
+        // 基本类型
+        if (javaTypeName.equals("boolean") || javaTypeName.equals("java.lang.Boolean")) {
+            return "boolean";
+        } else if (javaTypeName.equals("int") || javaTypeName.equals("java.lang.Integer") ||
+                   javaTypeName.equals("long") || javaTypeName.equals("java.lang.Long") ||
+                   javaTypeName.equals("short") || javaTypeName.equals("java.lang.Short") ||
+                   javaTypeName.equals("byte") || javaTypeName.equals("java.lang.Byte")) {
+            return "integer";
+        } else if (javaTypeName.equals("float") || javaTypeName.equals("java.lang.Float") ||
+                   javaTypeName.equals("double") || javaTypeName.equals("java.lang.Double")) {
+            return "number";
+        } else if (javaTypeName.equals("java.lang.String") || javaTypeName.equals("String") ||
+                   javaTypeName.equals("char") || javaTypeName.equals("java.lang.Character")) {
+            return "string";
+        } else if (javaTypeName.endsWith("[]") || javaTypeName.contains("List") || 
+                   javaTypeName.contains("Set") || javaTypeName.contains("Collection")) {
+            return "array";
+        } else if (javaTypeName.contains("Map")) {
+            return "object";
+        } else {
+            // 其他对象类型
+            return "object";
+        }
     }
 
     /**
@@ -454,7 +620,11 @@ public class NacosMcpRegistrationService {
             }
             
             // 使用 SDK 查询（向后兼容）
-            ListView<String> servicesList = namingService.getServicesOfServer(1, Integer.MAX_VALUE, serviceGroup);
+            // 限制每次查询最多1000条，避免内存溢出
+            // 如果需要查询更多，可以分页查询
+            int pageSize = 1000;
+            int pageNo = 1;
+            ListView<String> servicesList = namingService.getServicesOfServer(pageNo, pageSize, serviceGroup);
             if (servicesList != null && servicesList.getData() != null) {
                 List<String> serviceNames = servicesList.getData();
                 // 过滤出 MCP 服务（以 mcp- 开头或包含在 mcp-server group 中）

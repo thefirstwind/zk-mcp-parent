@@ -53,11 +53,13 @@
         WHERE id = #{id}
     </select>
     
-    <!-- 根据服务ID查找所有方法 -->
+    <!-- 根据服务ID查找所有方法（限制最多200条，避免内存溢出） -->
     <select id="findByServiceId" parameterType="long" resultMap="DubboServiceMethodResultMap">
         SELECT <include refid="methodColumns"/>
         FROM zk_dubbo_service_method
         WHERE service_id = #{serviceId}
+        ORDER BY method_name ASC
+        LIMIT 200
     </select>
     
     <!-- 根据服务ID和方法名查找方法 -->
@@ -67,10 +69,12 @@
         WHERE service_id = #{serviceId} AND method_name = #{methodName}
     </select>
     
-    <!-- 查找所有Dubbo服务方法 -->
+    <!-- 查找所有Dubbo服务方法（限制最多5000条，避免内存溢出） -->
     <select id="findAll" resultMap="DubboServiceMethodResultMap">
         SELECT <include refid="methodColumns"/>
         FROM zk_dubbo_service_method
+        ORDER BY gmt_created DESC
+        LIMIT 5000
     </select>
     
 </mapper>

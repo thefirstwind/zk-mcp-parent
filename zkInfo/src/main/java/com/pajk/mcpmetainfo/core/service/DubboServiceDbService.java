@@ -6,6 +6,7 @@ import com.pajk.mcpmetainfo.persistence.entity.DubboServiceEntity;
 import com.pajk.mcpmetainfo.persistence.entity.DubboServiceMethodEntity;
 import com.pajk.mcpmetainfo.persistence.entity.DubboServiceNodeEntity;
 import com.pajk.mcpmetainfo.core.model.ProviderInfo;
+import com.pajk.mcpmetainfo.core.model.PageResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -150,7 +151,7 @@ public class DubboServiceDbService {
     }
     
     /**
-     * 查找已审批的Dubbo服务信息列表
+     * 查找已审批的Dubbo服务信息列表（限制最多1000条，避免内存溢出）
      * 
      * @return 已审批的Dubbo服务信息列表
      */
@@ -159,13 +160,57 @@ public class DubboServiceDbService {
     }
     
     /**
-     * 根据审批状态查找Dubbo服务信息列表
+     * 根据审批状态查找Dubbo服务信息列表（限制最多1000条，避免内存溢出）
      * 
      * @param approvalStatus 审批状态
      * @return 符合条件的Dubbo服务信息列表
      */
     public List<DubboServiceEntity> findByApprovalStatus(DubboServiceEntity.ApprovalStatus approvalStatus) {
         return dubboServiceMapper.findByApprovalStatus(approvalStatus.toString());
+    }
+    
+    /**
+     * 根据审批状态分页查找Dubbo服务信息列表
+     * 
+     * @param approvalStatus 审批状态
+     * @param page 页码（从1开始）
+     * @param size 每页大小
+     * @return 分页结果
+     */
+    public PageResult<DubboServiceEntity> findByApprovalStatusWithPagination(
+            DubboServiceEntity.ApprovalStatus approvalStatus, int page, int size) {
+        try {
+            // 参数校验
+            if (page < 1) page = 1;
+            if (size < 1) size = 10;
+            if (size > 100) size = 100; // 限制最大页面大小
+            
+            // 计算偏移量
+            int offset = (page - 1) * size;
+            
+            // 查询总数
+            long total = dubboServiceMapper.countByApprovalStatus(approvalStatus.toString());
+            
+            // 分页查询数据
+            List<DubboServiceEntity> data = dubboServiceMapper.findByApprovalStatusWithPagination(
+                    approvalStatus.toString(), offset, size);
+            
+            return new PageResult<>(data, total, page, size);
+        } catch (Exception e) {
+            log.error("分页查询Dubbo服务信息失败: approvalStatus={}, page={}, size={}", approvalStatus, page, size, e);
+            throw new RuntimeException("分页查询Dubbo服务信息失败", e);
+        }
+    }
+    
+    /**
+     * 根据接口名查找Dubbo服务（返回第一个匹配的服务）
+     * 
+     * @param interfaceName 接口全限定名
+     * @return Dubbo服务信息实体，如果未找到则返回 null
+     */
+    public DubboServiceEntity findByInterfaceName(String interfaceName) {
+        List<DubboServiceEntity> services = dubboServiceMapper.findByInterfaceName(interfaceName);
+        return services != null && !services.isEmpty() ? services.get(0) : null;
     }
     
     /**
@@ -347,15 +392,6 @@ public class DubboServiceDbService {
      */
     public List<DubboServiceNodeEntity> findNodesByServiceId(Long serviceId) {
         return dubboServiceNodeMapper.findByServiceId(serviceId);
-    }
-    
-    /**
-     * 查找所有Dubbo服务信息列表
-     * 
-     * @return 所有Dubbo服务信息列表
-     */
-    public List<DubboServiceEntity> findAll() {
-        return dubboServiceMapper.findAll();
     }
     
     /**

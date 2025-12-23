@@ -41,4 +41,16 @@ public class WebController {
     public RedirectView docs() {
         return new RedirectView("/swagger-ui.html");
     }
+    
+    /**
+     * Dubbo服务管理页面
+     * 
+     * 提供Dubbo服务管理界面的访问入口。
+     * 
+     * @return Dubbo服务管理页面视图
+     */
+    @GetMapping("/dubbo-services")
+    public String dubboServices() {
+        return "dubbo-service-management.html";
+    }
 }
