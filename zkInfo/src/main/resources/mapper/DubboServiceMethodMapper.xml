@@ -7,6 +7,8 @@
     <resultMap id="DubboServiceMethodResultMap" type="com.pajk.mcpmetainfo.persistence.entity.DubboServiceMethodEntity">
         <id property="id" column="id"/>
         <result property="serviceId" column="service_id"/>
+        <result property="interfaceName" column="interface_name"/>
+        <result property="version" column="version"/>
         <result property="methodName" column="method_name"/>
         <result property="returnType" column="return_type"/>
         <result property="createdAt" column="gmt_created"/>
@@ -14,15 +16,15 @@
     </resultMap>
     
     <sql id="methodColumns">
-        id, service_id, method_name, return_type, gmt_created, gmt_modified
+        id, service_id, interface_name, version, method_name, return_type, gmt_created, gmt_modified
     </sql>
     
     <!-- 插入Dubbo服务方法信息 -->
     <insert id="insert" parameterType="com.pajk.mcpmetainfo.persistence.entity.DubboServiceMethodEntity" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO zk_dubbo_service_method (
-            service_id, method_name, return_type, gmt_created, gmt_modified
+            service_id, interface_name, version, method_name, return_type, gmt_created, gmt_modified
         ) VALUES (
-            #{serviceId}, #{methodName}, #{returnType}, #{createdAt}, #{updatedAt}
+            #{serviceId}, #{interfaceName}, #{version}, #{methodName}, #{returnType}, #{createdAt}, #{updatedAt}
         )
     </insert>
     
@@ -30,6 +32,8 @@
     <update id="update" parameterType="com.pajk.mcpmetainfo.persistence.entity.DubboServiceMethodEntity">
         UPDATE zk_dubbo_service_method SET
             service_id = #{serviceId},
+            interface_name = #{interfaceName},
+            version = #{version},
             method_name = #{methodName},
             return_type = #{returnType},
             gmt_modified = #{updatedAt}

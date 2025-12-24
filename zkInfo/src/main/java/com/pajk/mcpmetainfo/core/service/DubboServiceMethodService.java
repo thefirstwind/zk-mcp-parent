@@ -4,6 +4,7 @@ import com.pajk.mcpmetainfo.persistence.mapper.DubboServiceMethodMapper;
 import com.pajk.mcpmetainfo.persistence.mapper.DubboMethodParameterMapper;
 import com.pajk.mcpmetainfo.persistence.entity.DubboServiceMethodEntity;
 import com.pajk.mcpmetainfo.persistence.entity.DubboMethodParameterEntity;
+import com.pajk.mcpmetainfo.persistence.entity.DubboServiceEntity;
 import com.pajk.mcpmetainfo.core.model.ProviderInfo;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,6 +38,9 @@ public class DubboServiceMethodService {
     @Autowired
     private DubboMethodParameterMapper dubboMethodParameterMapper;
     
+    @Autowired
+    private com.pajk.mcpmetainfo.persistence.mapper.DubboServiceMapper dubboServiceMapper;
+    
     /**
      * 保存或更新Dubbo服务方法信息到数据库
      * 
@@ -64,24 +68,30 @@ public class DubboServiceMethodService {
                     if (!methodName.isEmpty()) {
                         currentMethodNames.add(methodName);
                         
+                        // 从 zk_dubbo_service 获取 version
+                        DubboServiceEntity service = dubboServiceMapper.findById(serviceId);
+                        String version = service != null ? service.getVersion() : null;
+                        
                         // 检查方法是否已存在
                         if (existingMethodMap.containsKey(methodName)) {
-                            // 方法已存在，保留原有信息，仅更新时间戳
+                            // 方法已存在，更新 interface_name、version 和时间戳
                             DubboServiceMethodEntity existingMethod = existingMethodMap.get(methodName);
+                            existingMethod.setInterfaceName(providerInfo.getInterfaceName());
+                            existingMethod.setVersion(version);
                             existingMethod.setUpdatedAt(LocalDateTime.now());
                             dubboServiceMethodMapper.update(existingMethod);
                             log.debug("更新已存在的Dubbo服务方法信息: {} (ID: {})", methodName, existingMethod.getId());
                         } else {
                             // 新方法，创建并保存
                             DubboServiceMethodEntity methodEntity = new DubboServiceMethodEntity(
-                                serviceId, methodName, "java.lang.Object");
+                                serviceId, providerInfo.getInterfaceName(), version, methodName, "java.lang.Object");
                             
                             // 保存方法信息
                             dubboServiceMethodMapper.insert(methodEntity);
                             log.debug("保存新的Dubbo服务方法信息: {} (ID: {})", methodName, methodEntity.getId());
                             
                             // 保存参数信息（暂时为空，实际应该解析URL参数获取详细信息）
-                            saveMethodParameters(methodEntity.getId(), new ArrayList<>());
+                            saveMethodParameters(methodEntity.getId(), providerInfo.getInterfaceName(), version, new ArrayList<>());
                         }
                     }
                 }
@@ -151,6 +161,16 @@ public class DubboServiceMethodService {
     }
     
     /**
+     * 根据方法ID查找方法实体
+     * 
+     * @param methodId 方法ID
+     * @return 方法实体，如果未找到则返回 null
+     */
+    public DubboServiceMethodEntity findMethodById(Long methodId) {
+        return dubboServiceMethodMapper.findById(methodId);
+    }
+    
+    /**
      * 根据方法ID查找参数列表
      * 
      * @param methodId 方法ID
@@ -164,14 +184,18 @@ public class DubboServiceMethodService {
      * 保存方法参数信息
      * 
      * @param methodId 方法ID
+     * @param interfaceName 接口名
+     * @param version 版本（从 zk_dubbo_service 获取）
      * @param parameters 参数列表
      */
     @Transactional
-    public void saveMethodParameters(Long methodId, List<DubboMethodParameterEntity> parameters) {
+    public void saveMethodParameters(Long methodId, String interfaceName, String version, List<DubboMethodParameterEntity> parameters) {
         try {
             LocalDateTime now = LocalDateTime.now();
             for (DubboMethodParameterEntity parameter : parameters) {
                 parameter.setMethodId(methodId);
+                parameter.setInterfaceName(interfaceName);
+                parameter.setVersion(version);
                 // 如果时间字段为null，设置为当前时间
                 if (parameter.getCreatedAt() == null) {
                     parameter.setCreatedAt(now);

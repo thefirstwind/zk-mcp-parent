@@ -91,6 +91,10 @@ public class DubboServiceDbService {
      */
     public DubboServiceNodeEntity saveServiceNode(ProviderInfo providerInfo, Long serviceId) {
         try {
+            // 从 zk_dubbo_service 获取 version
+            DubboServiceEntity service = dubboServiceMapper.findById(serviceId);
+            String version = service != null ? service.getVersion() : null;
+            
             // 使用 serviceId + address 查询（使用索引优化，避免使用过长的 zkPath）
             DubboServiceNodeEntity existingEntity = dubboServiceNodeMapper.findByServiceIdAndAddress(
                 serviceId, providerInfo.getAddress());
@@ -99,12 +103,12 @@ public class DubboServiceDbService {
             if (existingEntity != null) {
                 // 如果存在，则更新现有记录
                 entity = existingEntity;
-                entity.updateFromProviderInfo(providerInfo);
-                log.debug("更新Dubbo服务节点信息到数据库: serviceId={}, address={}", serviceId, providerInfo.getAddress());
+                entity.updateFromProviderInfo(providerInfo, version);
+                log.debug("更新Dubbo服务节点信息到数据库: serviceId={}, address={}, version={}", serviceId, providerInfo.getAddress(), version);
             } else {
                 // 如果不存在，则创建新记录
-                entity = new DubboServiceNodeEntity(providerInfo, serviceId);
-                log.debug("保存新的Dubbo服务节点信息到数据库: serviceId={}, address={}", serviceId, providerInfo.getAddress());
+                entity = new DubboServiceNodeEntity(providerInfo, serviceId, version);
+                log.debug("保存新的Dubbo服务节点信息到数据库: serviceId={}, address={}, version={}", serviceId, providerInfo.getAddress(), version);
             }
             
             // 保存到数据库
@@ -114,7 +118,8 @@ public class DubboServiceDbService {
                 dubboServiceNodeMapper.update(entity);
             }
             
-            log.info("成功保存Dubbo服务节点信息: serviceId={}, address={} (ID: {})", serviceId, providerInfo.getAddress(), entity.getId());
+            log.info("成功保存Dubbo服务节点信息: serviceId={}, address={}, version={} (ID: {})", 
+                    serviceId, providerInfo.getAddress(), version, entity.getId());
             
             return entity;
         } catch (Exception e) {
@@ -211,6 +216,27 @@ public class DubboServiceDbService {
     public DubboServiceEntity findByInterfaceName(String interfaceName) {
         List<DubboServiceEntity> services = dubboServiceMapper.findByInterfaceName(interfaceName);
         return services != null && !services.isEmpty() ? services.get(0) : null;
+    }
+    
+    /**
+     * 根据接口名查找最大版本的Dubbo服务
+     * 
+     * @param interfaceName 接口全限定名
+     * @return 最大版本的Dubbo服务信息实体，如果未找到则返回 null
+     */
+    public DubboServiceEntity findLatestVersionByInterfaceName(String interfaceName) {
+        return dubboServiceMapper.findLatestVersionByInterfaceName(interfaceName);
+    }
+    
+    /**
+     * 根据接口名查找最大版本的服务ID
+     * 
+     * @param interfaceName 接口全限定名
+     * @return 最大版本的服务ID，如果未找到则返回 null
+     */
+    public Long findLatestVersionServiceId(String interfaceName) {
+        DubboServiceEntity service = findLatestVersionByInterfaceName(interfaceName);
+        return service != null ? service.getId() : null;
     }
     
     /**

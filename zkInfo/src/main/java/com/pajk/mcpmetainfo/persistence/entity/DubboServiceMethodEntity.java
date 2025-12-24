@@ -36,6 +36,16 @@ public class DubboServiceMethodEntity {
     private Long serviceId;
     
     /**
+     * 服务接口名（便于定位问题）
+     */
+    private String interfaceName;
+    
+    /**
+     * 服务版本（从 zk_dubbo_service 获取）
+     */
+    private String version;
+    
+    /**
      * 方法名
      */
     private String methodName;
@@ -65,6 +75,31 @@ public class DubboServiceMethodEntity {
      */
     public DubboServiceMethodEntity(Long serviceId, String methodName, String returnType) {
         this.serviceId = serviceId;
+        this.methodName = methodName;
+        this.returnType = returnType;
+        this.createdAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+    }
+    
+    /**
+     * 构造函数（包含 interfaceName）
+     */
+    public DubboServiceMethodEntity(Long serviceId, String interfaceName, String methodName, String returnType) {
+        this.serviceId = serviceId;
+        this.interfaceName = interfaceName;
+        this.methodName = methodName;
+        this.returnType = returnType;
+        this.createdAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+    }
+    
+    /**
+     * 构造函数（包含 interfaceName 和 version）
+     */
+    public DubboServiceMethodEntity(Long serviceId, String interfaceName, String version, String methodName, String returnType) {
+        this.serviceId = serviceId;
+        this.interfaceName = interfaceName;
+        this.version = version;
         this.methodName = methodName;
         this.returnType = returnType;
         this.createdAt = LocalDateTime.now();

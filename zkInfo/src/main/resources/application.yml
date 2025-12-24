@@ -20,8 +20,8 @@ spring:
       fail-on-unknown-properties: false
   datasource:
     url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:mcp_bridge}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=GMT%2B8&allowPublicKeyRetrieval=true
-    username: ${MYSQL_USERNAME:root}
-    password: ${MYSQL_PASSWORD:qwer1234}
+    username: ${MYSQL_USERNAME:mcp_user}
+    password: ${MYSQL_PASSWORD:mcp_user}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 20

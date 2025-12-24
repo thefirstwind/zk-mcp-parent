@@ -7,32 +7,51 @@
     <resultMap id="DubboServiceNodeResultMap" type="com.pajk.mcpmetainfo.persistence.entity.DubboServiceNodeEntity">
         <id property="id" column="id"/>
         <result property="serviceId" column="service_id"/>
+        <result property="interfaceName" column="interface_name"/>
+        <result property="version" column="version"/>
         <result property="address" column="address"/>
-        <result property="zkPath" column="zk_path"/>
         <result property="lastSyncTime" column="last_sync_time"/>
         <result property="createdAt" column="gmt_created"/>
         <result property="updatedAt" column="gmt_modified"/>
     </resultMap>
     
     <sql id="nodeColumns">
-        id, service_id, address, zk_path, last_sync_time, gmt_created, gmt_modified
+        id, service_id, interface_name, version, address, last_sync_time, gmt_created, gmt_modified
     </sql>
     
     <!-- 插入Dubbo服务节点信息 -->
     <insert id="insert" parameterType="com.pajk.mcpmetainfo.persistence.entity.DubboServiceNodeEntity" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO zk_dubbo_service_node (
-            service_id, address, zk_path, last_sync_time, gmt_created, gmt_modified
+            service_id, interface_name, version, address, last_sync_time, gmt_created, gmt_modified
         ) VALUES (
-            #{serviceId}, #{address}, #{zkPath}, #{lastSyncTime}, #{createdAt}, #{updatedAt}
+            #{serviceId}, #{interfaceName}, #{version}, #{address}, #{lastSyncTime}, #{createdAt}, #{updatedAt}
         )
+    </insert>
+    
+    <!-- 批量插入Dubbo服务节点信息 -->
+    <insert id="batchInsert" parameterType="java.util.List">
+        INSERT INTO zk_dubbo_service_node (
+            service_id, interface_name, version, address, last_sync_time, gmt_created, gmt_modified
+        ) VALUES
+        <foreach collection="nodes" item="item" separator=",">
+            (
+                #{item.serviceId}, #{item.interfaceName}, #{item.version}, #{item.address}, #{item.lastSyncTime}, #{item.createdAt}, #{item.updatedAt}
+            )
+        </foreach>
+        ON DUPLICATE KEY UPDATE
+            interface_name = VALUES(interface_name),
+            version = VALUES(version),
+            last_sync_time = VALUES(last_sync_time),
+            gmt_modified = VALUES(gmt_modified)
     </insert>
     
     <!-- 更新Dubbo服务节点信息 -->
     <update id="update" parameterType="com.pajk.mcpmetainfo.persistence.entity.DubboServiceNodeEntity">
         UPDATE zk_dubbo_service_node SET
             service_id = #{serviceId},
+            interface_name = #{interfaceName},
+            version = #{version},
             address = #{address},
-            zk_path = #{zkPath},
             last_sync_time = #{lastSyncTime},
             gmt_modified = #{updatedAt}
         WHERE id = #{id}
@@ -48,13 +67,6 @@
         SELECT <include refid="nodeColumns"/>
         FROM zk_dubbo_service_node
         WHERE id = #{id}
-    </select>
-    
-    <!-- 根据ZK路径查找Dubbo服务节点 -->
-    <select id="findByZkPath" parameterType="string" resultMap="DubboServiceNodeResultMap">
-        SELECT <include refid="nodeColumns"/>
-        FROM zk_dubbo_service_node
-        WHERE zk_path = #{zkPath}
     </select>
     
     <!-- 根据服务ID和地址查找Dubbo服务节点（使用索引优化） -->
@@ -79,6 +91,14 @@
         FROM zk_dubbo_service_node
         ORDER BY gmt_created DESC
         LIMIT 5000
+    </select>
+    
+    <!-- 查找 version 为空的节点记录 -->
+    <select id="findNodesWithNullVersion" resultMap="DubboServiceNodeResultMap">
+        SELECT <include refid="nodeColumns"/>
+        FROM zk_dubbo_service_node
+        WHERE version IS NULL OR version = ''
+        ORDER BY gmt_created DESC
     </select>
     
 </mapper>

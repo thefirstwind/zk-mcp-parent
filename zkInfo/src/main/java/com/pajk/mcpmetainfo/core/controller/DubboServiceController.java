@@ -260,7 +260,32 @@ public class DubboServiceController {
         try {
             // 权限校验
             PermissionChecker.checkPermission(UserRole.Permission.CREATE_PARAMETER);
-            dubboServiceMethodService.saveMethodParameters(parameter.getMethodId(), List.of(parameter));
+            
+            // 获取 interfaceName 和 version：优先使用参数中的，如果为空则从方法实体中获取
+            String interfaceName = parameter.getInterfaceName();
+            String version = parameter.getVersion();
+            if (parameter.getMethodId() != null) {
+                // 通过 methodId 查询方法实体获取 interfaceName 和 version
+                DubboServiceMethodEntity method = dubboServiceMethodService.findMethodById(parameter.getMethodId());
+                if (method != null) {
+                    if (interfaceName == null || interfaceName.isEmpty()) {
+                        interfaceName = method.getInterfaceName();
+                        parameter.setInterfaceName(interfaceName);
+                    }
+                    if (version == null || version.isEmpty()) {
+                        version = method.getVersion();
+                        parameter.setVersion(version);
+                    }
+                } else {
+                    log.warn("无法从方法ID {} 获取 interfaceName 和 version，请确保前端传入该字段", parameter.getMethodId());
+                }
+            }
+            
+            dubboServiceMethodService.saveMethodParameters(
+                parameter.getMethodId(), 
+                interfaceName != null ? interfaceName : "", 
+                version,
+                List.of(parameter));
             return ResponseEntity.ok("方法参数创建成功");
         } catch (SecurityException e) {
             log.warn("权限不足: {}", e.getMessage());
@@ -287,6 +312,24 @@ public class DubboServiceController {
             PermissionChecker.checkPermission(UserRole.Permission.UPDATE_PARAMETER);
             // 设置ID
             parameter.setId(id);
+            
+            // 如果 interfaceName 或 version 为空，从方法实体中获取
+            String interfaceName = parameter.getInterfaceName();
+            String version = parameter.getVersion();
+            if (parameter.getMethodId() != null) {
+                DubboServiceMethodEntity method = dubboServiceMethodService.findMethodById(parameter.getMethodId());
+                if (method != null) {
+                    if (interfaceName == null || interfaceName.isEmpty()) {
+                        interfaceName = method.getInterfaceName();
+                        parameter.setInterfaceName(interfaceName);
+                    }
+                    if (version == null || version.isEmpty()) {
+                        version = method.getVersion();
+                        parameter.setVersion(version);
+                    }
+                }
+            }
+            
             // 设置更新时间
             parameter.setUpdatedAt(LocalDateTime.now());
             // 调用更新方法

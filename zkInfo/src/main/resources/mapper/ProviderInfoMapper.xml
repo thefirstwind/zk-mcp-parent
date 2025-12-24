@@ -15,6 +15,13 @@
         <result property="methods" column="methods"/>
         <result property="parameters" column="parameters" typeHandler="com.pajk.mcpmetainfo.persistence.typehandler.JsonMapTypeHandler"/>
         <result property="zkPath" column="zk_path"/>
+        <result property="pathRoot" column="path_root"/>
+        <result property="pathInterface" column="path_interface"/>
+        <result property="pathAddress" column="path_address"/>
+        <result property="pathProtocol" column="path_protocol"/>
+        <result property="pathVersion" column="path_version"/>
+        <result property="pathGroup" column="path_group"/>
+        <result property="pathApplication" column="path_application"/>
         <result property="registerTime" column="registration_time"/>
         <result property="lastHeartbeat" column="last_heartbeat_time"/>
         <result property="online" column="is_online"/>
@@ -30,6 +37,7 @@
     
     <sql id="providerColumns">
         id, interface_name, address, protocol, version, `group`, application, methods, parameters, zk_path,
+        path_root, path_interface, path_address, path_protocol, path_version, path_group, path_application,
         registration_time, last_heartbeat_time, is_online, is_healthy,
         approval_status, approver, approval_time, approval_comment, last_sync_time,
         gmt_created, gmt_modified
@@ -39,16 +47,47 @@
     <insert id="insert" parameterType="com.pajk.mcpmetainfo.persistence.entity.ProviderInfoEntity" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO zk_provider_info (
             interface_name, address, protocol, version, `group`, application, methods, parameters, zk_path,
+            path_root, path_interface, path_address, path_protocol, path_version, path_group, path_application,
             registration_time, last_heartbeat_time, is_online, is_healthy,
             approval_status, approver, approval_time, approval_comment, last_sync_time,
             gmt_created, gmt_modified
         ) VALUES (
             #{interfaceName}, #{address}, #{protocol}, #{version}, #{group}, #{application}, 
             #{methods}, #{parameters,typeHandler=com.pajk.mcpmetainfo.persistence.typehandler.JsonMapTypeHandler}, #{zkPath},
+            #{pathRoot}, #{pathInterface}, #{pathAddress}, #{pathProtocol}, #{pathVersion}, #{pathGroup}, #{pathApplication},
             #{registerTime}, #{lastHeartbeat}, #{online}, #{isHealthy},
             #{approvalStatus}, #{approver}, #{approvalTime}, #{approvalComment}, #{lastSyncTime},
             #{createdAt}, #{updatedAt}
         )
+    </insert>
+    
+    <!-- 批量插入Provider信息 -->
+    <insert id="batchInsert" parameterType="java.util.List">
+        INSERT INTO zk_provider_info (
+            interface_name, address, protocol, version, `group`, application, methods, parameters, zk_path,
+            path_root, path_interface, path_address, path_protocol, path_version, path_group, path_application,
+            registration_time, last_heartbeat_time, is_online, is_healthy,
+            approval_status, approver, approval_time, approval_comment, last_sync_time,
+            gmt_created, gmt_modified
+        ) VALUES
+        <foreach collection="providers" item="item" separator=",">
+            (
+                #{item.interfaceName}, #{item.address}, #{item.protocol}, #{item.version}, #{item.group}, #{item.application}, 
+                #{item.methods}, #{item.parameters,typeHandler=com.pajk.mcpmetainfo.persistence.typehandler.JsonMapTypeHandler}, #{item.zkPath},
+                #{item.pathRoot}, #{item.pathInterface}, #{item.pathAddress}, #{item.pathProtocol}, #{item.pathVersion}, #{item.pathGroup}, #{item.pathApplication},
+                #{item.registerTime}, #{item.lastHeartbeat}, #{item.online}, #{item.isHealthy},
+                #{item.approvalStatus}, #{item.approver}, #{item.approvalTime}, #{item.approvalComment}, #{item.lastSyncTime},
+                #{item.createdAt}, #{item.updatedAt}
+            )
+        </foreach>
+        ON DUPLICATE KEY UPDATE
+            methods = VALUES(methods),
+            parameters = VALUES(parameters),
+            last_heartbeat_time = VALUES(last_heartbeat_time),
+            is_online = VALUES(is_online),
+            is_healthy = VALUES(is_healthy),
+            last_sync_time = VALUES(last_sync_time),
+            gmt_modified = VALUES(gmt_modified)
     </insert>
     
     <!-- 更新Provider信息 -->
@@ -63,6 +102,13 @@
             methods = #{methods},
             parameters = #{parameters,typeHandler=com.pajk.mcpmetainfo.persistence.typehandler.JsonMapTypeHandler},
             zk_path = #{zkPath},
+            path_root = #{pathRoot},
+            path_interface = #{pathInterface},
+            path_address = #{pathAddress},
+            path_protocol = #{pathProtocol},
+            path_version = #{pathVersion},
+            path_group = #{pathGroup},
+            path_application = #{pathApplication},
             registration_time = #{registerTime},
             last_heartbeat_time = #{lastHeartbeat},
             is_online = #{online},

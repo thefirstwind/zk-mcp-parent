@@ -7,6 +7,8 @@
     <resultMap id="DubboMethodParameterResultMap" type="com.pajk.mcpmetainfo.persistence.entity.DubboMethodParameterEntity">
         <id property="id" column="id"/>
         <result property="methodId" column="method_id"/>
+        <result property="interfaceName" column="interface_name"/>
+        <result property="version" column="version"/>
         <result property="parameterName" column="parameter_name"/>
         <result property="parameterType" column="parameter_type"/>
         <result property="parameterOrder" column="parameter_order"/>
@@ -16,15 +18,15 @@
     </resultMap>
     
     <sql id="parameterColumns">
-        id, method_id, parameter_name, parameter_type, parameter_order, parameter_description, gmt_created, gmt_modified
+        id, method_id, interface_name, version, parameter_name, parameter_type, parameter_order, parameter_description, gmt_created, gmt_modified
     </sql>
     
     <!-- 插入Dubbo服务方法参数信息 -->
     <insert id="insert" parameterType="com.pajk.mcpmetainfo.persistence.entity.DubboMethodParameterEntity" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO zk_dubbo_method_parameter (
-            method_id, parameter_name, parameter_type, parameter_order, parameter_description, gmt_created, gmt_modified
+            method_id, interface_name, version, parameter_name, parameter_type, parameter_order, parameter_description, gmt_created, gmt_modified
         ) VALUES (
-            #{methodId}, #{parameterName}, #{parameterType}, #{parameterOrder}, #{parameterDescription}, #{createdAt}, #{updatedAt}
+            #{methodId}, #{interfaceName}, #{version}, #{parameterName}, #{parameterType}, #{parameterOrder}, #{parameterDescription}, #{createdAt}, #{updatedAt}
         )
     </insert>
     
@@ -32,6 +34,8 @@
     <update id="update" parameterType="com.pajk.mcpmetainfo.persistence.entity.DubboMethodParameterEntity">
         UPDATE zk_dubbo_method_parameter SET
             method_id = #{methodId},
+            interface_name = #{interfaceName},
+            version = #{version},
             parameter_name = #{parameterName},
             parameter_type = #{parameterType},
             parameter_order = #{parameterOrder},

@@ -37,14 +37,19 @@ public class DubboServiceNodeEntity {
     private Long serviceId;
     
     /**
+     * 服务接口名（便于定位问题）
+     */
+    private String interfaceName;
+    
+    /**
+     * 服务版本（从 zk_dubbo_service 获取）
+     */
+    private String version;
+    
+    /**
      * 提供者地址 (IP:Port)
      */
     private String address;
-    
-    /**
-     * ZooKeeper节点路径
-     */
-    private String zkPath;
     
     /**
      * 最后同步时间
@@ -66,8 +71,23 @@ public class DubboServiceNodeEntity {
      */
     public DubboServiceNodeEntity(ProviderInfo providerInfo, Long serviceId) {
         this.serviceId = serviceId;
+        this.interfaceName = providerInfo.getInterfaceName();
         this.address = providerInfo.getAddress();
-        this.zkPath = providerInfo.getZkPath();
+        
+        // 初始化数据库相关字段
+        this.lastSyncTime = LocalDateTime.now();
+        this.createdAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+    }
+    
+    /**
+     * 构造函数：从ProviderInfo和ServiceEntity创建DubboServiceNodeEntity
+     */
+    public DubboServiceNodeEntity(ProviderInfo providerInfo, Long serviceId, String version) {
+        this.serviceId = serviceId;
+        this.interfaceName = providerInfo.getInterfaceName();
+        this.version = version;
+        this.address = providerInfo.getAddress();
         
         // 初始化数据库相关字段
         this.lastSyncTime = LocalDateTime.now();
@@ -79,8 +99,21 @@ public class DubboServiceNodeEntity {
      * 更新方法：从ProviderInfo更新DubboServiceNodeEntity
      */
     public void updateFromProviderInfo(ProviderInfo providerInfo) {
+        this.interfaceName = providerInfo.getInterfaceName();
         this.address = providerInfo.getAddress();
-        this.zkPath = providerInfo.getZkPath();
+        
+        // 更新同步时间
+        this.lastSyncTime = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+    }
+    
+    /**
+     * 更新方法：从ProviderInfo和version更新DubboServiceNodeEntity
+     */
+    public void updateFromProviderInfo(ProviderInfo providerInfo, String version) {
+        this.interfaceName = providerInfo.getInterfaceName();
+        this.version = version;
+        this.address = providerInfo.getAddress();
         
         // 更新同步时间
         this.lastSyncTime = LocalDateTime.now();

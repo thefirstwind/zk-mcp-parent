@@ -61,6 +61,41 @@ public class ProviderInfoEntity extends ProviderInfo {
     private LocalDateTime lastSyncTime;
     
     /**
+     * 路径根（如：/dubbo）
+     */
+    private String pathRoot;
+    
+    /**
+     * 路径中的接口名
+     */
+    private String pathInterface;
+    
+    /**
+     * 路径中的地址（IP:Port）
+     */
+    private String pathAddress;
+    
+    /**
+     * 路径中的协议
+     */
+    private String pathProtocol;
+    
+    /**
+     * 路径中的版本
+     */
+    private String pathVersion;
+    
+    /**
+     * 路径中的分组
+     */
+    private String pathGroup;
+    
+    /**
+     * 路径中的应用名
+     */
+    private String pathApplication;
+    
+    /**
      * 创建时间
      */
     private LocalDateTime createdAt;
@@ -108,6 +143,11 @@ public class ProviderInfoEntity extends ProviderInfo {
         this.setOnline(providerInfo.isOnline());
         this.setZkPath(providerInfo.getZkPath());
         
+        // 解析 zk_path 并填充结构化字段
+        if (providerInfo.getZkPath() != null) {
+            com.pajk.mcpmetainfo.core.util.ZkPathParser.fillPathFields(this, providerInfo.getZkPath());
+        }
+        
         // 初始化数据库相关字段
         this.approvalStatus = ApprovalStatus.INIT;
         this.lastSyncTime = LocalDateTime.now();
@@ -132,6 +172,11 @@ public class ProviderInfoEntity extends ProviderInfo {
         this.setLastHeartbeat(providerInfo.getLastHeartbeat());
         this.setOnline(providerInfo.isOnline());
         this.setZkPath(providerInfo.getZkPath());
+        
+        // 解析 zk_path 并更新结构化字段
+        if (providerInfo.getZkPath() != null) {
+            com.pajk.mcpmetainfo.core.util.ZkPathParser.fillPathFields(this, providerInfo.getZkPath());
+        }
         
         // 更新同步时间
         this.lastSyncTime = LocalDateTime.now();

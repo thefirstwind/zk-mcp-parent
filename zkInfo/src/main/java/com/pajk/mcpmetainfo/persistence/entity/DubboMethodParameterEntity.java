@@ -35,6 +35,16 @@ public class DubboMethodParameterEntity {
     private Long methodId;
     
     /**
+     * 服务接口名（便于定位问题）
+     */
+    private String interfaceName;
+    
+    /**
+     * 服务版本（从 zk_dubbo_service 获取）
+     */
+    private String version;
+    
+    /**
      * 参数名
      */
     private String parameterName;

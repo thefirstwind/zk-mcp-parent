@@ -41,17 +41,32 @@ public class DubboServiceInfoAdapter {
     }
     
     /**
-     * 将ProviderInfo转换为DubboServiceNodeEntity
+     * 将ProviderInfo转换为DubboServiceNodeEntity（已废弃，请使用带 version 参数的方法）
      * 
      * @param providerInfo Provider信息
      * @param serviceId 关联的服务ID
      * @return Dubbo服务节点实体
+     * @deprecated 请使用 convertToNodeEntity(ProviderInfo, Long, String) 方法
      */
+    @Deprecated
     public DubboServiceNodeEntity convertToNodeEntity(ProviderInfo providerInfo, Long serviceId) {
+        return convertToNodeEntity(providerInfo, serviceId, null);
+    }
+    
+    /**
+     * 将ProviderInfo转换为DubboServiceNodeEntity
+     * 
+     * @param providerInfo Provider信息
+     * @param serviceId 关联的服务ID
+     * @param version 服务版本（从 zk_dubbo_service 获取）
+     * @return Dubbo服务节点实体
+     */
+    public DubboServiceNodeEntity convertToNodeEntity(ProviderInfo providerInfo, Long serviceId, String version) {
         DubboServiceNodeEntity nodeEntity = new DubboServiceNodeEntity();
         nodeEntity.setServiceId(serviceId);
+        nodeEntity.setInterfaceName(providerInfo.getInterfaceName());
+        nodeEntity.setVersion(version);
         nodeEntity.setAddress(providerInfo.getAddress());
-        nodeEntity.setZkPath(providerInfo.getZkPath());
         nodeEntity.setLastSyncTime(LocalDateTime.now());
         nodeEntity.setCreatedAt(LocalDateTime.now());
         nodeEntity.setUpdatedAt(LocalDateTime.now());
@@ -97,17 +112,32 @@ public class DubboServiceInfoAdapter {
     }
     
     /**
-     * 将ProviderInfoEntity转换为DubboServiceNodeEntity
+     * 将ProviderInfoEntity转换为DubboServiceNodeEntity（已废弃，请使用带 version 参数的方法）
      * 
      * @param providerInfoEntity Provider信息实体
      * @param serviceId 关联的服务ID
      * @return Dubbo服务节点实体
+     * @deprecated 请使用 convertToNodeEntity(ProviderInfoEntity, Long, String) 方法
      */
+    @Deprecated
     public DubboServiceNodeEntity convertToNodeEntity(ProviderInfoEntity providerInfoEntity, Long serviceId) {
+        return convertToNodeEntity(providerInfoEntity, serviceId, null);
+    }
+    
+    /**
+     * 将ProviderInfoEntity转换为DubboServiceNodeEntity
+     * 
+     * @param providerInfoEntity Provider信息实体
+     * @param serviceId 关联的服务ID
+     * @param version 服务版本（从 zk_dubbo_service 获取）
+     * @return Dubbo服务节点实体
+     */
+    public DubboServiceNodeEntity convertToNodeEntity(ProviderInfoEntity providerInfoEntity, Long serviceId, String version) {
         DubboServiceNodeEntity nodeEntity = new DubboServiceNodeEntity();
         nodeEntity.setServiceId(serviceId);
+        nodeEntity.setInterfaceName(providerInfoEntity.getInterfaceName());
+        nodeEntity.setVersion(version);
         nodeEntity.setAddress(providerInfoEntity.getAddress());
-        nodeEntity.setZkPath(providerInfoEntity.getZkPath());
         nodeEntity.setLastSyncTime(LocalDateTime.now());
         nodeEntity.setCreatedAt(providerInfoEntity.getCreatedAt());
         nodeEntity.setUpdatedAt(providerInfoEntity.getUpdatedAt());

@@ -12,6 +12,14 @@ public interface ProviderInfoMapper {
     
     void insert(ProviderInfoEntity providerInfo);
     
+    /**
+     * 批量插入Provider信息
+     * 
+     * @param providers Provider列表
+     * @return 插入的记录数
+     */
+    int batchInsert(@Param("providers") List<ProviderInfoEntity> providers);
+    
     void update(ProviderInfoEntity providerInfo);
     
     ProviderInfoEntity findById(@Param("id") Long id);

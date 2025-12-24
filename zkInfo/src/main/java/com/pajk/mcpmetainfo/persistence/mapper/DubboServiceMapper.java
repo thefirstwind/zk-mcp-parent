@@ -11,6 +11,14 @@ public interface DubboServiceMapper {
     
     void insert(DubboServiceEntity dubboService);
     
+    /**
+     * 批量插入Dubbo服务信息
+     * 
+     * @param services 服务列表
+     * @return 插入的记录数
+     */
+    int batchInsert(@Param("services") List<DubboServiceEntity> services);
+    
     void update(DubboServiceEntity dubboService);
     
     void deleteById(@Param("id") Long id);
@@ -52,6 +60,14 @@ public interface DubboServiceMapper {
      * @return Dubbo服务列表
      */
     List<DubboServiceEntity> findByInterfaceName(@Param("interfaceName") String interfaceName);
+    
+    /**
+     * 根据接口名查找最大版本的Dubbo服务
+     * 
+     * @param interfaceName 接口全限定名
+     * @return 最大版本的Dubbo服务，如果未找到则返回 null
+     */
+    DubboServiceEntity findLatestVersionByInterfaceName(@Param("interfaceName") String interfaceName);
     
     
     /**
