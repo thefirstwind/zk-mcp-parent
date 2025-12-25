@@ -30,7 +30,8 @@ public class VirtualProjectRegistrationService {
     
     private final NacosMcpRegistrationService nacosMcpRegistrationService;
     private final ProjectManagementService projectManagementService;
-    private final ProviderService providerService;
+    private final ProviderService providerService; // 保留，用于其他场景
+    private final DubboServiceDbService dubboServiceDbService; // 用于从 zk_dubbo_* 表查询
     
     @Autowired
     private McpToolSchemaGenerator mcpToolSchemaGenerator;
@@ -140,16 +141,16 @@ public class VirtualProjectRegistrationService {
                 continue;
             }
             
-            // 从ProviderService中获取该服务的所有Provider
+            // 从 zk_dubbo_* 表查询所有 Provider（新逻辑）
             // 注意：group可能为null或空字符串，需要特殊处理
             String serviceGroup = projectService.getServiceGroup();
-            log.info("Looking for providers: {}:{}:{}", 
+            log.info("Looking for providers from zk_dubbo_* tables: {}:{}:{}", 
                     projectService.getServiceInterface(),
                     projectService.getServiceVersion(),
                     serviceGroup);
             
-            List<com.pajk.mcpmetainfo.core.model.ProviderInfo> allProviders = providerService.getAllProviders();
-            log.debug("Total providers available: {}", allProviders.size());
+            List<com.pajk.mcpmetainfo.core.model.ProviderInfo> allProviders = dubboServiceDbService.getAllProvidersFromDubboTables();
+            log.debug("Total providers available from zk_dubbo_* tables: {}", allProviders.size());
             
             List<com.pajk.mcpmetainfo.core.model.ProviderInfo> providers = allProviders.stream()
                     .filter(p -> {

@@ -6,8 +6,8 @@
     
     <resultMap id="ApprovalLogResultMap" type="com.pajk.mcpmetainfo.persistence.entity.ApprovalLog">
         <id property="id" column="id"/>
-        <result property="providerId" column="provider_id"/>
         <result property="serviceId" column="service_id"/>
+        <result property="approvalId" column="approval_id"/>
         <result property="oldStatus" column="old_status"/>
         <result property="newStatus" column="new_status"/>
         <result property="approver" column="approver"/>
@@ -16,24 +16,34 @@
     </resultMap>
     
     <sql id="logColumns">
-        id, provider_id, service_id, old_status, new_status, approver, approval_comment, gmt_created
+        id, service_id, approval_id, old_status, new_status, approver, approval_comment, gmt_created
     </sql>
     
     <!-- 插入审批日志 -->
+    <!-- 注意：审批日志现在记录服务级别的审批历史 -->
     <insert id="insert" parameterType="com.pajk.mcpmetainfo.persistence.entity.ApprovalLog" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO zk_approval_log (
-            provider_id, service_id, old_status, new_status, approver, approval_comment, gmt_created
+            service_id, approval_id, old_status, new_status, approver, approval_comment, gmt_created
         ) VALUES (
-            #{providerId}, #{serviceId}, #{oldStatus}, #{newStatus}, #{approver}, #{approvalComment}, #{createdAt}
+            #{serviceId}, #{approvalId}, #{oldStatus}, #{newStatus}, #{approver}, #{approvalComment}, #{createdAt}
         )
     </insert>
     
-    <!-- 根据Provider ID查找审批日志 -->
-    <select id="findByProviderIdOrderByCreatedAtDesc" parameterType="long" resultMap="ApprovalLogResultMap">
+    <!-- 根据Service ID查找审批日志 -->
+    <select id="findByServiceIdOrderByCreatedAtDesc" parameterType="long" resultMap="ApprovalLogResultMap">
         SELECT <include refid="logColumns"/>
         FROM zk_approval_log
-        WHERE provider_id = #{providerId}
+        WHERE service_id = #{serviceId}
         ORDER BY gmt_created DESC
+    </select>
+    
+    <!-- 根据Provider ID查找审批日志（已废弃，保留以兼容旧代码） -->
+    <select id="findByProviderIdOrderByCreatedAtDesc" parameterType="long" resultMap="ApprovalLogResultMap">
+        SELECT <include refid="logColumns"/>
+        FROM zk_approval_log al
+        INNER JOIN zk_provider_info pi ON al.service_id = pi.service_id
+        WHERE pi.id = #{providerId}
+        ORDER BY al.gmt_created DESC
     </select>
     
 </mapper>

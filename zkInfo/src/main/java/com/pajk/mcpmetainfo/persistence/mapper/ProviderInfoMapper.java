@@ -24,10 +24,26 @@ public interface ProviderInfoMapper {
     
     ProviderInfoEntity findById(@Param("id") Long id);
     
+    /**
+     * 根据 service_id 和 node_id 查找 Provider
+     */
+    ProviderInfoEntity findByServiceIdAndNodeId(@Param("serviceId") Long serviceId, 
+                                                @Param("nodeId") Long nodeId);
+    
     ProviderInfoEntity findByZkPath(@Param("interfaceName") String interfaceName, 
                                    @Param("address") String address, 
                                    @Param("protocol") String protocol, 
                                    @Param("version") String version);
+    
+    /**
+     * 根据ZooKeeper路径和审批状态查找Provider
+     * 审批状态从关联的 zk_dubbo_service 获取
+     */
+    ProviderInfoEntity findByZkPathAndApprovalStatus(@Param("interfaceName") String interfaceName, 
+                                                     @Param("address") String address, 
+                                                     @Param("protocol") String protocol, 
+                                                     @Param("version") String version,
+                                                     @Param("approvalStatus") String approvalStatus);
     
     List<ProviderInfoEntity> findApprovedProviders();
     
@@ -37,18 +53,33 @@ public interface ProviderInfoMapper {
     
     /**
      * 标记 Provider 为离线
+     * 注意：zk_path 字段已移除，使用 interface_name + address + protocol + version 来定位
      */
-    int markProviderOffline(@Param("zkPath") String zkPath, @Param("offlineTime") LocalDateTime offlineTime);
+    int markProviderOffline(@Param("interfaceName") String interfaceName, 
+                           @Param("address") String address, 
+                           @Param("protocol") String protocol, 
+                           @Param("version") String version, 
+                           @Param("offlineTime") LocalDateTime offlineTime);
     
     /**
      * 更新最后心跳时间
+     * 注意：zk_path 字段已移除，使用 interface_name + address + protocol + version 来定位
      */
-    int updateLastHeartbeat(@Param("zkPath") String zkPath, @Param("lastHeartbeat") LocalDateTime lastHeartbeat);
+    int updateLastHeartbeat(@Param("interfaceName") String interfaceName, 
+                           @Param("address") String address, 
+                           @Param("protocol") String protocol, 
+                           @Param("version") String version, 
+                           @Param("lastHeartbeat") LocalDateTime lastHeartbeat);
     
     /**
      * 更新 Provider 健康状态
+     * 注意：zk_path 字段已移除，使用 interface_name + address + protocol + version 来定位
      */
-    int updateProviderHealthStatus(@Param("zkPath") String zkPath, @Param("healthy") boolean healthy);
+    int updateProviderHealthStatus(@Param("interfaceName") String interfaceName, 
+                                   @Param("address") String address, 
+                                   @Param("protocol") String protocol, 
+                                   @Param("version") String version, 
+                                   @Param("healthy") boolean healthy);
     
     /**
      * 查找健康检查超时的 Provider（超过指定分钟数未更新心跳）

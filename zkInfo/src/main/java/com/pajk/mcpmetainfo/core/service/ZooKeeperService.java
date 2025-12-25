@@ -68,6 +68,9 @@ public class ZooKeeperService {
     @Autowired
     private DubboServiceDbService dubboServiceDbService;
     
+    @Autowired(required = false)
+    private InterfaceWhitelistService interfaceWhitelistService;
+    
     private CuratorFramework client;
     private final ConcurrentHashMap<String, PathChildrenCache> pathCaches = new ConcurrentHashMap<>();
     
@@ -99,8 +102,8 @@ public class ZooKeeperService {
             client.blockUntilConnected();
             log.info("ZooKeeper客户端连接成功: {}", config.getConnectString());
             
-            // 开始监听Provider节点
-            startWatchingProviders();
+            // 注意：不再在这里加载数据，改为在 ApplicationReadyEvent 时批量加载
+            // 数据加载由 ZooKeeperBootstrapService 在应用启动完成后执行
             
         } catch (Exception e) {
             log.error("初始化ZooKeeper客户端失败", e);
@@ -109,8 +112,16 @@ public class ZooKeeperService {
     }
     
     /**
+     * 获取 ZooKeeper 配置
+     */
+    public ZooKeeperConfig getConfig() {
+        return config;
+    }
+    
+    /**
      * 开始监听Provider节点
      * 注意：只监听已审批的服务（状态为APPROVED）
+     * 注意：不再加载已有数据，数据加载由 ZooKeeperBootstrapService 在启动时批量完成
      */
     public void startWatchingProviders() {
         try {
@@ -135,26 +146,20 @@ public class ZooKeeperService {
             
             log.info("已审批的服务数量: {}", approvedServiceNames.size());
             
-            // 只监听已审批的服务
+            // 只监听已审批的服务（不再加载已有数据，数据已在启动时批量加载）
             int watchedCount = 0;
-            int savedCount = 0;
             for (String service : services) {
                 String servicePath = providersPath + "/" + service;
                 
                 // 检查服务是否已审批
                 if (approvedServiceNames.contains(service)) {
-                    // 已审批的服务，创建watcher
-                    watchServiceProviders(servicePath, service);
+                    // 已审批的服务，创建watcher（不加载已有数据）
+                    watchServiceProvidersWithoutLoading(servicePath, service);
                     watchedCount++;
-                } else {
-                    // 未审批的服务，只保存到数据库，不创建watcher
-                    // 在初始化扫描时，所有服务都应该保存到数据库，状态为INIT
-                    saveServiceProvidersToDatabase(servicePath, service);
-                    savedCount++;
                 }
             }
             
-            log.info("实际监听 {} 个已审批服务接口，保存 {} 个未审批服务到数据库", watchedCount, savedCount);
+            log.info("开始监听 {} 个已审批服务接口", watchedCount);
             
             // 监听新服务的添加
             watchNewServices(providersPath);
@@ -165,10 +170,10 @@ public class ZooKeeperService {
     }
     
     /**
-     * 监听特定服务的Provider变化
+     * 监听特定服务的Provider变化（不加载已有数据）
      * 优化：只监听项目包含的服务
      */
-    private void watchServiceProviders(String servicePath, String serviceName) {
+    private void watchServiceProvidersWithoutLoading(String servicePath, String serviceName) {
         try {
             String providersPath = servicePath + "/providers";
             
@@ -178,8 +183,7 @@ public class ZooKeeperService {
                 return;
             }
             
-            // 首先加载已存在的provider信息
-            loadExistingProviders(providersPath, serviceName);
+            // 注意：不再加载已有数据，数据已在启动时批量加载
             
             // 使用 PathChildrenCache 监听子节点变化（Curator 4.x 兼容）
             PathChildrenCache cache = new PathChildrenCache(client, providersPath, true);
@@ -342,6 +346,7 @@ public class ZooKeeperService {
     
     /**
      * 监听新服务的添加
+     * 先检查白名单，如果不在白名单中直接退出
      * 只有已审批的服务才创建watcher，未审批的服务只保存到数据库
      */
     private void watchNewServices(String basePath) {
@@ -358,6 +363,12 @@ public class ZooKeeperService {
                             String serviceName = data.getPath().substring(basePath.length() + 1);
                             log.info("发现新服务: {}", serviceName);
                             
+                            // 白名单检查：如果不在白名单中，直接退出
+                            if (interfaceWhitelistService != null && !interfaceWhitelistService.isAllowed(serviceName)) {
+                                log.info("新发现的服务 {} 不在白名单中，直接退出，不进行处理", serviceName);
+                                return;
+                            }
+                            
                             String servicePath = basePath + "/" + serviceName;
                             
                             // 检查服务是否已审批
@@ -368,13 +379,12 @@ public class ZooKeeperService {
                                 .collect(java.util.stream.Collectors.toSet());
                             
                             if (approvedServiceNames.contains(serviceName)) {
-                                // 已审批的服务，创建watcher
-                                watchServiceProviders(servicePath, serviceName);
+                                // 已审批的服务，创建watcher（不加载已有数据）
+                                watchServiceProvidersWithoutLoading(servicePath, serviceName);
                                 log.info("为新发现的已审批服务 {} 创建watcher", serviceName);
                             } else {
-                                // 未审批的服务，只保存到数据库
-                                saveServiceProvidersToDatabase(servicePath, serviceName);
-                                log.info("新发现的服务 {} 未审批，已保存到数据库", serviceName);
+                                // 未审批的服务，不创建watcher，等待批量加载时处理
+                                log.info("新发现的服务 {} 未审批，将在下次批量加载时处理", serviceName);
                             }
                         }
                     }
@@ -519,9 +529,9 @@ public class ZooKeeperService {
     }
     
     /**
-     * 解析Provider URL
+     * 解析Provider URL（供外部调用）
      */
-    private ProviderInfo parseProviderUrl(String providerUrl, String serviceName) {
+    public ProviderInfo parseProviderUrl(String providerUrl, String serviceName) {
         try {
             // Dubbo Provider URL格式: dubbo://192.168.1.100:20880/com.example.Service?version=1.0.0&group=default&...
             if (!providerUrl.startsWith("dubbo://")) {

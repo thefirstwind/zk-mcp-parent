@@ -263,9 +263,9 @@ public class ZkWatcherSchedulerService {
                 }
                 
                 // 检查数据库中的审批状态，只有已审批的Provider才会被添加watch
-                // 注意：这里我们需要检查对应的服务是否已审批
+                // 注意：审批状态现在通过 service_id 关联 zk_dubbo_service.approval_status 获取
                 Optional<ProviderInfoEntity> approvedProvider = 
-                    providerInfoDbService.findByZkPathAndApprovalStatus(data.getPath(), ProviderInfoEntity.ApprovalStatus.APPROVED);
+                    providerInfoDbService.findByZkPathAndApprovalStatus(data.getPath(), "APPROVED");
                 if (approvedProvider.isPresent()) {
                     providerService.addProvider(providerInfo);
                     log.debug("添加新已审批Provider到服务监控: {}", data.getPath());
@@ -327,8 +327,9 @@ public class ZkWatcherSchedulerService {
                 }
                 
                 // 检查数据库中的审批状态，只有已审批的Provider才会被添加watch
+                // 注意：审批状态现在通过 service_id 关联 zk_dubbo_service.approval_status 获取
                 Optional<ProviderInfoEntity> approvedProvider = 
-                    providerInfoDbService.findByZkPathAndApprovalStatus(data.getPath(), ProviderInfoEntity.ApprovalStatus.APPROVED);
+                    providerInfoDbService.findByZkPathAndApprovalStatus(data.getPath(), "APPROVED");
                 if (approvedProvider.isPresent()) {
                     providerService.updateProvider(providerInfo);
                     log.debug("更新已审批Provider到服务监控: {}", data.getPath());

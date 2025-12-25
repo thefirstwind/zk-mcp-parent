@@ -4,85 +4,112 @@
 
 <mapper namespace="com.pajk.mcpmetainfo.persistence.mapper.ProviderInfoMapper">
     
+    <!-- Provider信息结果映射（通过 JOIN 查询获取关联信息） -->
     <resultMap id="ProviderInfoResultMap" type="com.pajk.mcpmetainfo.persistence.entity.ProviderInfoEntity">
+        <id property="id" column="pi_id"/>
+        <result property="serviceId" column="pi_service_id"/>
+        <result property="nodeId" column="pi_node_id"/>
+        <!-- 优先使用 zk_provider_info 表中的字段，如果没有则使用关联查询的结果 -->
+        <result property="interfaceName" column="pi_interface_name"/>
+        <result property="address" column="pi_address"/>
+        <!-- 从 zk_dubbo_service 关联获取服务基本信息 -->
+        <result property="protocol" column="ds_protocol"/>
+        <result property="version" column="ds_version"/>
+        <result property="group" column="ds_group"/>
+        <result property="application" column="ds_application"/>
+        <!-- Provider 特有字段 -->
+        <result property="registerTime" column="pi_registration_time"/>
+        <result property="lastHeartbeat" column="pi_last_heartbeat_time"/>
+        <result property="online" column="pi_is_online"/>
+        <result property="isHealthy" column="pi_is_healthy"/>
+        <result property="lastSyncTime" column="pi_last_sync_time"/>
+        <result property="createdAt" column="pi_gmt_created"/>
+        <result property="updatedAt" column="pi_gmt_modified"/>
+    </resultMap>
+    
+    <!-- Provider信息结果映射（简单查询，不包含关联信息） -->
+    <resultMap id="ProviderInfoSimpleResultMap" type="com.pajk.mcpmetainfo.persistence.entity.ProviderInfoEntity">
         <id property="id" column="id"/>
+        <result property="serviceId" column="service_id"/>
+        <result property="nodeId" column="node_id"/>
         <result property="interfaceName" column="interface_name"/>
         <result property="address" column="address"/>
-        <result property="protocol" column="protocol"/>
-        <result property="version" column="version"/>
-        <result property="group" column="group"/>
-        <result property="application" column="application"/>
-        <result property="methods" column="methods"/>
-        <result property="parameters" column="parameters" typeHandler="com.pajk.mcpmetainfo.persistence.typehandler.JsonMapTypeHandler"/>
-        <result property="zkPath" column="zk_path"/>
-        <result property="pathRoot" column="path_root"/>
-        <result property="pathInterface" column="path_interface"/>
-        <result property="pathAddress" column="path_address"/>
-        <result property="pathProtocol" column="path_protocol"/>
-        <result property="pathVersion" column="path_version"/>
-        <result property="pathGroup" column="path_group"/>
-        <result property="pathApplication" column="path_application"/>
         <result property="registerTime" column="registration_time"/>
         <result property="lastHeartbeat" column="last_heartbeat_time"/>
         <result property="online" column="is_online"/>
         <result property="isHealthy" column="is_healthy"/>
-        <result property="approvalStatus" column="approval_status"/>
-        <result property="approver" column="approver"/>
-        <result property="approvalTime" column="approval_time"/>
-        <result property="approvalComment" column="approval_comment"/>
+        <!-- 注意：审批状态已移除，通过 service_id 关联 zk_dubbo_service.approval_status 获取 -->
         <result property="lastSyncTime" column="last_sync_time"/>
         <result property="createdAt" column="gmt_created"/>
         <result property="updatedAt" column="gmt_modified"/>
     </resultMap>
     
+    <!-- Provider信息列（简单查询） -->
     <sql id="providerColumns">
-        id, interface_name, address, protocol, version, `group`, application, methods, parameters, zk_path,
-        path_root, path_interface, path_address, path_protocol, path_version, path_group, path_application,
+        id, service_id, node_id, interface_name, address,
         registration_time, last_heartbeat_time, is_online, is_healthy,
-        approval_status, approver, approval_time, approval_comment, last_sync_time,
-        gmt_created, gmt_modified
+        last_sync_time, gmt_created, gmt_modified
+    </sql>
+    
+    <!-- Provider信息列（带关联查询） -->
+    <sql id="providerColumnsWithJoin">
+        pi.id AS pi_id, pi.service_id AS pi_service_id, pi.node_id AS pi_node_id,
+        pi.interface_name AS pi_interface_name, pi.address AS pi_address,
+        pi.registration_time AS pi_registration_time, pi.last_heartbeat_time AS pi_last_heartbeat_time,
+        pi.is_online AS pi_is_online, pi.is_healthy AS pi_is_healthy,
+        pi.last_sync_time AS pi_last_sync_time,
+        pi.gmt_created AS pi_gmt_created, pi.gmt_modified AS pi_gmt_modified,
+        ds.interface_name AS ds_interface_name, ds.protocol AS ds_protocol,
+        ds.version AS ds_version, ds.group AS ds_group, ds.application AS ds_application,
+        ds.approval_status AS ds_approval_status, ds.approver AS ds_approver,
+        ds.approval_time AS ds_approval_time, ds.approval_comment AS ds_approval_comment,
+        dsn.address AS dsn_address
     </sql>
     
     <!-- 插入Provider信息 -->
+    <!-- 注意：interface_name 和 address 字段保留，便于快速查询和定位问题 -->
+    <!-- 审批状态通过 service_id 关联 zk_dubbo_service.approval_status 获取 -->
+    <!-- methods 和 parameters 保存到子表 -->
     <insert id="insert" parameterType="com.pajk.mcpmetainfo.persistence.entity.ProviderInfoEntity" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO zk_provider_info (
-            interface_name, address, protocol, version, `group`, application, methods, parameters, zk_path,
-            path_root, path_interface, path_address, path_protocol, path_version, path_group, path_application,
+            service_id, node_id, interface_name, address,
             registration_time, last_heartbeat_time, is_online, is_healthy,
-            approval_status, approver, approval_time, approval_comment, last_sync_time,
-            gmt_created, gmt_modified
+            last_sync_time, gmt_created, gmt_modified
         ) VALUES (
-            #{interfaceName}, #{address}, #{protocol}, #{version}, #{group}, #{application}, 
-            #{methods}, #{parameters,typeHandler=com.pajk.mcpmetainfo.persistence.typehandler.JsonMapTypeHandler}, #{zkPath},
-            #{pathRoot}, #{pathInterface}, #{pathAddress}, #{pathProtocol}, #{pathVersion}, #{pathGroup}, #{pathApplication},
+            #{serviceId}, #{nodeId}, #{interfaceName}, #{address},
             #{registerTime}, #{lastHeartbeat}, #{online}, #{isHealthy},
-            #{approvalStatus}, #{approver}, #{approvalTime}, #{approvalComment}, #{lastSyncTime},
-            #{createdAt}, #{updatedAt}
+            #{lastSyncTime}, #{createdAt}, #{updatedAt}
         )
+        ON DUPLICATE KEY UPDATE
+            interface_name = VALUES(interface_name),
+            address = VALUES(address),
+            last_heartbeat_time = VALUES(last_heartbeat_time),
+            is_online = VALUES(is_online),
+            is_healthy = VALUES(is_healthy),
+            last_sync_time = VALUES(last_sync_time),
+            gmt_modified = VALUES(gmt_modified)
     </insert>
     
     <!-- 批量插入Provider信息 -->
+    <!-- 注意：interface_name 和 address 字段保留，便于快速查询和定位问题 -->
+    <!-- 审批状态通过 service_id 关联 zk_dubbo_service.approval_status 获取 -->
+    <!-- methods 和 parameters 保存到子表 -->
     <insert id="batchInsert" parameterType="java.util.List">
         INSERT INTO zk_provider_info (
-            interface_name, address, protocol, version, `group`, application, methods, parameters, zk_path,
-            path_root, path_interface, path_address, path_protocol, path_version, path_group, path_application,
+            service_id, node_id, interface_name, address,
             registration_time, last_heartbeat_time, is_online, is_healthy,
-            approval_status, approver, approval_time, approval_comment, last_sync_time,
-            gmt_created, gmt_modified
+            last_sync_time, gmt_created, gmt_modified
         ) VALUES
         <foreach collection="providers" item="item" separator=",">
             (
-                #{item.interfaceName}, #{item.address}, #{item.protocol}, #{item.version}, #{item.group}, #{item.application}, 
-                #{item.methods}, #{item.parameters,typeHandler=com.pajk.mcpmetainfo.persistence.typehandler.JsonMapTypeHandler}, #{item.zkPath},
-                #{item.pathRoot}, #{item.pathInterface}, #{item.pathAddress}, #{item.pathProtocol}, #{item.pathVersion}, #{item.pathGroup}, #{item.pathApplication},
+                #{item.serviceId}, #{item.nodeId}, #{item.interfaceName}, #{item.address},
                 #{item.registerTime}, #{item.lastHeartbeat}, #{item.online}, #{item.isHealthy},
-                #{item.approvalStatus}, #{item.approver}, #{item.approvalTime}, #{item.approvalComment}, #{item.lastSyncTime},
-                #{item.createdAt}, #{item.updatedAt}
+                #{item.lastSyncTime}, #{item.createdAt}, #{item.updatedAt}
             )
         </foreach>
         ON DUPLICATE KEY UPDATE
-            methods = VALUES(methods),
-            parameters = VALUES(parameters),
+            interface_name = VALUES(interface_name),
+            address = VALUES(address),
             last_heartbeat_time = VALUES(last_heartbeat_time),
             is_online = VALUES(is_online),
             is_healthy = VALUES(is_healthy),
@@ -91,113 +118,152 @@
     </insert>
     
     <!-- 更新Provider信息 -->
+    <!-- 注意：interface_name 和 address 字段保留，便于快速查询和定位问题 -->
+    <!-- 审批状态通过 service_id 关联 zk_dubbo_service.approval_status 获取 -->
+    <!-- methods 和 parameters 更新到子表 -->
     <update id="update" parameterType="com.pajk.mcpmetainfo.persistence.entity.ProviderInfoEntity">
         UPDATE zk_provider_info SET
+            service_id = #{serviceId},
+            node_id = #{nodeId},
             interface_name = #{interfaceName},
             address = #{address},
-            protocol = #{protocol},
-            version = #{version},
-            `group` = #{group},
-            application = #{application},
-            methods = #{methods},
-            parameters = #{parameters,typeHandler=com.pajk.mcpmetainfo.persistence.typehandler.JsonMapTypeHandler},
-            zk_path = #{zkPath},
-            path_root = #{pathRoot},
-            path_interface = #{pathInterface},
-            path_address = #{pathAddress},
-            path_protocol = #{pathProtocol},
-            path_version = #{pathVersion},
-            path_group = #{pathGroup},
-            path_application = #{pathApplication},
             registration_time = #{registerTime},
             last_heartbeat_time = #{lastHeartbeat},
             is_online = #{online},
             is_healthy = #{isHealthy},
-            approval_status = #{approvalStatus},
-            approver = #{approver},
-            approval_time = #{approvalTime},
-            approval_comment = #{approvalComment},
             last_sync_time = #{lastSyncTime},
             gmt_modified = #{updatedAt}
         WHERE id = #{id}
     </update>
     
-    <!-- 根据ID查找Provider -->
+    <!-- 根据ID查找Provider（带关联查询） -->
     <select id="findById" parameterType="long" resultMap="ProviderInfoResultMap">
-        SELECT <include refid="providerColumns"/>
-        FROM zk_provider_info
-        WHERE id = #{id}
+        SELECT <include refid="providerColumnsWithJoin"/>
+        FROM zk_provider_info pi
+        INNER JOIN zk_dubbo_service ds ON pi.service_id = ds.id
+        INNER JOIN zk_dubbo_service_node dsn ON pi.node_id = dsn.id
+        WHERE pi.id = #{id}
     </select>
     
-    <!-- 根据zkPath查找Provider -->
+    <!-- 根据 service_id 和 node_id 查找Provider（简单查询） -->
+    <select id="findByServiceIdAndNodeId" resultMap="ProviderInfoSimpleResultMap">
+        SELECT <include refid="providerColumns"/>
+        FROM zk_provider_info
+        WHERE service_id = #{serviceId} AND node_id = #{nodeId}
+        LIMIT 1
+    </select>
+    
+    <!-- 根据zkPath查找Provider（通过 service 和 node 关联查询） -->
     <select id="findByZkPath" resultMap="ProviderInfoResultMap">
-        SELECT <include refid="providerColumns"/>
-        FROM zk_provider_info
-        WHERE zk_path = #{zkPath}
+        SELECT <include refid="providerColumnsWithJoin"/>
+        FROM zk_provider_info pi
+        INNER JOIN zk_dubbo_service ds ON pi.service_id = ds.id
+        INNER JOIN zk_dubbo_service_node dsn ON pi.node_id = dsn.id
+        WHERE ds.interface_name = #{interfaceName} 
+          AND dsn.address = #{address} 
+          AND ds.protocol = #{protocol} 
+          AND ds.version = #{version}
     </select>
     
-    <!-- 根据接口名、地址、协议、版本查找Provider -->
+    <!-- 根据接口名、地址、协议、版本查找Provider（通过 service 和 node 关联查询） -->
     <select id="findByInterfaceAddressProtocolVersion" resultMap="ProviderInfoResultMap">
-        SELECT <include refid="providerColumns"/>
-        FROM zk_provider_info
-        WHERE interface_name = #{interfaceName} AND address = #{address} AND protocol = #{protocol} AND version = #{version}
+        SELECT <include refid="providerColumnsWithJoin"/>
+        FROM zk_provider_info pi
+        INNER JOIN zk_dubbo_service ds ON pi.service_id = ds.id
+        INNER JOIN zk_dubbo_service_node dsn ON pi.node_id = dsn.id
+        WHERE ds.interface_name = #{interfaceName} 
+          AND dsn.address = #{address} 
+          AND ds.protocol = #{protocol} 
+          AND ds.version = #{version}
     </select>
     
-    <!-- 查找所有已审批的Provider -->
+    <!-- 查找所有已审批的Provider（带关联查询，审批状态从 zk_dubbo_service 获取） -->
     <select id="findApprovedProviders" resultMap="ProviderInfoResultMap">
-        SELECT <include refid="providerColumns"/>
-        FROM zk_provider_info
-        WHERE approval_status = 'APPROVED'
+        SELECT <include refid="providerColumnsWithJoin"/>
+        FROM zk_provider_info pi
+        INNER JOIN zk_dubbo_service ds ON pi.service_id = ds.id
+        INNER JOIN zk_dubbo_service_node dsn ON pi.node_id = dsn.id
+        WHERE ds.approval_status = 'APPROVED'
+        ORDER BY pi.gmt_created DESC
+        LIMIT 5000
     </select>
     
-    <!-- 根据审批状态查找Provider -->
+    <!-- 根据审批状态查找Provider（带关联查询，审批状态从 zk_dubbo_service 获取） -->
     <select id="findByApprovalStatus" parameterType="string" resultMap="ProviderInfoResultMap">
-        SELECT <include refid="providerColumns"/>
-        FROM zk_provider_info
-        WHERE approval_status = #{approvalStatus}
+        SELECT <include refid="providerColumnsWithJoin"/>
+        FROM zk_provider_info pi
+        INNER JOIN zk_dubbo_service ds ON pi.service_id = ds.id
+        INNER JOIN zk_dubbo_service_node dsn ON pi.node_id = dsn.id
+        WHERE ds.approval_status = #{approvalStatus}
+        ORDER BY pi.gmt_created DESC
+        LIMIT 5000
     </select>
     
-    <!-- 查找所有Provider（限制最多5000条，避免内存溢出） -->
+    <!-- 查找所有Provider（限制最多5000条，避免内存溢出，带关联查询） -->
     <select id="findAll" resultMap="ProviderInfoResultMap">
-        SELECT <include refid="providerColumns"/>
-        FROM zk_provider_info
-        ORDER BY gmt_created DESC
+        SELECT <include refid="providerColumnsWithJoin"/>
+        FROM zk_provider_info pi
+        INNER JOIN zk_dubbo_service ds ON pi.service_id = ds.id
+        INNER JOIN zk_dubbo_service_node dsn ON pi.node_id = dsn.id
+        ORDER BY pi.gmt_created DESC
         LIMIT 5000
     </select>
     
     <!-- 标记 Provider 为离线 -->
+    <!-- 注意：通过 service 和 node 关联查询定位 -->
     <update id="markProviderOffline">
-        UPDATE zk_provider_info SET
-            is_online = 0,
-            last_heartbeat_time = #{offlineTime},
-            gmt_modified = NOW()
-        WHERE zk_path = #{zkPath}
+        UPDATE zk_provider_info pi
+        INNER JOIN zk_dubbo_service ds ON pi.service_id = ds.id
+        INNER JOIN zk_dubbo_service_node dsn ON pi.node_id = dsn.id
+        SET pi.is_online = 0,
+            pi.last_heartbeat_time = #{offlineTime},
+            pi.gmt_modified = NOW()
+        WHERE ds.interface_name = #{interfaceName} 
+          AND dsn.address = #{address} 
+          AND ds.protocol = #{protocol} 
+          AND ds.version = #{version}
     </update>
     
     <!-- 更新最后心跳时间 -->
+    <!-- 注意：通过 service 和 node 关联查询定位 -->
     <update id="updateLastHeartbeat">
-        UPDATE zk_provider_info SET
-            last_heartbeat_time = #{lastHeartbeat},
-            is_online = 1,
-            gmt_modified = NOW()
-        WHERE zk_path = #{zkPath}
+        UPDATE zk_provider_info pi
+        INNER JOIN zk_dubbo_service ds ON pi.service_id = ds.id
+        INNER JOIN zk_dubbo_service_node dsn ON pi.node_id = dsn.id
+        SET pi.last_heartbeat_time = #{lastHeartbeat},
+            pi.is_online = 1,
+            pi.gmt_modified = NOW()
+        WHERE ds.interface_name = #{interfaceName} 
+          AND dsn.address = #{address} 
+          AND ds.protocol = #{protocol} 
+          AND ds.version = #{version}
     </update>
     
     <!-- 更新 Provider 健康状态 -->
+    <!-- 注意：通过 service 和 node 关联查询定位 -->
     <update id="updateProviderHealthStatus">
-        UPDATE zk_provider_info SET
-            is_healthy = #{healthy},
-            gmt_modified = NOW()
-        WHERE zk_path = #{zkPath}
+        UPDATE zk_provider_info pi
+        INNER JOIN zk_dubbo_service ds ON pi.service_id = ds.id
+        INNER JOIN zk_dubbo_service_node dsn ON pi.node_id = dsn.id
+        SET pi.is_healthy = #{healthy},
+            pi.gmt_modified = NOW()
+        WHERE ds.interface_name = #{interfaceName} 
+          AND dsn.address = #{address} 
+          AND ds.protocol = #{protocol} 
+          AND ds.version = #{version}
     </update>
     
-    <!-- 查找健康检查超时的 Provider（超过指定分钟数未更新心跳） -->
+    <!-- 查找健康检查超时的 Provider（超过指定分钟数未更新心跳，带关联查询） -->
     <select id="findProvidersByHealthCheckTimeout" resultMap="ProviderInfoResultMap">
-        SELECT <include refid="providerColumns"/>
-        FROM zk_provider_info
-        WHERE is_online = 1
-          AND last_heartbeat_time IS NOT NULL
-          AND TIMESTAMPDIFF(MINUTE, last_heartbeat_time, NOW()) > #{timeoutMinutes}
+        SELECT <include refid="providerColumnsWithJoin"/>
+        FROM zk_provider_info pi
+        INNER JOIN zk_dubbo_service ds ON pi.service_id = ds.id
+        INNER JOIN zk_dubbo_service_node dsn ON pi.node_id = dsn.id
+        WHERE pi.is_online = 1
+          AND pi.last_heartbeat_time IS NOT NULL
+          AND TIMESTAMPDIFF(MINUTE, pi.last_heartbeat_time, NOW()) > #{timeoutMinutes}
+        ORDER BY pi.last_heartbeat_time ASC
+        LIMIT 1000
     </select>
     
     <!-- 删除指定时间之前的离线 Provider 记录 -->

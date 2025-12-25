@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pajk.mcpmetainfo.persistence.mapper.ProviderMethodMapper">
+    
+    <resultMap id="ProviderMethodResultMap" type="com.pajk.mcpmetainfo.persistence.entity.ProviderMethodEntity">
+        <id property="id" column="id"/>
+        <result property="providerId" column="provider_id"/>
+        <result property="methodName" column="method_name"/>
+        <result property="methodOrder" column="method_order"/>
+        <result property="createdAt" column="gmt_created"/>
+        <result property="updatedAt" column="gmt_modified"/>
+    </resultMap>
+    
+    <!-- 插入Provider方法 -->
+    <insert id="insert" parameterType="com.pajk.mcpmetainfo.persistence.entity.ProviderMethodEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO zk_provider_method (
+            provider_id, method_name, method_order, gmt_created, gmt_modified
+        ) VALUES (
+            #{providerId}, #{methodName}, #{methodOrder}, #{createdAt}, #{updatedAt}
+        )
+    </insert>
+    
+    <!-- 批量插入Provider方法 -->
+    <insert id="batchInsert" parameterType="java.util.List">
+        INSERT INTO zk_provider_method (
+            provider_id, method_name, method_order, gmt_created, gmt_modified
+        ) VALUES
+        <foreach collection="methods" item="item" separator=",">
+            (
+                #{item.providerId}, #{item.methodName}, #{item.methodOrder}, #{item.createdAt}, #{item.updatedAt}
+            )
+        </foreach>
+        ON DUPLICATE KEY UPDATE
+            method_order = VALUES(method_order),
+            gmt_modified = VALUES(gmt_modified)
+    </insert>
+    
+    <!-- 根据Provider ID删除方法 -->
+    <delete id="deleteByProviderId" parameterType="long">
+        DELETE FROM zk_provider_method WHERE provider_id = #{providerId}
+    </delete>
+    
+    <!-- 根据Provider ID查找方法列表 -->
+    <select id="findByProviderId" parameterType="long" resultMap="ProviderMethodResultMap">
+        SELECT id, provider_id, method_name, method_order, gmt_created, gmt_modified
+        FROM zk_provider_method
+        WHERE provider_id = #{providerId}
+        ORDER BY method_order ASC, method_name ASC
+    </select>
+    
+</mapper>
+

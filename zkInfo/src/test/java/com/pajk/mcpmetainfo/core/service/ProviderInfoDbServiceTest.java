@@ -41,7 +41,8 @@ class ProviderInfoDbServiceTest {
         provider.setApplication("test-app");
         provider.setAddress("127.0.0.1:20880");
         provider.setZkPath("/dubbo/com.example.TestService/providers");
-        provider.setApprovalStatus(ProviderInfoEntity.ApprovalStatus.PENDING);
+        provider.setServiceId(1L);
+        provider.setNodeId(1L);
 
         // 设置mock行为
         when(providerInfoMapper.findByZkPath(anyString(), anyString(), anyString(), anyString())).thenReturn(null);
@@ -58,7 +59,7 @@ class ProviderInfoDbServiceTest {
         assertNotNull(result);
         assertEquals("com.example.TestService", result.getInterfaceName());
         assertEquals("test-app", result.getApplication());
-        assertEquals(ProviderInfoEntity.ApprovalStatus.PENDING, result.getApprovalStatus());
+        // 注意：审批状态已移除，现在通过 service_id 关联 zk_dubbo_service 获取
         
         // 验证方法调用
         verify(providerInfoMapper, times(1)).findByZkPath(anyString(), anyString(), anyString(), anyString());
@@ -74,7 +75,8 @@ class ProviderInfoDbServiceTest {
         existingProvider.setApplication("test-app");
         existingProvider.setAddress("127.0.0.1:20880");
         existingProvider.setZkPath("/dubbo/com.example.TestService/providers");
-        existingProvider.setApprovalStatus(ProviderInfoEntity.ApprovalStatus.PENDING);
+        existingProvider.setServiceId(1L);
+        existingProvider.setNodeId(1L);
         existingProvider.setUpdatedAt(LocalDateTime.now().minusDays(1));
 
         ProviderInfoEntity updatedProvider = new ProviderInfoEntity();
@@ -82,7 +84,8 @@ class ProviderInfoDbServiceTest {
         updatedProvider.setApplication("test-app-updated");
         updatedProvider.setAddress("127.0.0.1:20881");
         updatedProvider.setZkPath("/dubbo/com.example.TestService/providers");
-        updatedProvider.setApprovalStatus(ProviderInfoEntity.ApprovalStatus.PENDING);
+        updatedProvider.setServiceId(1L);
+        updatedProvider.setNodeId(1L);
 
         // 设置mock行为
         when(providerInfoMapper.findByZkPath(anyString(), anyString(), anyString(), anyString())).thenReturn(existingProvider);
@@ -103,65 +106,7 @@ class ProviderInfoDbServiceTest {
         verify(providerInfoMapper, times(1)).update(any(ProviderInfoEntity.class));
     }
 
-    @Test
-    void testApproveProvider() throws Exception {
-        // 准备测试数据
-        ProviderInfoEntity provider = new ProviderInfoEntity();
-        provider.setId(1L);
-        provider.setInterfaceName("com.example.TestService");
-        provider.setApplication("test-app");
-        provider.setAddress("127.0.0.1:20880");
-        provider.setZkPath("/dubbo/com.example.TestService/providers");
-        provider.setApprovalStatus(ProviderInfoEntity.ApprovalStatus.PENDING);
-
-        // 设置mock行为
-        when(providerInfoMapper.findById(1L)).thenReturn(provider);
-        doReturn(1).when(providerInfoMapper).update(any(ProviderInfoEntity.class));
-        doNothing().when(approvalLogMapper).insert(any());
-
-        // 执行测试
-        assertDoesNotThrow(() -> providerInfoDbService.approveProvider(1L, "test-approver", true, "Approved for testing"));
-
-        // 验证结果
-        assertEquals(ProviderInfoEntity.ApprovalStatus.APPROVED, provider.getApprovalStatus());
-        assertEquals("test-approver", provider.getApprover());
-        assertNotNull(provider.getApprovalTime());
-        assertEquals("Approved for testing", provider.getApprovalComment());
-        
-        // 验证方法调用
-        verify(providerInfoMapper, times(1)).findById(1L);
-        verify(providerInfoMapper, times(1)).update(any(ProviderInfoEntity.class));
-        verify(approvalLogMapper, times(1)).insert(any());
-    }
-
-    @Test
-    void testRejectProvider() throws Exception {
-        // 准备测试数据
-        ProviderInfoEntity provider = new ProviderInfoEntity();
-        provider.setId(1L);
-        provider.setInterfaceName("com.example.TestService");
-        provider.setApplication("test-app");
-        provider.setAddress("127.0.0.1:20880");
-        provider.setZkPath("/dubbo/com.example.TestService/providers");
-        provider.setApprovalStatus(ProviderInfoEntity.ApprovalStatus.PENDING);
-
-        // 设置mock行为
-        when(providerInfoMapper.findById(1L)).thenReturn(provider);
-        doReturn(1).when(providerInfoMapper).update(any(ProviderInfoEntity.class));
-        doNothing().when(approvalLogMapper).insert(any());
-
-        // 执行测试
-        assertDoesNotThrow(() -> providerInfoDbService.rejectProvider(1L, "test-approver", "Rejected for testing"));
-
-        // 验证结果
-        assertEquals(ProviderInfoEntity.ApprovalStatus.REJECTED, provider.getApprovalStatus());
-        assertEquals("test-approver", provider.getApprover());
-        assertNotNull(provider.getApprovalTime());
-        assertEquals("Rejected for testing", provider.getApprovalComment());
-        
-        // 验证方法调用
-        verify(providerInfoMapper, times(1)).findById(1L);
-        verify(providerInfoMapper, times(1)).update(any(ProviderInfoEntity.class));
-        verify(approvalLogMapper, times(1)).insert(any());
-    }
+    // 注意：审批相关的方法已移除，审批现在在服务级别进行
+    // 这些测试已被移除，因为 Provider 级别的审批功能已被废弃
+    // 审批功能现在通过 DubboServiceDbService 和 ServiceApprovalService 处理
 }

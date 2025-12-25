@@ -19,13 +19,18 @@
         id, service_id, interface_name, version, method_name, return_type, gmt_created, gmt_modified
     </sql>
     
-    <!-- 插入Dubbo服务方法信息 -->
+    <!-- 插入Dubbo服务方法信息（使用 ON DUPLICATE KEY UPDATE 避免重复键错误） -->
     <insert id="insert" parameterType="com.pajk.mcpmetainfo.persistence.entity.DubboServiceMethodEntity" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO zk_dubbo_service_method (
             service_id, interface_name, version, method_name, return_type, gmt_created, gmt_modified
         ) VALUES (
             #{serviceId}, #{interfaceName}, #{version}, #{methodName}, #{returnType}, #{createdAt}, #{updatedAt}
         )
+        ON DUPLICATE KEY UPDATE
+            interface_name = VALUES(interface_name),
+            version = VALUES(version),
+            return_type = VALUES(return_type),
+            gmt_modified = VALUES(gmt_modified)
     </insert>
     
     <!-- 更新Dubbo服务方法信息 -->

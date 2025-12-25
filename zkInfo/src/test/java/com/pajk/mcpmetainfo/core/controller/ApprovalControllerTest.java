@@ -43,6 +43,9 @@ class ApprovalControllerTest {
         mockMvc = MockMvcBuilders.standaloneSetup(approvalController).build();
     }
 
+    // 注意：审批相关的测试已更新，因为审批现在在服务级别进行
+    // Provider 级别的审批功能已被废弃，审批功能现在通过 DubboServiceController 和 ServiceApprovalService 处理
+    
     @Test
     void testGetPendingProviders_Success() throws Exception {
         // 准备测试数据
@@ -50,18 +53,20 @@ class ApprovalControllerTest {
         provider1.setId(1L);
         provider1.setInterfaceName("com.example.Service1");
         provider1.setApplication("app1");
-        provider1.setApprovalStatus(ProviderInfoEntity.ApprovalStatus.PENDING);
+        provider1.setServiceId(1L);
+        provider1.setNodeId(1L);
         
         ProviderInfoEntity provider2 = new ProviderInfoEntity();
         provider2.setId(2L);
         provider2.setInterfaceName("com.example.Service2");
         provider2.setApplication("app2");
-        provider2.setApprovalStatus(ProviderInfoEntity.ApprovalStatus.PENDING);
+        provider2.setServiceId(2L);
+        provider2.setNodeId(2L);
         
         List<ProviderInfoEntity> providers = Arrays.asList(provider1, provider2);
         
-        // 设置mock行为
-        when(providerInfoDbService.findByApprovalStatus(ProviderInfoEntity.ApprovalStatus.PENDING)).thenReturn(providers);
+        // 设置mock行为 - 使用字符串形式的审批状态
+        when(providerInfoDbService.findByApprovalStatus("PENDING")).thenReturn(providers);
 
         // 执行测试并验证结果
         mockMvc.perform(get("/api/approval/pending")
@@ -76,8 +81,8 @@ class ApprovalControllerTest {
 
     @Test
     void testGetPendingProviders_InternalServerError() throws Exception {
-        // 设置mock行为
-        when(providerInfoDbService.findByApprovalStatus(ProviderInfoEntity.ApprovalStatus.PENDING)).thenThrow(new RuntimeException("Database error"));
+        // 设置mock行为 - 使用字符串形式的审批状态
+        when(providerInfoDbService.findByApprovalStatus("PENDING")).thenThrow(new RuntimeException("Database error"));
 
         // 执行测试并验证结果
         mockMvc.perform(get("/api/approval/pending")
@@ -92,7 +97,8 @@ class ApprovalControllerTest {
         provider1.setId(1L);
         provider1.setInterfaceName("com.example.Service1");
         provider1.setApplication("app1");
-        provider1.setApprovalStatus(ProviderInfoEntity.ApprovalStatus.APPROVED);
+        provider1.setServiceId(1L);
+        provider1.setNodeId(1L);
         
         List<ProviderInfoEntity> providers = Arrays.asList(provider1);
         
@@ -105,59 +111,12 @@ class ApprovalControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].id").value(1))
-                .andExpect(jsonPath("$[0].interfaceName").value("com.example.Service1"))
-                .andExpect(jsonPath("$[0].approvalStatus").value("APPROVED"));
+                .andExpect(jsonPath("$[0].interfaceName").value("com.example.Service1"));
+        // 注意：approvalStatus 已移除，现在通过 service_id 关联 zk_dubbo_service 获取
     }
 
-    @Test
-    void testApproveProvider_Success() throws Exception {
-        // 执行测试并验证结果
-        mockMvc.perform(post("/api/approval/{id}/approve", 1L)
-                .param("approver", "test-approver")
-                .param("comment", "Approved for testing")
-                .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk())
-                .andExpect(content().string("Provider审批成功"));
-    }
-
-    @Test
-    void testApproveProvider_InternalServerError() throws Exception {
-        // 设置mock行为
-        doThrow(new RuntimeException("Database error")).when(providerInfoDbService).approveProvider(anyLong(), anyString(), anyBoolean(), anyString());
-
-        // 执行测试并验证结果
-        mockMvc.perform(post("/api/approval/{id}/approve", 1L)
-                .param("approver", "test-approver")
-                .param("comment", "Approved for testing")
-                .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isInternalServerError())
-                .andExpect(content().string("审批失败: Database error"));
-    }
-
-    @Test
-    void testRejectProvider_Success() throws Exception {
-        // 执行测试并验证结果
-        mockMvc.perform(post("/api/approval/{id}/reject", 1L)
-                .param("approver", "test-approver")
-                .param("comment", "Rejected for testing")
-                .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk())
-                .andExpect(content().string("Provider拒绝成功"));
-    }
-
-    @Test
-    void testRejectProvider_InternalServerError() throws Exception {
-        // 设置mock行为
-        doThrow(new RuntimeException("Database error")).when(providerInfoDbService).rejectProvider(anyLong(), anyString(), anyString());
-
-        // 执行测试并验证结果
-        mockMvc.perform(post("/api/approval/{id}/reject", 1L)
-                .param("approver", "test-approver")
-                .param("comment", "Rejected for testing")
-                .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isInternalServerError())
-                .andExpect(content().string("拒绝失败: Database error"));
-    }
+    // 注意：approveProvider 和 rejectProvider 方法已移除，这些测试已被废弃
+    // 审批功能现在通过服务级别的 API 处理
 
     @Test
     void testGetProviderById_Success() throws Exception {
@@ -166,7 +125,8 @@ class ApprovalControllerTest {
         provider.setId(1L);
         provider.setInterfaceName("com.example.Service1");
         provider.setApplication("app1");
-        provider.setApprovalStatus(ProviderInfoEntity.ApprovalStatus.PENDING);
+        provider.setServiceId(1L);
+        provider.setNodeId(1L);
         provider.setCreatedAt(LocalDateTime.now());
         provider.setUpdatedAt(LocalDateTime.now());
         

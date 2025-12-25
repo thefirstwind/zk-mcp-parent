@@ -38,6 +38,15 @@ public class DubboServiceDbService {
     @Autowired
     private DubboServiceMethodService dubboServiceMethodService;
     
+    @Autowired
+    private com.pajk.mcpmetainfo.persistence.mapper.ProviderInfoMapper providerInfoMapper;
+    
+    @Autowired
+    private com.pajk.mcpmetainfo.persistence.mapper.ProviderMethodMapper providerMethodMapper;
+    
+    @Autowired
+    private com.pajk.mcpmetainfo.persistence.mapper.ProviderParameterMapper providerParameterMapper;
+    
     /**
      * 保存或更新Dubbo服务信息到数据库
      * 
@@ -96,8 +105,26 @@ public class DubboServiceDbService {
             String version = service != null ? service.getVersion() : null;
             
             // 使用 serviceId + address 查询（使用索引优化，避免使用过长的 zkPath）
-            DubboServiceNodeEntity existingEntity = dubboServiceNodeMapper.findByServiceIdAndAddress(
-                serviceId, providerInfo.getAddress());
+            DubboServiceNodeEntity existingEntity = null;
+            try {
+                existingEntity = dubboServiceNodeMapper.findByServiceIdAndAddress(
+                    serviceId, providerInfo.getAddress());
+            } catch (Exception e) {
+                // 如果查询失败（可能是存在重复数据），记录警告并尝试获取第一条
+                log.warn("查询节点时出现异常，可能存在重复数据: serviceId={}, address={}, error={}", 
+                    serviceId, providerInfo.getAddress(), e.getMessage());
+                // 尝试查询所有匹配的记录，取第一条
+                List<DubboServiceNodeEntity> nodes = dubboServiceNodeMapper.findByServiceId(serviceId);
+                existingEntity = nodes.stream()
+                    .filter(n -> providerInfo.getAddress().equals(n.getAddress()))
+                    .findFirst()
+                    .orElse(null);
+                if (nodes.stream().filter(n -> providerInfo.getAddress().equals(n.getAddress())).count() > 1) {
+                    log.error("发现重复的节点记录: serviceId={}, address={}, 数量={}", 
+                        serviceId, providerInfo.getAddress(), 
+                        nodes.stream().filter(n -> providerInfo.getAddress().equals(n.getAddress())).count());
+                }
+            }
             
             DubboServiceNodeEntity entity;
             if (existingEntity != null) {
@@ -328,7 +355,29 @@ public class DubboServiceDbService {
             Long serviceId = serviceEntityOpt.get().getId();
             
             // 使用 serviceId + address 查询节点（使用索引优化）
-            DubboServiceNodeEntity nodeEntity = dubboServiceNodeMapper.findByServiceIdAndAddress(serviceId, address);
+            DubboServiceNodeEntity nodeEntity = null;
+            try {
+                nodeEntity = dubboServiceNodeMapper.findByServiceIdAndAddress(serviceId, address);
+            } catch (Exception e) {
+                log.warn("查询节点时出现异常，可能存在重复数据: serviceId={}, address={}, error={}", 
+                    serviceId, address, e.getMessage());
+                // 尝试查询所有匹配的记录，删除所有重复的记录
+                List<DubboServiceNodeEntity> nodes = dubboServiceNodeMapper.findByServiceId(serviceId);
+                List<DubboServiceNodeEntity> matchedNodes = nodes.stream()
+                    .filter(n -> address.equals(n.getAddress()))
+                    .collect(java.util.stream.Collectors.toList());
+                if (!matchedNodes.isEmpty()) {
+                    nodeEntity = matchedNodes.get(0);
+                    // 删除所有重复的记录
+                    for (DubboServiceNodeEntity node : matchedNodes) {
+                        dubboServiceNodeMapper.deleteById(node.getId());
+                    }
+                    log.warn("删除重复的节点记录: serviceId={}, address={}, 数量={}", 
+                        serviceId, address, matchedNodes.size());
+                    // 删除后直接返回，不需要继续处理
+                    return;
+                }
+            }
             if (nodeEntity != null) {
                 // 删除节点
                 dubboServiceNodeMapper.deleteById(nodeEntity.getId());
@@ -402,7 +451,24 @@ public class DubboServiceDbService {
             Long serviceId = serviceEntityOpt.get().getId();
             
             // 使用 serviceId + address 查询节点（使用索引优化）
-            DubboServiceNodeEntity entity = dubboServiceNodeMapper.findByServiceIdAndAddress(serviceId, address);
+            DubboServiceNodeEntity entity = null;
+            try {
+                entity = dubboServiceNodeMapper.findByServiceIdAndAddress(serviceId, address);
+            } catch (Exception e) {
+                log.warn("查询节点时出现异常，可能存在重复数据: serviceId={}, address={}, error={}", 
+                    serviceId, address, e.getMessage());
+                // 尝试查询所有匹配的记录，取第一条
+                List<DubboServiceNodeEntity> nodes = dubboServiceNodeMapper.findByServiceId(serviceId);
+                entity = nodes.stream()
+                    .filter(n -> address.equals(n.getAddress()))
+                    .findFirst()
+                    .orElse(null);
+                if (nodes.stream().filter(n -> address.equals(n.getAddress())).count() > 1) {
+                    log.error("发现重复的节点记录: serviceId={}, address={}, 数量={}", 
+                        serviceId, address, 
+                        nodes.stream().filter(n -> address.equals(n.getAddress())).count());
+                }
+            }
             return Optional.ofNullable(entity);
         } catch (Exception e) {
             log.error("根据ZooKeeper路径查找Dubbo服务节点失败: {}", zkPath, e);
@@ -540,4 +606,153 @@ public class DubboServiceDbService {
         
         return null;
     }
+    
+    /**
+     * 从 zk_dubbo_* 表查询所有 Provider 信息（用于虚拟节点创建）
+     * 
+     * 注意：此方法使用新的 zk_dubbo_* 表结构，而不是老的 zk_provider* 表
+     * 
+     * @return Provider 信息列表
+     */
+    public List<ProviderInfo> getAllProvidersFromDubboTables() {
+        try {
+            List<ProviderInfo> providers = new java.util.ArrayList<>();
+            
+            // 1. 查询所有服务（使用分页查询，每次查询1000条）
+            List<DubboServiceEntity> services = new java.util.ArrayList<>();
+            int pageSize = 1000;
+            int offset = 0;
+            while (true) {
+                List<DubboServiceEntity> pageServices = dubboServiceMapper.findWithPagination(offset, pageSize);
+                if (pageServices == null || pageServices.isEmpty()) {
+                    break;
+                }
+                services.addAll(pageServices);
+                if (pageServices.size() < pageSize) {
+                    break; // 最后一页
+                }
+                offset += pageSize;
+            }
+            
+            if (services.isEmpty()) {
+                return providers;
+            }
+            
+            // 2. 对每个服务，查询其所有节点
+            for (DubboServiceEntity service : services) {
+                List<DubboServiceNodeEntity> nodes = dubboServiceNodeMapper.findByServiceId(service.getId());
+                if (nodes == null || nodes.isEmpty()) {
+                    continue;
+                }
+                
+                // 3. 对每个节点，查询对应的 Provider 信息（在线状态、心跳等）
+                for (DubboServiceNodeEntity node : nodes) {
+                    ProviderInfo providerInfo = convertToProviderInfo(service, node);
+                    if (providerInfo != null) {
+                        providers.add(providerInfo);
+                    }
+                }
+            }
+            
+            log.debug("从 zk_dubbo_* 表查询到 {} 个 Provider", providers.size());
+            return providers;
+            
+        } catch (Exception e) {
+            log.error("从 zk_dubbo_* 表查询 Provider 信息失败", e);
+            return java.util.Collections.emptyList();
+        }
+    }
+    
+    /**
+     * 将 DubboServiceEntity 和 DubboServiceNodeEntity 转换为 ProviderInfo
+     * 
+     * @param service 服务实体
+     * @param node 节点实体
+     * @return ProviderInfo
+     */
+    private ProviderInfo convertToProviderInfo(DubboServiceEntity service, DubboServiceNodeEntity node) {
+        try {
+            ProviderInfo providerInfo = new ProviderInfo();
+            
+            // 从服务实体获取基本信息
+            providerInfo.setInterfaceName(service.getInterfaceName());
+            providerInfo.setProtocol(service.getProtocol());
+            providerInfo.setVersion(service.getVersion());
+            providerInfo.setGroup(service.getGroup());
+            providerInfo.setApplication(service.getApplication());
+            
+            // 从节点实体获取地址信息
+            providerInfo.setAddress(node.getAddress());
+            providerInfo.setRegisterTime(node.getCreatedAt());
+            
+            // 查询 Provider 信息（在线状态、心跳等）
+            com.pajk.mcpmetainfo.persistence.entity.ProviderInfoEntity providerEntity = 
+                providerInfoMapper.findByServiceIdAndNodeId(service.getId(), node.getId());
+            
+            if (providerEntity != null) {
+                // 从 ProviderInfoEntity 获取在线状态和心跳信息
+                providerInfo.setOnline(providerEntity.isOnline());
+                providerInfo.setLastHeartbeat(providerEntity.getLastHeartbeat());
+                
+                // 查询方法和参数
+                List<com.pajk.mcpmetainfo.persistence.entity.ProviderMethodEntity> methods = 
+                    providerMethodMapper.findByProviderId(providerEntity.getId());
+                if (methods != null && !methods.isEmpty()) {
+                    String methodsStr = methods.stream()
+                        .sorted(java.util.Comparator.comparing(com.pajk.mcpmetainfo.persistence.entity.ProviderMethodEntity::getMethodOrder))
+                        .map(com.pajk.mcpmetainfo.persistence.entity.ProviderMethodEntity::getMethodName)
+                        .collect(java.util.stream.Collectors.joining(","));
+                    providerInfo.setMethods(methodsStr);
+                }
+                
+                List<com.pajk.mcpmetainfo.persistence.entity.ProviderParameterEntity> parameters = 
+                    providerParameterMapper.findByProviderId(providerEntity.getId());
+                if (parameters != null && !parameters.isEmpty()) {
+                    java.util.Map<String, String> paramsMap = new java.util.HashMap<>();
+                    for (com.pajk.mcpmetainfo.persistence.entity.ProviderParameterEntity param : parameters) {
+                        paramsMap.put(param.getParamKey(), param.getParamValue());
+                    }
+                    providerInfo.setParameters(paramsMap);
+                }
+            } else {
+                // 如果没有 ProviderInfoEntity，默认设置为在线（新节点）
+                providerInfo.setOnline(true);
+            }
+            
+            // 构建 zkPath（用于兼容性）
+            if (providerInfo.getZkPath() == null) {
+                String zkPath = buildZkPath(providerInfo);
+                providerInfo.setZkPath(zkPath);
+            }
+            
+            return providerInfo;
+            
+        } catch (Exception e) {
+            log.error("转换 DubboServiceEntity 和 DubboServiceNodeEntity 为 ProviderInfo 失败: serviceId={}, nodeId={}", 
+                service.getId(), node.getId(), e);
+            return null;
+        }
+    }
+    
+    /**
+     * 构建 zkPath（用于兼容性）
+     */
+    private String buildZkPath(ProviderInfo providerInfo) {
+        StringBuilder path = new StringBuilder("/");
+        path.append(providerInfo.getInterfaceName());
+        if (providerInfo.getAddress() != null) {
+            path.append("/").append(providerInfo.getAddress());
+        }
+        if (providerInfo.getProtocol() != null) {
+            path.append("/").append(providerInfo.getProtocol());
+        }
+        if (providerInfo.getVersion() != null) {
+            path.append("/").append(providerInfo.getVersion());
+        }
+        if (providerInfo.getGroup() != null && !providerInfo.getGroup().isEmpty()) {
+            path.append("/").append(providerInfo.getGroup());
+        }
+        return path.toString();
+    }
+    
 }

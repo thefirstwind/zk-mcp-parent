@@ -201,24 +201,38 @@ public class ZkPathParser {
     /**
      * 填充 ProviderInfoEntity 的结构化路径字段
      * 
+     * 注意：此方法已废弃，因为 zk_provider_info 表已移除 path_* 字段
+     * 路径信息现在通过 service_id 和 node_id 关联 zk_dubbo_service 和 zk_dubbo_service_node 获取
+     * 
      * @param entity ProviderInfoEntity 对象
      * @param zkPath ZooKeeper路径
+     * @deprecated 路径字段已移除，不再需要填充
      */
+    @Deprecated
     public static void fillPathFields(com.pajk.mcpmetainfo.persistence.entity.ProviderInfoEntity entity, String zkPath) {
-        if (entity == null || zkPath == null || zkPath.isEmpty()) {
-            return;
+        // 路径字段已移除，此方法不再执行任何操作
+        // 保留方法签名以避免编译错误，但实际不执行任何操作
+    }
+    
+    /**
+     * 截断字符串到指定长度
+     * 
+     * @param value 原始字符串
+     * @param maxLength 最大长度
+     * @return 截断后的字符串，如果超过长度则截断并记录警告
+     */
+    private static String truncate(String value, int maxLength) {
+        if (value == null) {
+            return null;
         }
-        
-        ParseResult result = parse(zkPath);
-        if (result != null) {
-            entity.setPathRoot(result.getPathRoot());
-            entity.setPathInterface(result.getPathInterface());
-            entity.setPathAddress(result.getPathAddress());
-            entity.setPathProtocol(result.getPathProtocol());
-            entity.setPathVersion(result.getPathVersion());
-            entity.setPathGroup(result.getPathGroup());
-            entity.setPathApplication(result.getPathApplication());
+        if (value.length() <= maxLength) {
+            return value;
         }
+        // 截断并记录警告
+        String truncated = value.substring(0, maxLength);
+        log.warn("字段值过长，已截断: 原始长度={}, 最大长度={}, 截断后={}...", 
+                value.length(), maxLength, truncated);
+        return truncated;
     }
 }
 

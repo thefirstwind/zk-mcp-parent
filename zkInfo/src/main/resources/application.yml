@@ -64,6 +64,18 @@ zookeeper:
     max-retries: 3  # 注意：使用RetryForever时此参数不再使用
     base-sleep-time: 3000  # 增加到3秒，减少重试频率，降低服务器压力
 
+# 接口白名单配置
+# 只有 interface_name 左匹配白名单的接口才准许入库
+# 支持多个前缀，用逗号分隔，例如：com.zkinfo.demo,com.example.service
+# 如果为空，则允许所有接口入库（不推荐，建议配置白名单以确保安全）
+zk:
+  whitelist:
+    interfaces: ${ZK_WHITELIST_INTERFACES:com.zkinfo.demo}  # 配置文件白名单（支持多个，逗号分隔）
+    database:
+      enabled: ${ZK_WHITELIST_DB_ENABLED:true}  # 是否启用数据库白名单（默认启用）
+    cache:
+      refresh-interval: ${ZK_WHITELIST_CACHE_REFRESH:60}  # 白名单缓存刷新间隔（秒）
+
 # Nacos配置
 nacos:
   server-addr: ${NACOS_SERVER_ADDR:localhost:8848}

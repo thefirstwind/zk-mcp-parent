@@ -38,6 +38,10 @@
             #{approver}, #{approvalTime}, #{approvalComment}, #{providerCount}, #{onlineProviderCount}, 
             #{createdAt}, #{updatedAt}
         )
+        ON DUPLICATE KEY UPDATE
+            provider_count = VALUES(provider_count),
+            online_provider_count = VALUES(online_provider_count),
+            gmt_modified = VALUES(gmt_modified)
     </insert>
     
     <!-- 批量插入Dubbo服务信息 -->

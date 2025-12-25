@@ -26,6 +26,11 @@
         ) VALUES (
             #{serviceId}, #{interfaceName}, #{version}, #{address}, #{lastSyncTime}, #{createdAt}, #{updatedAt}
         )
+        ON DUPLICATE KEY UPDATE
+            interface_name = VALUES(interface_name),
+            version = VALUES(version),
+            last_sync_time = VALUES(last_sync_time),
+            gmt_modified = VALUES(gmt_modified)
     </insert>
     
     <!-- 批量插入Dubbo服务节点信息 -->
@@ -70,10 +75,12 @@
     </select>
     
     <!-- 根据服务ID和地址查找Dubbo服务节点（使用索引优化） -->
+    <!-- 注意：理论上应该只有一条记录（唯一索引 uk_service_address），但为了安全起见添加 LIMIT 1 -->
     <select id="findByServiceIdAndAddress" resultMap="DubboServiceNodeResultMap">
         SELECT <include refid="nodeColumns"/>
         FROM zk_dubbo_service_node
         WHERE service_id = #{serviceId} AND address = #{address}
+        LIMIT 1
     </select>
     
     <!-- 根据服务ID查找所有节点（限制最多500条，避免内存溢出） -->

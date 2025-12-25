@@ -34,6 +34,7 @@ public class ProviderPersistenceService {
     
     private final DubboServiceDbService dubboServiceDbService;
     private final ProviderInfoDbService providerInfoDbService;
+    private final InterfaceWhitelistService interfaceWhitelistService;
     
     // 统计指标
     private final AtomicLong totalRegistrations = new AtomicLong(0);
@@ -58,6 +59,12 @@ public class ProviderPersistenceService {
         try {
             if (providerInfo == null) {
                 log.warn("⚠️ ProviderInfo is null, skipping persistence");
+                return;
+            }
+            
+            // 白名单检查：只有匹配白名单的接口才准许入库
+            if (interfaceWhitelistService != null && !interfaceWhitelistService.isAllowed(providerInfo.getInterfaceName())) {
+                log.debug("接口 {} 不在白名单中，跳过入库", providerInfo.getInterfaceName());
                 return;
             }
             

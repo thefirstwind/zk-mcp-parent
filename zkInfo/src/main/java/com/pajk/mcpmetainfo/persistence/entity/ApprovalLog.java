@@ -1,6 +1,5 @@
 package com.pajk.mcpmetainfo.persistence.entity;
 
-import com.pajk.mcpmetainfo.persistence.entity.ProviderInfoEntity.ApprovalStatus;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
@@ -10,7 +9,8 @@ import java.time.LocalDateTime;
 /**
  * 审批日志实体
  * 
- * 记录Provider信息的审批历史，便于审计和追踪。
+ * 记录服务级别的审批历史，便于审计和追踪。
+ * 注意：审批现在在服务级别进行，不再在 Provider 级别
  * 
  * @author ZkInfo Team
  * @version 1.0.0
@@ -27,24 +27,24 @@ public class ApprovalLog {
     private Long id;
     
     /**
-     * 关联的服务提供者ID
-     */
-    private Long providerId;
-    
-    /**
-     * 关联的服务ID（可选）
+     * 关联的服务ID（引用 zk_dubbo_service.id）
      */
     private Long serviceId;
     
     /**
-     * 原审批状态
+     * 关联的审批申请ID（引用 zk_service_approval.id，可选）
      */
-    private ApprovalStatus oldStatus;
+    private Long approvalId;
     
     /**
-     * 新审批状态
+     * 原审批状态（字符串形式，如 "INIT", "PENDING", "APPROVED", "REJECTED"）
      */
-    private ApprovalStatus newStatus;
+    private String oldStatus;
+    
+    /**
+     * 新审批状态（字符串形式）
+     */
+    private String newStatus;
     
     /**
      * 审批人
@@ -64,9 +64,9 @@ public class ApprovalLog {
     /**
      * 构造函数
      */
-    public ApprovalLog(Long providerId, ApprovalStatus oldStatus, ApprovalStatus newStatus, 
+    public ApprovalLog(Long serviceId, String oldStatus, String newStatus, 
                        String approver, String approvalComment) {
-        this.providerId = providerId;
+        this.serviceId = serviceId;
         this.oldStatus = oldStatus;
         this.newStatus = newStatus;
         this.approver = approver;

@@ -61,7 +61,8 @@ class ZooKeeperServiceTest {
         when(curatorFramework.getData()).thenReturn(getDataBuilder);
         when(getDataBuilder.forPath("/dubbo/com.example.Service1/providers/provider1")).thenReturn("dubbo://127.0.0.1:20880/com.example.Service1".getBytes());
         
-        when(providerInfoDbService.findByZkPathAndApprovalStatus(anyString(), eq(ProviderInfoEntity.ApprovalStatus.APPROVED))).thenReturn(Optional.empty());
+        // 使用字符串形式的审批状态
+        when(providerInfoDbService.findByZkPathAndApprovalStatus(anyString(), eq("APPROVED"))).thenReturn(Optional.empty());
 
         // 执行测试
         ReflectionTestUtils.invokeMethod(zooKeeperService, "loadExistingProviders", "/dubbo/com.example.Service1/providers", "com.example.Service1");
@@ -81,7 +82,8 @@ class ZooKeeperServiceTest {
         
         // 设置mock行为
         when(childData.getPath()).thenReturn("/dubbo/com.example.Service/providers/provider1");
-        when(providerInfoDbService.findByZkPathAndApprovalStatus(anyString(), eq(ProviderInfoEntity.ApprovalStatus.APPROVED))).thenReturn(Optional.of(new ProviderInfoEntity()));
+        // 使用字符串形式的审批状态
+        when(providerInfoDbService.findByZkPathAndApprovalStatus(anyString(), eq("APPROVED"))).thenReturn(Optional.of(new ProviderInfoEntity()));
 
         // 执行测试
         ReflectionTestUtils.invokeMethod(zooKeeperService, "handleProviderAdded", childData, "com.example.Service");

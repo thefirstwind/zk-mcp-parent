@@ -87,25 +87,11 @@ public class DubboServiceInfoAdapter {
         serviceEntity.setGroup(providerInfoEntity.getGroup());
         serviceEntity.setApplication(providerInfoEntity.getApplication());
         
-        // 转换审批状态
-        switch (providerInfoEntity.getApprovalStatus()) {
-            case APPROVED:
-                serviceEntity.setApprovalStatus(DubboServiceEntity.ApprovalStatus.APPROVED);
-                break;
-            case REJECTED:
-                serviceEntity.setApprovalStatus(DubboServiceEntity.ApprovalStatus.REJECTED);
-                break;
-            case PENDING:
-                serviceEntity.setApprovalStatus(DubboServiceEntity.ApprovalStatus.PENDING);
-                break;
-            case INIT:
-            default:
-                serviceEntity.setApprovalStatus(DubboServiceEntity.ApprovalStatus.INIT);
-                break;
-        }
+        // 注意：ProviderInfoEntity 的审批字段已移除，审批状态现在通过 service_id 关联 zk_dubbo_service 获取
+        // 如果需要获取审批状态，需要通过 service_id 查询对应的 DubboServiceEntity
+        // 这里保持默认值
+        serviceEntity.setApprovalStatus(DubboServiceEntity.ApprovalStatus.INIT);
         
-        serviceEntity.setApprover(providerInfoEntity.getApprover());
-        serviceEntity.setApprovalTime(providerInfoEntity.getApprovalTime());
         serviceEntity.setCreatedAt(providerInfoEntity.getCreatedAt());
         serviceEntity.setUpdatedAt(providerInfoEntity.getUpdatedAt());
         return serviceEntity;

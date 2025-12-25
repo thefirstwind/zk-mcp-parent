@@ -31,19 +31,9 @@ public class ServiceApprovalEntity {
     private Long id;
     
     /**
-     * 服务接口名
+     * 关联的Dubbo服务ID（引用 zk_dubbo_service.id）
      */
-    private String serviceInterface;
-    
-    /**
-     * 服务版本
-     */
-    private String serviceVersion;
-    
-    /**
-     * 服务分组
-     */
-    private String serviceGroup;
+    private Long serviceId;
     
     /**
      * 项目ID（可选）
@@ -102,13 +92,13 @@ public class ServiceApprovalEntity {
     
     /**
      * 从 ServiceApproval 模型转换为 ServiceApprovalEntity
+     * 注意：serviceId 需要从 ServiceApproval 的 serviceInterface/serviceVersion/serviceGroup 查找对应的 service_id
      */
     public static ServiceApprovalEntity fromServiceApproval(ServiceApproval approval) {
         ServiceApprovalEntity entity = new ServiceApprovalEntity();
         entity.setId(approval.getId());
-        entity.setServiceInterface(approval.getServiceInterface());
-        entity.setServiceVersion(approval.getServiceVersion());
-        entity.setServiceGroup(approval.getServiceGroup());
+        // serviceId 需要外部设置，通过 serviceInterface/serviceVersion/serviceGroup 查找对应的 service_id
+        // entity.setServiceId(...); // 需要外部设置
         entity.setProjectId(approval.getProjectId());
         entity.setApplicantId(approval.getApplicantId());
         entity.setApplicantName(approval.getApplicantName());
@@ -125,13 +115,15 @@ public class ServiceApprovalEntity {
     
     /**
      * 转换为 ServiceApproval 模型
+     * 注意：serviceInterface/serviceVersion/serviceGroup 需要从关联的 zk_dubbo_service 获取
      */
     public ServiceApproval toServiceApproval() {
         ServiceApproval approval = new ServiceApproval();
         approval.setId(this.id);
-        approval.setServiceInterface(this.serviceInterface);
-        approval.setServiceVersion(this.serviceVersion);
-        approval.setServiceGroup(this.serviceGroup);
+        // serviceInterface/serviceVersion/serviceGroup 需要从关联的 zk_dubbo_service 获取
+        // approval.setServiceInterface(...); // 需要从关联的 service 获取
+        // approval.setServiceVersion(...); // 需要从关联的 service 获取
+        // approval.setServiceGroup(...); // 需要从关联的 service 获取
         approval.setProjectId(this.projectId);
         approval.setApplicantId(this.applicantId);
         approval.setApplicantName(this.applicantName);
