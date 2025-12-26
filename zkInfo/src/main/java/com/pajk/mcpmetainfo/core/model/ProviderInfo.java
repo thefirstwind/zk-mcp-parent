@@ -85,6 +85,11 @@ public class ProviderInfo {
     private LocalDateTime registerTime;
     
     /**
+     * 注册时间（别名，与 registerTime 相同）
+     */
+    private LocalDateTime registrationTime;
+    
+    /**
      * 最后心跳时间
      */
     private LocalDateTime lastHeartbeat;
@@ -92,7 +97,12 @@ public class ProviderInfo {
     /**
      * 是否在线
      */
-    private boolean online;
+    private Boolean online;
+    
+    /**
+     * 是否健康
+     */
+    private Boolean healthy;
     
     /**
      * ZooKeeper节点路径
@@ -135,5 +145,23 @@ public class ProviderInfo {
             key.append(":").append(group);
         }
         return key.toString();
+    }
+    
+    /**
+     * 是否在线（兼容性方法，用于 boolean 类型的 isOnline() 调用）
+     * 
+     * @return 是否在线，如果为 null 则返回 false
+     */
+    public boolean isOnline() {
+        return online != null && online;
+    }
+    
+    /**
+     * 是否健康（兼容性方法）
+     * 
+     * @return 是否健康，如果为 null 则返回 true
+     */
+    public boolean isHealthy() {
+        return healthy != null && healthy;
     }
 }

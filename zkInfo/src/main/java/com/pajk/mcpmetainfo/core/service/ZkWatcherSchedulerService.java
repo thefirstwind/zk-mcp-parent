@@ -2,7 +2,6 @@ package com.pajk.mcpmetainfo.core.service;
 
 import com.pajk.mcpmetainfo.persistence.entity.DubboServiceEntity;
 import com.pajk.mcpmetainfo.core.model.ProviderInfo;
-import com.pajk.mcpmetainfo.persistence.entity.ProviderInfoEntity;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.recipes.cache.TreeCache;
@@ -264,13 +263,20 @@ public class ZkWatcherSchedulerService {
                 
                 // 检查数据库中的审批状态，只有已审批的Provider才会被添加watch
                 // 注意：审批状态现在通过 service_id 关联 zk_dubbo_service.approval_status 获取
-                Optional<ProviderInfoEntity> approvedProvider = 
-                    providerInfoDbService.findByZkPathAndApprovalStatus(data.getPath(), "APPROVED");
-                if (approvedProvider.isPresent()) {
-                    providerService.addProvider(providerInfo);
-                    log.debug("添加新已审批Provider到服务监控: {}", data.getPath());
-                } else {
-                    log.debug("跳过新未审批Provider的服务监控: {}", data.getPath());
+                // 使用传入的 service 参数（如果为 null，则查询）
+                try {
+                    DubboServiceEntity serviceEntity = service;
+                    if (serviceEntity == null) {
+                        serviceEntity = dubboServiceDbService.findByInterfaceName(providerInfo.getInterfaceName());
+                    }
+                    if (serviceEntity != null && "APPROVED".equals(serviceEntity.getApprovalStatus())) {
+                        providerService.addProvider(providerInfo);
+                        log.debug("添加新已审批Provider到服务监控: {}", data.getPath());
+                    } else {
+                        log.debug("跳过新未审批Provider的服务监控: {}", data.getPath());
+                    }
+                } catch (Exception e) {
+                    log.warn("检查审批状态失败: {}", data.getPath(), e);
                 }
             }
             
@@ -328,15 +334,22 @@ public class ZkWatcherSchedulerService {
                 
                 // 检查数据库中的审批状态，只有已审批的Provider才会被添加watch
                 // 注意：审批状态现在通过 service_id 关联 zk_dubbo_service.approval_status 获取
-                Optional<ProviderInfoEntity> approvedProvider = 
-                    providerInfoDbService.findByZkPathAndApprovalStatus(data.getPath(), "APPROVED");
-                if (approvedProvider.isPresent()) {
-                    providerService.updateProvider(providerInfo);
-                    log.debug("更新已审批Provider到服务监控: {}", data.getPath());
-                } else {
-                    // 从服务监控中移除（如果之前已添加）
-                    providerService.removeProviderByZkPath(data.getPath());
-                    log.debug("移除未审批Provider的服务监控: {}", data.getPath());
+                // 使用传入的 service 参数（如果为 null，则查询）
+                try {
+                    DubboServiceEntity serviceEntity = service;
+                    if (serviceEntity == null) {
+                        serviceEntity = dubboServiceDbService.findByInterfaceName(providerInfo.getInterfaceName());
+                    }
+                    if (serviceEntity != null && "APPROVED".equals(serviceEntity.getApprovalStatus())) {
+                        providerService.updateProvider(providerInfo);
+                        log.debug("更新已审批Provider到服务监控: {}", data.getPath());
+                    } else {
+                        // 从服务监控中移除（如果之前已添加）
+                        providerService.removeProviderByZkPath(data.getPath());
+                        log.debug("移除未审批Provider的服务监控: {}", data.getPath());
+                    }
+                } catch (Exception e) {
+                    log.warn("检查审批状态失败: {}", data.getPath(), e);
                 }
             }
             

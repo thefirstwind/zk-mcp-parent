@@ -52,6 +52,26 @@ public class DubboServiceNodeEntity {
     private String address;
     
     /**
+     * 注册时间
+     */
+    private LocalDateTime registrationTime;
+    
+    /**
+     * 最后心跳时间
+     */
+    private LocalDateTime lastHeartbeatTime;
+    
+    /**
+     * 是否在线
+     */
+    private Boolean isOnline;
+    
+    /**
+     * 是否健康
+     */
+    private Boolean isHealthy;
+    
+    /**
      * 最后同步时间
      */
     private LocalDateTime lastSyncTime;
@@ -73,6 +93,11 @@ public class DubboServiceNodeEntity {
         this.serviceId = serviceId;
         this.interfaceName = providerInfo.getInterfaceName();
         this.address = providerInfo.getAddress();
+        this.registrationTime = providerInfo.getRegistrationTime() != null ? providerInfo.getRegistrationTime() : 
+            (providerInfo.getRegisterTime() != null ? providerInfo.getRegisterTime() : LocalDateTime.now());
+        this.lastHeartbeatTime = providerInfo.getLastHeartbeat();
+        this.isOnline = providerInfo.getOnline() != null ? providerInfo.getOnline() : true;
+        this.isHealthy = providerInfo.getHealthy() != null ? providerInfo.getHealthy() : true;
         
         // 初始化数据库相关字段
         this.lastSyncTime = LocalDateTime.now();
@@ -88,6 +113,11 @@ public class DubboServiceNodeEntity {
         this.interfaceName = providerInfo.getInterfaceName();
         this.version = version;
         this.address = providerInfo.getAddress();
+        this.registrationTime = providerInfo.getRegistrationTime() != null ? providerInfo.getRegistrationTime() : 
+            (providerInfo.getRegisterTime() != null ? providerInfo.getRegisterTime() : LocalDateTime.now());
+        this.lastHeartbeatTime = providerInfo.getLastHeartbeat();
+        this.isOnline = providerInfo.getOnline() != null ? providerInfo.getOnline() : true;
+        this.isHealthy = providerInfo.getHealthy() != null ? providerInfo.getHealthy() : true;
         
         // 初始化数据库相关字段
         this.lastSyncTime = LocalDateTime.now();
@@ -101,6 +131,20 @@ public class DubboServiceNodeEntity {
     public void updateFromProviderInfo(ProviderInfo providerInfo) {
         this.interfaceName = providerInfo.getInterfaceName();
         this.address = providerInfo.getAddress();
+        if (providerInfo.getRegistrationTime() != null) {
+            this.registrationTime = providerInfo.getRegistrationTime();
+        } else if (providerInfo.getRegisterTime() != null) {
+            this.registrationTime = providerInfo.getRegisterTime();
+        }
+        if (providerInfo.getLastHeartbeat() != null) {
+            this.lastHeartbeatTime = providerInfo.getLastHeartbeat();
+        }
+        if (providerInfo.getOnline() != null) {
+            this.isOnline = providerInfo.getOnline();
+        }
+        if (providerInfo.getHealthy() != null) {
+            this.isHealthy = providerInfo.getHealthy();
+        }
         
         // 更新同步时间
         this.lastSyncTime = LocalDateTime.now();
@@ -114,6 +158,20 @@ public class DubboServiceNodeEntity {
         this.interfaceName = providerInfo.getInterfaceName();
         this.version = version;
         this.address = providerInfo.getAddress();
+        if (providerInfo.getRegistrationTime() != null) {
+            this.registrationTime = providerInfo.getRegistrationTime();
+        } else if (providerInfo.getRegisterTime() != null) {
+            this.registrationTime = providerInfo.getRegisterTime();
+        }
+        if (providerInfo.getLastHeartbeat() != null) {
+            this.lastHeartbeatTime = providerInfo.getLastHeartbeat();
+        }
+        if (providerInfo.getOnline() != null) {
+            this.isOnline = providerInfo.getOnline();
+        }
+        if (providerInfo.getHealthy() != null) {
+            this.isHealthy = providerInfo.getHealthy();
+        }
         
         // 更新同步时间
         this.lastSyncTime = LocalDateTime.now();

@@ -10,25 +10,33 @@
         <result property="interfaceName" column="interface_name"/>
         <result property="version" column="version"/>
         <result property="address" column="address"/>
+        <result property="registrationTime" column="registration_time"/>
+        <result property="lastHeartbeatTime" column="last_heartbeat_time"/>
+        <result property="isOnline" column="is_online"/>
+        <result property="isHealthy" column="is_healthy"/>
         <result property="lastSyncTime" column="last_sync_time"/>
         <result property="createdAt" column="gmt_created"/>
         <result property="updatedAt" column="gmt_modified"/>
     </resultMap>
     
     <sql id="nodeColumns">
-        id, service_id, interface_name, version, address, last_sync_time, gmt_created, gmt_modified
+        id, service_id, interface_name, version, address, registration_time, last_heartbeat_time, is_online, is_healthy, last_sync_time, gmt_created, gmt_modified
     </sql>
     
     <!-- 插入Dubbo服务节点信息 -->
     <insert id="insert" parameterType="com.pajk.mcpmetainfo.persistence.entity.DubboServiceNodeEntity" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO zk_dubbo_service_node (
-            service_id, interface_name, version, address, last_sync_time, gmt_created, gmt_modified
+            service_id, interface_name, version, address, registration_time, last_heartbeat_time, is_online, is_healthy, last_sync_time, gmt_created, gmt_modified
         ) VALUES (
-            #{serviceId}, #{interfaceName}, #{version}, #{address}, #{lastSyncTime}, #{createdAt}, #{updatedAt}
+            #{serviceId}, #{interfaceName}, #{version}, #{address}, #{registrationTime}, #{lastHeartbeatTime}, #{isOnline}, #{isHealthy}, #{lastSyncTime}, #{createdAt}, #{updatedAt}
         )
         ON DUPLICATE KEY UPDATE
             interface_name = VALUES(interface_name),
             version = VALUES(version),
+            registration_time = VALUES(registration_time),
+            last_heartbeat_time = VALUES(last_heartbeat_time),
+            is_online = VALUES(is_online),
+            is_healthy = VALUES(is_healthy),
             last_sync_time = VALUES(last_sync_time),
             gmt_modified = VALUES(gmt_modified)
     </insert>
@@ -36,16 +44,20 @@
     <!-- 批量插入Dubbo服务节点信息 -->
     <insert id="batchInsert" parameterType="java.util.List">
         INSERT INTO zk_dubbo_service_node (
-            service_id, interface_name, version, address, last_sync_time, gmt_created, gmt_modified
+            service_id, interface_name, version, address, registration_time, last_heartbeat_time, is_online, is_healthy, last_sync_time, gmt_created, gmt_modified
         ) VALUES
         <foreach collection="nodes" item="item" separator=",">
             (
-                #{item.serviceId}, #{item.interfaceName}, #{item.version}, #{item.address}, #{item.lastSyncTime}, #{item.createdAt}, #{item.updatedAt}
+                #{item.serviceId}, #{item.interfaceName}, #{item.version}, #{item.address}, #{item.registrationTime}, #{item.lastHeartbeatTime}, #{item.isOnline}, #{item.isHealthy}, #{item.lastSyncTime}, #{item.createdAt}, #{item.updatedAt}
             )
         </foreach>
         ON DUPLICATE KEY UPDATE
             interface_name = VALUES(interface_name),
             version = VALUES(version),
+            registration_time = VALUES(registration_time),
+            last_heartbeat_time = VALUES(last_heartbeat_time),
+            is_online = VALUES(is_online),
+            is_healthy = VALUES(is_healthy),
             last_sync_time = VALUES(last_sync_time),
             gmt_modified = VALUES(gmt_modified)
     </insert>
@@ -57,10 +69,81 @@
             interface_name = #{interfaceName},
             version = #{version},
             address = #{address},
+            registration_time = #{registrationTime},
+            last_heartbeat_time = #{lastHeartbeatTime},
+            is_online = #{isOnline},
+            is_healthy = #{isHealthy},
             last_sync_time = #{lastSyncTime},
             gmt_modified = #{updatedAt}
         WHERE id = #{id}
     </update>
+    
+    <!-- 更新最后心跳时间 -->
+    <update id="updateLastHeartbeat">
+        UPDATE zk_dubbo_service_node SET
+            last_heartbeat_time = #{lastHeartbeatTime},
+            is_online = 1,
+            gmt_modified = NOW()
+        WHERE service_id = #{serviceId} AND address = #{address}
+    </update>
+    
+    <!-- 更新在线状态 -->
+    <update id="updateOnlineStatus">
+        UPDATE zk_dubbo_service_node SET
+            is_online = #{isOnline},
+            gmt_modified = NOW()
+        WHERE service_id = #{serviceId} AND address = #{address}
+    </update>
+    
+    <!-- 更新健康状态 -->
+    <update id="updateHealthStatus">
+        UPDATE zk_dubbo_service_node SET
+            is_healthy = #{isHealthy},
+            gmt_modified = NOW()
+        WHERE service_id = #{serviceId} AND address = #{address}
+    </update>
+    
+    <!-- 标记节点为离线 -->
+    <update id="markOffline">
+        UPDATE zk_dubbo_service_node SET
+            is_online = 0,
+            gmt_modified = NOW()
+        WHERE service_id = #{serviceId} AND address = #{address}
+    </update>
+    
+    <!-- 查找在线节点 -->
+    <select id="findOnlineNodes" resultMap="DubboServiceNodeResultMap">
+        SELECT <include refid="nodeColumns"/>
+        FROM zk_dubbo_service_node
+        WHERE is_online = 1
+        ORDER BY last_heartbeat_time DESC
+    </select>
+    
+    <!-- 查找健康检查超时的节点 -->
+    <select id="findNodesByHealthCheckTimeout" resultMap="DubboServiceNodeResultMap">
+        SELECT <include refid="nodeColumns"/>
+        FROM zk_dubbo_service_node
+        WHERE is_online = 1 
+          AND (last_heartbeat_time IS NULL OR last_heartbeat_time &lt; DATE_SUB(NOW(), INTERVAL #{timeoutMinutes} MINUTE))
+        ORDER BY last_heartbeat_time ASC
+    </select>
+    
+    <!-- 统计在线节点数量 -->
+    <select id="countOnlineNodes" resultType="int">
+        SELECT COUNT(*) FROM zk_dubbo_service_node WHERE is_online = 1
+    </select>
+    
+    <!-- 统计健康节点数量 -->
+    <select id="countHealthyNodes" resultType="int">
+        SELECT COUNT(*) FROM zk_dubbo_service_node WHERE is_online = 1 AND is_healthy = 1
+    </select>
+    
+    <!-- 删除指定时间之前的离线节点 -->
+    <delete id="deleteOfflineNodesBefore">
+        DELETE FROM zk_dubbo_service_node
+        WHERE is_online = 0 
+          AND (last_heartbeat_time IS NULL OR last_heartbeat_time &lt; #{beforeTime})
+    </delete>
     
     <!-- 删除Dubbo服务节点信息 -->
     <delete id="deleteById" parameterType="long">

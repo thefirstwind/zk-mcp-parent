@@ -33,7 +33,8 @@ import java.util.concurrent.atomic.AtomicLong;
 public class ProviderPersistenceService {
     
     private final DubboServiceDbService dubboServiceDbService;
-    private final ProviderInfoDbService providerInfoDbService;
+    @Deprecated
+    private final ProviderInfoDbService providerInfoDbService; // 已废弃，保留用于向后兼容
     private final InterfaceWhitelistService interfaceWhitelistService;
     
     // 统计指标
@@ -71,14 +72,9 @@ public class ProviderPersistenceService {
             log.debug("🔍 Persisting Provider: {} ({}:{})", 
                 providerInfo.getInterfaceName(), providerInfo.getIp(), providerInfo.getPort());
             
-            // 1. 保存或更新服务信息
-            DubboServiceEntity serviceEntity = dubboServiceDbService.saveOrUpdateService(providerInfo);
-            
-            // 2. 保存或更新服务节点信息
-            DubboServiceNodeEntity nodeEntity = dubboServiceDbService.saveServiceNode(providerInfo, serviceEntity.getId());
-            
-            // 3. 保存或更新 Provider 信息
-            providerInfoDbService.saveOrUpdateProvider(providerInfo);
+            // 1. 保存或更新服务信息和节点信息（已合并，包含心跳和状态信息）
+            // 注意：已废弃 zk_provider_info 表，现在直接使用 zk_dubbo_service_node 存储所有信息
+            dubboServiceDbService.saveOrUpdateServiceWithNode(providerInfo);
             
             totalRegistrations.incrementAndGet();
             log.info("✅ Provider persisted to database: {} ({}:{}) - online={}, healthy={}", 
@@ -105,8 +101,18 @@ public class ProviderPersistenceService {
                 return;
             }
             
-            // 标记 Provider 为离线
-            providerInfoDbService.markProviderOffline(zkPath);
+            // 标记 Provider 为离线（使用新表结构）
+            try {
+                ProviderInfo providerInfo = dubboServiceDbService.findProviderByZkPath(zkPath);
+                if (providerInfo != null) {
+                    DubboServiceEntity service = dubboServiceDbService.findByInterfaceName(providerInfo.getInterfaceName());
+                    if (service != null) {
+                        dubboServiceDbService.updateOnlineStatus(service.getId(), providerInfo.getAddress(), false);
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("标记 Provider 为离线失败: {}", zkPath, e);
+            }
             
             totalDeregistrations.incrementAndGet();
             log.debug("✅ Provider deregistration persisted: {}", zkPath);
@@ -129,7 +135,18 @@ public class ProviderPersistenceService {
                 return;
             }
             
-            providerInfoDbService.updateLastHeartbeat(zkPath, LocalDateTime.now());
+            // 更新心跳时间（使用新表结构）
+            try {
+                ProviderInfo providerInfo = dubboServiceDbService.findProviderByZkPath(zkPath);
+                if (providerInfo != null) {
+                    DubboServiceEntity service = dubboServiceDbService.findByInterfaceName(providerInfo.getInterfaceName());
+                    if (service != null) {
+                        dubboServiceDbService.updateLastHeartbeat(service.getId(), providerInfo.getAddress(), LocalDateTime.now());
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("更新心跳时间失败: {} - {}", zkPath, e.getMessage());
+            }
             
             totalHeartbeats.incrementAndGet();
             log.trace("🫀 Provider health check updated: {}", zkPath);
@@ -153,7 +170,18 @@ public class ProviderPersistenceService {
                 return;
             }
             
-            providerInfoDbService.updateProviderHealthStatus(zkPath, healthy);
+            // 更新健康状态（使用新表结构）
+            try {
+                ProviderInfo providerInfo = dubboServiceDbService.findProviderByZkPath(zkPath);
+                if (providerInfo != null) {
+                    DubboServiceEntity service = dubboServiceDbService.findByInterfaceName(providerInfo.getInterfaceName());
+                    if (service != null) {
+                        dubboServiceDbService.updateHealthStatus(service.getId(), providerInfo.getAddress(), healthy);
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("更新健康状态失败: {} - {}", zkPath, e.getMessage());
+            }
             
             log.debug("✅ Provider health status updated: {} -> {}", 
                 zkPath, healthy ? "HEALTHY" : "UNHEALTHY");
@@ -191,17 +219,18 @@ public class ProviderPersistenceService {
     @Scheduled(fixedDelay = 120_000, initialDelay = 60_000)
     public void checkAndMarkTimeoutProviders() {
         try {
-            // 查询超过5分钟未健康检查的 Provider
-            List<ProviderInfo> timeoutProviders = providerInfoDbService.findProvidersByHealthCheckTimeout(5);
+            // 查询超过5分钟未健康检查的 Provider（使用新表结构）
+            List<DubboServiceNodeEntity> timeoutNodes = dubboServiceDbService.findNodesByHealthCheckTimeout(5);
             
-            if (!timeoutProviders.isEmpty()) {
+            if (!timeoutNodes.isEmpty()) {
                 int markedCount = 0;
-                for (ProviderInfo provider : timeoutProviders) {
+                for (DubboServiceNodeEntity node : timeoutNodes) {
                     try {
-                        providerInfoDbService.markProviderOffline(provider.getZkPath());
+                        dubboServiceDbService.updateOnlineStatus(node.getServiceId(), node.getAddress(), false);
                         markedCount++;
                     } catch (Exception e) {
-                        log.warn("⚠️ Failed to mark Provider offline: {}", provider.getZkPath(), e);
+                        log.warn("⚠️ Failed to mark Provider offline: serviceId={}, address={}", 
+                            node.getServiceId(), node.getAddress(), e);
                     }
                 }
                 
@@ -222,7 +251,7 @@ public class ProviderPersistenceService {
     public void cleanupExpiredOfflineProviders() {
         try {
             LocalDateTime beforeTime = LocalDateTime.now().minusDays(7);
-            int deleted = providerInfoDbService.deleteOfflineProvidersBefore(beforeTime);
+            int deleted = dubboServiceDbService.deleteOfflineNodesBefore(beforeTime);
             
             if (deleted > 0) {
                 log.info("🧹 Cleaned up {} expired offline Provider records", deleted);
@@ -240,8 +269,8 @@ public class ProviderPersistenceService {
      */
     public Map<String, Object> getStatistics() {
         try {
-            int onlineCount = providerInfoDbService.countOnlineProviders();
-            int healthyCount = providerInfoDbService.countHealthyProviders();
+            int onlineCount = dubboServiceDbService.countOnlineNodes();
+            int healthyCount = dubboServiceDbService.countHealthyNodes();
             
             return Map.of(
                 "total_registrations", totalRegistrations.get(),

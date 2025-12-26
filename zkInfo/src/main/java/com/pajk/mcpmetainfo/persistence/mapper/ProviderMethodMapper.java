@@ -6,6 +6,12 @@ import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 
+/**
+ * Provider方法Mapper（已废弃）
+ * 
+ * @deprecated 已废弃，功能已迁移到 DubboServiceMethodMapper。请使用 DubboServiceMethodMapper。
+ */
+@Deprecated
 @Mapper
 public interface ProviderMethodMapper {
     

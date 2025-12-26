@@ -17,7 +17,9 @@ import java.time.LocalDateTime;
  * @author ZkInfo Team
  * @version 1.0.0
  * @since 2024-01-01
+ * @deprecated 已废弃，功能已迁移到 zk_dubbo_service_node 表。请使用 DubboServiceNodeEntity 和 DubboServiceEntity。
  */
+@Deprecated
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

@@ -3,7 +3,7 @@ package com.pajk.mcpmetainfo.core.service;
 import com.pajk.mcpmetainfo.persistence.entity.DubboServiceEntity;
 import com.pajk.mcpmetainfo.persistence.entity.DubboServiceNodeEntity;
 import com.pajk.mcpmetainfo.core.model.ProviderInfo;
-import com.pajk.mcpmetainfo.persistence.entity.ProviderInfoEntity;
+import com.pajk.mcpmetainfo.persistence.entity.ProviderInfoEntity; // @deprecated 已废弃
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -56,6 +56,8 @@ public class DubboServiceInfoAdapter {
     /**
      * 将ProviderInfo转换为DubboServiceNodeEntity
      * 
+     * 注意：现在包含心跳和状态信息（已从 zk_provider_info 迁移到 zk_dubbo_service_node）
+     * 
      * @param providerInfo Provider信息
      * @param serviceId 关联的服务ID
      * @param version 服务版本（从 zk_dubbo_service 获取）
@@ -67,6 +69,15 @@ public class DubboServiceInfoAdapter {
         nodeEntity.setInterfaceName(providerInfo.getInterfaceName());
         nodeEntity.setVersion(version);
         nodeEntity.setAddress(providerInfo.getAddress());
+        
+        // 设置心跳和状态信息（已从 zk_provider_info 迁移）
+        nodeEntity.setRegistrationTime(providerInfo.getRegistrationTime() != null ? 
+            providerInfo.getRegistrationTime() : 
+            (providerInfo.getRegisterTime() != null ? providerInfo.getRegisterTime() : LocalDateTime.now()));
+        nodeEntity.setLastHeartbeatTime(providerInfo.getLastHeartbeat());
+        nodeEntity.setIsOnline(providerInfo.getOnline() != null ? providerInfo.getOnline() : true);
+        nodeEntity.setIsHealthy(providerInfo.getHealthy() != null ? providerInfo.getHealthy() : true);
+        
         nodeEntity.setLastSyncTime(LocalDateTime.now());
         nodeEntity.setCreatedAt(LocalDateTime.now());
         nodeEntity.setUpdatedAt(LocalDateTime.now());
@@ -78,7 +89,9 @@ public class DubboServiceInfoAdapter {
      * 
      * @param providerInfoEntity Provider信息实体
      * @return Dubbo服务实体
+     * @deprecated ProviderInfoEntity 已废弃，请使用 convertToServiceEntity(ProviderInfo) 方法
      */
+    @Deprecated
     public DubboServiceEntity convertToServiceEntity(ProviderInfoEntity providerInfoEntity) {
         DubboServiceEntity serviceEntity = new DubboServiceEntity();
         serviceEntity.setInterfaceName(providerInfoEntity.getInterfaceName());
@@ -103,7 +116,7 @@ public class DubboServiceInfoAdapter {
      * @param providerInfoEntity Provider信息实体
      * @param serviceId 关联的服务ID
      * @return Dubbo服务节点实体
-     * @deprecated 请使用 convertToNodeEntity(ProviderInfoEntity, Long, String) 方法
+     * @deprecated ProviderInfoEntity 已废弃，请使用 convertToNodeEntity(ProviderInfo, Long, String) 方法
      */
     @Deprecated
     public DubboServiceNodeEntity convertToNodeEntity(ProviderInfoEntity providerInfoEntity, Long serviceId) {
@@ -117,7 +130,9 @@ public class DubboServiceInfoAdapter {
      * @param serviceId 关联的服务ID
      * @param version 服务版本（从 zk_dubbo_service 获取）
      * @return Dubbo服务节点实体
+     * @deprecated ProviderInfoEntity 已废弃，请使用 convertToNodeEntity(ProviderInfo, Long, String) 方法
      */
+    @Deprecated
     public DubboServiceNodeEntity convertToNodeEntity(ProviderInfoEntity providerInfoEntity, Long serviceId, String version) {
         DubboServiceNodeEntity nodeEntity = new DubboServiceNodeEntity();
         nodeEntity.setServiceId(serviceId);

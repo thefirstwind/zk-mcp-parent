@@ -7,6 +7,12 @@ import org.apache.ibatis.annotations.Param;
 import java.time.LocalDateTime;
 import java.util.List;
 
+/**
+ * Provider信息Mapper（已废弃）
+ * 
+ * @deprecated 已废弃，功能已迁移到 DubboServiceNodeMapper。请使用 DubboServiceNodeMapper 和 DubboServiceMapper。
+ */
+@Deprecated
 @Mapper
 public interface ProviderInfoMapper {
     

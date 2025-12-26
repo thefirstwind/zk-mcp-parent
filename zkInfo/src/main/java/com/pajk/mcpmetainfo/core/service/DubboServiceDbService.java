@@ -5,6 +5,7 @@ import com.pajk.mcpmetainfo.persistence.mapper.DubboServiceNodeMapper;
 import com.pajk.mcpmetainfo.persistence.entity.DubboServiceEntity;
 import com.pajk.mcpmetainfo.persistence.entity.DubboServiceMethodEntity;
 import com.pajk.mcpmetainfo.persistence.entity.DubboServiceNodeEntity;
+import com.pajk.mcpmetainfo.persistence.mapper.DubboMethodParameterMapper;
 import com.pajk.mcpmetainfo.core.model.ProviderInfo;
 import com.pajk.mcpmetainfo.core.model.PageResult;
 import lombok.extern.slf4j.Slf4j;
@@ -38,14 +39,8 @@ public class DubboServiceDbService {
     @Autowired
     private DubboServiceMethodService dubboServiceMethodService;
     
-    @Autowired
-    private com.pajk.mcpmetainfo.persistence.mapper.ProviderInfoMapper providerInfoMapper;
-    
-    @Autowired
-    private com.pajk.mcpmetainfo.persistence.mapper.ProviderMethodMapper providerMethodMapper;
-    
-    @Autowired
-    private com.pajk.mcpmetainfo.persistence.mapper.ProviderParameterMapper providerParameterMapper;
+    @Autowired(required = false)
+    private com.pajk.mcpmetainfo.persistence.mapper.DubboMethodParameterMapper dubboMethodParameterMapper;
     
     /**
      * 保存或更新Dubbo服务信息到数据库
@@ -152,6 +147,141 @@ public class DubboServiceDbService {
         } catch (Exception e) {
             log.error("保存Dubbo服务节点信息到数据库失败: serviceId={}, address={}", serviceId, providerInfo.getAddress(), e);
             throw new RuntimeException("保存Dubbo服务节点信息失败", e);
+        }
+    }
+    
+    /**
+     * 更新节点最后心跳时间
+     * 
+     * @param serviceId 服务ID
+     * @param address 节点地址
+     * @param lastHeartbeatTime 最后心跳时间
+     */
+    public void updateLastHeartbeat(Long serviceId, String address, LocalDateTime lastHeartbeatTime) {
+        try {
+            dubboServiceNodeMapper.updateLastHeartbeat(serviceId, address, lastHeartbeatTime);
+            log.debug("更新节点心跳时间: serviceId={}, address={}, time={}", serviceId, address, lastHeartbeatTime);
+        } catch (Exception e) {
+            log.error("更新节点心跳时间失败: serviceId={}, address={}", serviceId, address, e);
+        }
+    }
+    
+    /**
+     * 更新节点在线状态
+     * 
+     * @param serviceId 服务ID
+     * @param address 节点地址
+     * @param isOnline 是否在线
+     */
+    public void updateOnlineStatus(Long serviceId, String address, Boolean isOnline) {
+        try {
+            dubboServiceNodeMapper.updateOnlineStatus(serviceId, address, isOnline);
+            log.debug("更新节点在线状态: serviceId={}, address={}, isOnline={}", serviceId, address, isOnline);
+        } catch (Exception e) {
+            log.error("更新节点在线状态失败: serviceId={}, address={}", serviceId, address, e);
+        }
+    }
+    
+    /**
+     * 更新节点健康状态
+     * 
+     * @param serviceId 服务ID
+     * @param address 节点地址
+     * @param isHealthy 是否健康
+     */
+    public void updateHealthStatus(Long serviceId, String address, Boolean isHealthy) {
+        try {
+            dubboServiceNodeMapper.updateHealthStatus(serviceId, address, isHealthy);
+            log.debug("更新节点健康状态: serviceId={}, address={}, isHealthy={}", serviceId, address, isHealthy);
+        } catch (Exception e) {
+            log.error("更新节点健康状态失败: serviceId={}, address={}", serviceId, address, e);
+        }
+    }
+    
+    /**
+     * 标记节点为离线
+     * 
+     * @param serviceId 服务ID
+     * @param address 节点地址
+     */
+    public void markNodeOffline(Long serviceId, String address) {
+        try {
+            dubboServiceNodeMapper.markOffline(serviceId, address);
+            log.info("标记节点为离线: serviceId={}, address={}", serviceId, address);
+        } catch (Exception e) {
+            log.error("标记节点为离线失败: serviceId={}, address={}", serviceId, address, e);
+        }
+    }
+    
+    /**
+     * 查找在线节点
+     * 
+     * @return 在线节点列表
+     */
+    public List<DubboServiceNodeEntity> findOnlineNodes() {
+        try {
+            return dubboServiceNodeMapper.findOnlineNodes();
+        } catch (Exception e) {
+            log.error("查找在线节点失败", e);
+            return java.util.Collections.emptyList();
+        }
+    }
+    
+    /**
+     * 查找健康检查超时的节点
+     * 
+     * @param timeoutMinutes 超时分钟数
+     * @return 超时节点列表
+     */
+    public List<DubboServiceNodeEntity> findNodesByHealthCheckTimeout(int timeoutMinutes) {
+        try {
+            return dubboServiceNodeMapper.findNodesByHealthCheckTimeout(timeoutMinutes);
+        } catch (Exception e) {
+            log.error("查找健康检查超时的节点失败: timeoutMinutes={}", timeoutMinutes, e);
+            return java.util.Collections.emptyList();
+        }
+    }
+    
+    /**
+     * 统计在线节点数量
+     * 
+     * @return 在线节点数量
+     */
+    public int countOnlineNodes() {
+        try {
+            return dubboServiceNodeMapper.countOnlineNodes();
+        } catch (Exception e) {
+            log.error("统计在线节点数量失败", e);
+            return 0;
+        }
+    }
+    
+    /**
+     * 统计健康节点数量
+     * 
+     * @return 健康节点数量
+     */
+    public int countHealthyNodes() {
+        try {
+            return dubboServiceNodeMapper.countHealthyNodes();
+        } catch (Exception e) {
+            log.error("统计健康节点数量失败", e);
+            return 0;
+        }
+    }
+    
+    /**
+     * 删除指定时间之前的离线节点
+     * 
+     * @param beforeTime 时间阈值
+     * @return 删除的记录数
+     */
+    public int deleteOfflineNodesBefore(LocalDateTime beforeTime) {
+        try {
+            return dubboServiceNodeMapper.deleteOfflineNodesBefore(beforeTime);
+        } catch (Exception e) {
+            log.error("删除离线节点失败: beforeTime={}", beforeTime, e);
+            return 0;
         }
     }
     
@@ -705,13 +835,59 @@ public class DubboServiceDbService {
     }
     
     /**
+     * 根据 zkPath 查找 Provider 信息
+     * 
+     * @param zkPath ZooKeeper 路径
+     * @return ProviderInfo 或 null
+     */
+    public ProviderInfo findProviderByZkPath(String zkPath) {
+        try {
+            ProviderInfo providerInfo = parseProviderInfoFromZkPath(zkPath);
+            if (providerInfo == null) {
+                return null;
+            }
+            
+            // 查找服务
+            DubboServiceEntity service = dubboServiceMapper.findByServiceKey(
+                providerInfo.getInterfaceName(),
+                providerInfo.getProtocol(),
+                providerInfo.getVersion(),
+                providerInfo.getGroup(),
+                providerInfo.getApplication()
+            );
+            
+            if (service == null) {
+                return null;
+            }
+            
+            // 查找节点
+            DubboServiceNodeEntity node = dubboServiceNodeMapper.findByServiceIdAndAddress(
+                service.getId(), providerInfo.getAddress());
+            
+            if (node == null) {
+                return null;
+            }
+            
+            // 转换为 ProviderInfo
+            return convertToProviderInfo(service, node);
+            
+        } catch (Exception e) {
+            log.error("根据 zkPath 查找 Provider 信息失败: zkPath={}", zkPath, e);
+            return null;
+        }
+    }
+    
+    /**
      * 将 DubboServiceEntity 和 DubboServiceNodeEntity 转换为 ProviderInfo
+     * 
+     * 注意：已废弃 zk_provider_info、zk_provider_method、zk_provider_parameter 表
+     * 现在直接从 zk_dubbo_service_node 获取心跳和状态信息，从 zk_dubbo_service_method 查询方法信息
      * 
      * @param service 服务实体
      * @param node 节点实体
      * @return ProviderInfo
      */
-    private ProviderInfo convertToProviderInfo(DubboServiceEntity service, DubboServiceNodeEntity node) {
+    public ProviderInfo convertToProviderInfo(DubboServiceEntity service, DubboServiceNodeEntity node) {
         try {
             ProviderInfo providerInfo = new ProviderInfo();
             
@@ -722,42 +898,47 @@ public class DubboServiceDbService {
             providerInfo.setGroup(service.getGroup());
             providerInfo.setApplication(service.getApplication());
             
-            // 从节点实体获取地址信息
+            // 从节点实体获取地址和状态信息（已迁移到 zk_dubbo_service_node）
             providerInfo.setAddress(node.getAddress());
-            providerInfo.setRegisterTime(node.getCreatedAt());
+            providerInfo.setRegisterTime(node.getRegistrationTime() != null ? node.getRegistrationTime() : node.getCreatedAt());
+            providerInfo.setRegistrationTime(node.getRegistrationTime());
+            providerInfo.setLastHeartbeat(node.getLastHeartbeatTime());
+            providerInfo.setOnline(node.getIsOnline() != null ? node.getIsOnline() : true);
+            providerInfo.setHealthy(node.getIsHealthy() != null ? node.getIsHealthy() : true);
             
-            // 查询 Provider 信息（在线状态、心跳等）
-            com.pajk.mcpmetainfo.persistence.entity.ProviderInfoEntity providerEntity = 
-                providerInfoMapper.findByServiceIdAndNodeId(service.getId(), node.getId());
-            
-            if (providerEntity != null) {
-                // 从 ProviderInfoEntity 获取在线状态和心跳信息
-                providerInfo.setOnline(providerEntity.isOnline());
-                providerInfo.setLastHeartbeat(providerEntity.getLastHeartbeat());
-                
-                // 查询方法和参数
-                List<com.pajk.mcpmetainfo.persistence.entity.ProviderMethodEntity> methods = 
-                    providerMethodMapper.findByProviderId(providerEntity.getId());
+            // 从 zk_dubbo_service_method 查询方法信息
+            try {
+                List<DubboServiceMethodEntity> methods = dubboServiceMethodService.findMethodsByServiceId(service.getId());
                 if (methods != null && !methods.isEmpty()) {
                     String methodsStr = methods.stream()
-                        .sorted(java.util.Comparator.comparing(com.pajk.mcpmetainfo.persistence.entity.ProviderMethodEntity::getMethodOrder))
-                        .map(com.pajk.mcpmetainfo.persistence.entity.ProviderMethodEntity::getMethodName)
+                        .map(DubboServiceMethodEntity::getMethodName)
                         .collect(java.util.stream.Collectors.joining(","));
                     providerInfo.setMethods(methodsStr);
-                }
-                
-                List<com.pajk.mcpmetainfo.persistence.entity.ProviderParameterEntity> parameters = 
-                    providerParameterMapper.findByProviderId(providerEntity.getId());
-                if (parameters != null && !parameters.isEmpty()) {
+                    
+                    // 构建参数映射（从 zk_dubbo_method_parameter 查询）
                     java.util.Map<String, String> paramsMap = new java.util.HashMap<>();
-                    for (com.pajk.mcpmetainfo.persistence.entity.ProviderParameterEntity param : parameters) {
-                        paramsMap.put(param.getParamKey(), param.getParamValue());
+                    for (DubboServiceMethodEntity method : methods) {
+                        if (method.getReturnType() != null && !method.getReturnType().isEmpty()) {
+                            paramsMap.put(method.getMethodName() + ".return", method.getReturnType());
+                        }
+                        
+                        // 查询方法的参数
+                        List<com.pajk.mcpmetainfo.persistence.entity.DubboMethodParameterEntity> methodParams = 
+                            dubboMethodParameterMapper.findByMethodId(method.getId());
+                        if (methodParams != null && !methodParams.isEmpty()) {
+                            for (com.pajk.mcpmetainfo.persistence.entity.DubboMethodParameterEntity param : methodParams) {
+                                String paramKey = method.getMethodName() + ".param." + 
+                                    (param.getParameterName() != null && !param.getParameterName().isEmpty() 
+                                        ? param.getParameterName() 
+                                        : String.valueOf(param.getParameterOrder()));
+                                paramsMap.put(paramKey, param.getParameterType());
+                            }
+                        }
                     }
                     providerInfo.setParameters(paramsMap);
                 }
-            } else {
-                // 如果没有 ProviderInfoEntity，默认设置为在线（新节点）
-                providerInfo.setOnline(true);
+            } catch (Exception e) {
+                log.warn("查询方法信息失败: serviceId={}", service.getId(), e);
             }
             
             // 构建 zkPath（用于兼容性）

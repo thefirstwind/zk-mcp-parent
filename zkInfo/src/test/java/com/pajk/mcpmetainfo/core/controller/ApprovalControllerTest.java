@@ -19,8 +19,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -66,7 +65,10 @@ class ApprovalControllerTest {
         List<ProviderInfoEntity> providers = Arrays.asList(provider1, provider2);
         
         // 设置mock行为 - 使用字符串形式的审批状态
-        when(providerInfoDbService.findByApprovalStatus("PENDING")).thenReturn(providers);
+        // 使用 doReturn().when() 避免类型擦除问题
+        @SuppressWarnings("unchecked")
+        List<Object> mockResult = (List<Object>) (List<?>) providers;
+        doReturn(mockResult).when(providerInfoDbService).findByApprovalStatus("PENDING");
 
         // 执行测试并验证结果
         mockMvc.perform(get("/api/approval/pending")
@@ -103,7 +105,10 @@ class ApprovalControllerTest {
         List<ProviderInfoEntity> providers = Arrays.asList(provider1);
         
         // 设置mock行为
-        when(providerInfoDbService.findApprovedProviders()).thenReturn(providers);
+        // 使用 doReturn().when() 避免类型擦除问题
+        @SuppressWarnings("unchecked")
+        List<Object> mockResult = (List<Object>) (List<?>) providers;
+        doReturn(mockResult).when(providerInfoDbService).findApprovedProviders();
 
         // 执行测试并验证结果
         mockMvc.perform(get("/api/approval/approved")

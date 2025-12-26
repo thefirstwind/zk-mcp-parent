@@ -37,5 +37,50 @@ public interface DubboServiceNodeMapper {
      * @return version 为空的节点列表
      */
     List<DubboServiceNodeEntity> findNodesWithNullVersion();
+    
+    /**
+     * 更新最后心跳时间
+     */
+    void updateLastHeartbeat(@Param("serviceId") Long serviceId, @Param("address") String address, @Param("lastHeartbeatTime") java.time.LocalDateTime lastHeartbeatTime);
+    
+    /**
+     * 更新在线状态
+     */
+    void updateOnlineStatus(@Param("serviceId") Long serviceId, @Param("address") String address, @Param("isOnline") Boolean isOnline);
+    
+    /**
+     * 更新健康状态
+     */
+    void updateHealthStatus(@Param("serviceId") Long serviceId, @Param("address") String address, @Param("isHealthy") Boolean isHealthy);
+    
+    /**
+     * 标记节点为离线
+     */
+    void markOffline(@Param("serviceId") Long serviceId, @Param("address") String address);
+    
+    /**
+     * 查找在线节点
+     */
+    List<DubboServiceNodeEntity> findOnlineNodes();
+    
+    /**
+     * 查找健康检查超时的节点
+     */
+    List<DubboServiceNodeEntity> findNodesByHealthCheckTimeout(@Param("timeoutMinutes") int timeoutMinutes);
+    
+    /**
+     * 统计在线节点数量
+     */
+    int countOnlineNodes();
+    
+    /**
+     * 统计健康节点数量
+     */
+    int countHealthyNodes();
+    
+    /**
+     * 删除指定时间之前的离线节点
+     */
+    int deleteOfflineNodesBefore(@Param("beforeTime") java.time.LocalDateTime beforeTime);
 }
 
