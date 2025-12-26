@@ -63,18 +63,33 @@ public class DubboServiceDbService {
             if (existingEntity != null) {
                 // 如果存在，则更新现有记录
                 entity = existingEntity;
+                // 更新实体字段（保留审批状态等业务字段）
+                entity.setProtocol(providerInfo.getProtocol());
+                entity.setVersion(providerInfo.getVersion());
+                entity.setGroup(providerInfo.getGroup());
+                entity.setApplication(providerInfo.getApplication());
+                entity.setUpdatedAt(LocalDateTime.now());
                 log.debug("更新Dubbo服务信息到数据库: {}", providerInfo.getInterfaceName());
+                dubboServiceMapper.update(entity);
             } else {
                 // 如果不存在，则创建新记录
                 entity = new DubboServiceEntity(providerInfo);
                 log.debug("保存新的Dubbo服务信息到数据库: {}", providerInfo.getInterfaceName());
-            }
-            
-            // 保存到数据库
-            if (entity.getId() == null) {
                 dubboServiceMapper.insert(entity);
-            } else {
-                dubboServiceMapper.update(entity);
+                // 如果 insert 使用了 ON DUPLICATE KEY UPDATE，可能记录已存在，需要重新查询获取 ID
+                if (entity.getId() == null) {
+                    DubboServiceEntity insertedEntity = dubboServiceMapper.findByServiceKey(
+                        providerInfo.getInterfaceName(), 
+                        providerInfo.getProtocol(), 
+                        providerInfo.getVersion(), 
+                        providerInfo.getGroup(),
+                        providerInfo.getApplication()
+                    );
+                    if (insertedEntity != null) {
+                        entity = insertedEntity;
+                        log.debug("通过 ON DUPLICATE KEY UPDATE 更新了记录，重新查询获取 ID: {}", entity.getId());
+                    }
+                }
             }
             
             log.info("成功保存Dubbo服务信息: {} (ID: {})", providerInfo.getInterfaceName(), entity.getId());

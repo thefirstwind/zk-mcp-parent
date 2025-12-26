@@ -16,9 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Dubbo服务管理控制器
@@ -51,9 +49,6 @@ public class DubboServiceController {
     
     @Autowired
     private com.pajk.mcpmetainfo.core.config.ZooKeeperConfig zooKeeperConfig;
-    
-    @Autowired(required = false)
-    private com.pajk.mcpmetainfo.core.service.NacosMcpRegistrationService nacosMcpRegistrationService;
     
     @Autowired(required = false)
     private com.pajk.mcpmetainfo.core.service.ZooKeeperService zooKeeperService;
@@ -462,7 +457,7 @@ public class DubboServiceController {
     }
     
     /**
-     * 同步节点（从ZooKeeper重新同步服务节点信息并更新MCP注册）
+     * 同步节点（从ZooKeeper重新同步服务节点信息）
      * 
      * @param id 服务ID
      * @return 同步结果
@@ -487,7 +482,6 @@ public class DubboServiceController {
             
             // 1. 从ZooKeeper读取节点信息并持久化到数据库
             int syncedCount = 0;
-            List<com.pajk.mcpmetainfo.core.model.ProviderInfo> providerInfos = new java.util.ArrayList<>();
             
             try {
                 String servicePath = buildServicePath(service);
@@ -513,7 +507,6 @@ public class DubboServiceController {
                                 
                                 // 持久化到数据库
                                 dubboServiceDbService.saveOrUpdateServiceWithNode(providerInfo);
-                                providerInfos.add(providerInfo);
                                 syncedCount++;
                                 log.debug("成功同步Provider节点: {}", providerPath);
                             }
@@ -527,25 +520,6 @@ public class DubboServiceController {
             } catch (Exception e) {
                 log.error("从ZooKeeper读取节点信息失败: {} (ID: {})", service.getInterfaceName(), id, e);
                 return ResponseEntity.status(500).body("读取ZooKeeper节点信息失败: " + e.getMessage());
-            }
-            
-            // 2. 重新注册MCP服务
-            if (nacosMcpRegistrationService != null && !providerInfos.isEmpty()) {
-                try {
-                    String version = service.getVersion() != null ? service.getVersion() : "default";
-                    nacosMcpRegistrationService.registerDubboServiceAsMcp(
-                        service.getInterfaceName(), 
-                        version, 
-                        providerInfos
-                    );
-                    log.info("成功重新注册MCP服务: {} (ID: {}, {} 个Provider)", 
-                            service.getInterfaceName(), id, providerInfos.size());
-                } catch (Exception e) {
-                    log.error("重新注册MCP服务失败: {} (ID: {})", service.getInterfaceName(), id, e);
-                    // MCP注册失败不影响节点同步，继续返回成功
-                }
-            } else if (nacosMcpRegistrationService == null) {
-                log.warn("NacosMcpRegistrationService未注入，跳过MCP服务注册");
             }
             
             log.info("成功同步服务节点: {} (ID: {}, 同步了 {} 个Provider)", 
@@ -646,7 +620,7 @@ public class DubboServiceController {
     }
     
     /**
-     * 下线服务（将服务状态设为已下线，并注销MCP服务）
+     * 下线服务（将服务状态设为已下线）
      * 
      * @param id 服务ID
      * @return 下线结果
@@ -670,24 +644,8 @@ public class DubboServiceController {
             service.setUpdatedAt(LocalDateTime.now());
             dubboServiceMapper.update(service);
             
-            // 注销MCP服务
-            if (nacosMcpRegistrationService != null) {
-                try {
-                    nacosMcpRegistrationService.deregisterMcpService(
-                        service.getInterfaceName(), 
-                        service.getVersion() != null ? service.getVersion() : "default"
-                    );
-                    log.info("成功注销MCP服务: {} (ID: {})", service.getInterfaceName(), id);
-                } catch (Exception e) {
-                    log.warn("注销MCP服务失败，但服务状态已更新为已下线: {} (ID: {})", 
-                        service.getInterfaceName(), id, e);
-                }
-            } else {
-                log.warn("NacosMcpRegistrationService未注入，跳过MCP服务注销");
-            }
-            
             log.info("成功下线服务: {} (ID: {})", service.getInterfaceName(), id);
-            return ResponseEntity.ok("服务已下线，MCP服务已注销");
+            return ResponseEntity.ok("服务已下线");
         } catch (Exception e) {
             log.error("下线服务失败", e);
             return ResponseEntity.status(500).body("下线服务失败: " + e.getMessage());
@@ -695,7 +653,7 @@ public class DubboServiceController {
     }
     
     /**
-     * 上线服务（将服务状态从已下线恢复为已审批，并重新注册MCP服务）
+     * 上线服务（将服务状态从已下线恢复为已审批）
      * 
      * @param id 服务ID
      * @return 上线结果
@@ -731,9 +689,7 @@ public class DubboServiceController {
                     service.getInterfaceName(), id, e);
             }
             
-            // 2. 从ZooKeeper读取节点信息并注册到MCP
-            List<com.pajk.mcpmetainfo.core.model.ProviderInfo> providerInfos = new java.util.ArrayList<>();
-            
+            // 2. 从ZooKeeper读取节点信息并同步到数据库
             if (zooKeeperService != null && zooKeeperService.getClient() != null) {
                 try {
                     String providersPath = servicePath + "/providers";
@@ -758,7 +714,6 @@ public class DubboServiceController {
                                     
                                     // 持久化到数据库
                                     dubboServiceDbService.saveOrUpdateServiceWithNode(providerInfo);
-                                    providerInfos.add(providerInfo);
                                     log.debug("成功同步Provider节点用于上线: {}", providerPath);
                                 }
                             } catch (Exception e) {
@@ -770,37 +725,13 @@ public class DubboServiceController {
                     }
                 } catch (Exception e) {
                     log.error("从ZooKeeper读取节点信息失败: {} (ID: {})", service.getInterfaceName(), id, e);
-                    // 继续执行，即使读取节点失败也继续注册MCP
                 }
             } else {
                 log.warn("ZooKeeper服务未初始化，跳过节点同步");
             }
             
-            // 3. 注册MCP服务
-            if (nacosMcpRegistrationService != null) {
-                try {
-                    String version = service.getVersion() != null ? service.getVersion() : "default";
-                    if (!providerInfos.isEmpty()) {
-                        nacosMcpRegistrationService.registerDubboServiceAsMcp(
-                            service.getInterfaceName(), 
-                            version, 
-                            providerInfos
-                        );
-                        log.info("成功重新注册MCP服务: {} (ID: {}, {} 个Provider)", 
-                                service.getInterfaceName(), id, providerInfos.size());
-                    } else {
-                        log.warn("没有Provider节点，跳过MCP服务注册: {} (ID: {})", service.getInterfaceName(), id);
-                    }
-                } catch (Exception e) {
-                    log.error("重新注册MCP服务失败: {} (ID: {})", service.getInterfaceName(), id, e);
-                    // MCP注册失败不影响上线流程，继续返回成功
-                }
-            } else {
-                log.warn("NacosMcpRegistrationService未注入，跳过MCP服务注册");
-            }
-            
             log.info("成功上线服务: {} (ID: {})", service.getInterfaceName(), id);
-            return ResponseEntity.ok("服务已上线，状态已恢复为已审批，MCP服务已重新注册");
+            return ResponseEntity.ok("服务已上线，状态已恢复为已审批");
         } catch (Exception e) {
             log.error("上线服务失败", e);
             return ResponseEntity.status(500).body("上线服务失败: " + e.getMessage());

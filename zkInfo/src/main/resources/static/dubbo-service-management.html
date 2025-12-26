@@ -38,16 +38,6 @@
             margin-bottom: 10px;
         }
 
-        .user-info {
-            font-size: 14px;
-            opacity: 0.9;
-            margin-top: 10px;
-        }
-
-        .user-info span {
-            margin-right: 15px;
-        }
-
         .tabs {
             display: flex;
             background: white;
@@ -162,6 +152,15 @@
 
         .btn-secondary:hover {
             background: #5a6268;
+        }
+
+        .btn-info {
+            background: #17a2b8;
+            color: white;
+        }
+
+        .btn-info:hover {
+            background: #138496;
         }
 
         .btn:disabled {
@@ -381,10 +380,6 @@
     <div class="container">
         <div class="header">
             <h1>🔧 Dubbo服务管理</h1>
-            <div class="user-info">
-                <span>用户ID: <strong id="currentStaffId">-</strong></span>
-                <span>角色: <strong id="currentRole">-</strong></span>
-            </div>
         </div>
 
         <div class="tabs">
@@ -511,40 +506,15 @@
 
     <script>
         const API_BASE = '/api/dubbo-services';
-        let currentUser = null;
         let currentPage = { services: 1, pending: 1, approved: 1 };
         let pageSize = { services: 10, pending: 10, approved: 10 };
 
         // 初始化
         document.addEventListener('DOMContentLoaded', function() {
-            loadCurrentUser();
             setupTabs();
             setupEventListeners();
             loadServices();
         });
-
-        // 加载当前用户信息
-        async function loadCurrentUser() {
-            try {
-                const response = await fetch(`${API_BASE}/current-user`);
-                if (response.ok) {
-                    currentUser = await response.json();
-                    document.getElementById('currentStaffId').textContent = currentUser.staffId || '-';
-                    document.getElementById('currentRole').textContent = currentUser.roleDescription || '-';
-                } else {
-                    showAlert('services-alert', '无法获取用户信息', 'error');
-                }
-            } catch (error) {
-                console.error('加载用户信息失败:', error);
-                showAlert('services-alert', '加载用户信息失败', 'error');
-            }
-        }
-
-        // 检查权限
-        function hasPermission(permission) {
-            if (!currentUser || !currentUser.permissions) return false;
-            return currentUser.permissions[permission] === true;
-        }
 
         // 设置标签页
         function setupTabs() {
@@ -602,10 +572,6 @@
             try {
                 const response = await fetch(`${API_BASE}?page=${page}&size=${size}`);
                 if (!response.ok) {
-                    if (response.status === 403) {
-                        container.innerHTML = '<div class="alert alert-error">权限不足</div>';
-                        return;
-                    }
                     throw new Error('加载失败');
                 }
                 
@@ -627,10 +593,6 @@
             try {
                 const response = await fetch(`${API_BASE}/pending?page=${page}&size=${size}`);
                 if (!response.ok) {
-                    if (response.status === 403) {
-                        container.innerHTML = '<div class="alert alert-error">权限不足</div>';
-                        return;
-                    }
                     throw new Error('加载失败');
                 }
                 
@@ -652,10 +614,6 @@
             try {
                 const response = await fetch(`${API_BASE}/approved?page=${page}&size=${size}`);
                 if (!response.ok) {
-                    if (response.status === 403) {
-                        container.innerHTML = '<div class="alert alert-error">权限不足</div>';
-                        return;
-                    }
                     throw new Error('加载失败');
                 }
                 
@@ -705,23 +663,19 @@
                 html += '<td>';
                 html += `<button class="btn btn-secondary" onclick="viewServiceDetail(${service.id})" style="padding: 4px 8px; font-size: 12px;">详情</button> `;
                 
-                if (status === 'PENDING' && hasPermission('APPROVE_SERVICE')) {
+                if (status === 'PENDING') {
                     html += `<button class="btn btn-warning" onclick="openApprovalModal(${service.id})" style="padding: 4px 8px; font-size: 12px;">审批</button> `;
                 }
                 
-                // 已审批状态显示同步节点和下线按钮，不显示提交审核按钮
+                // 已审批状态显示同步节点和下线按钮
                 if (status === 'APPROVED') {
-                    if (hasPermission('VIEW_SERVICE')) {
-                        html += `<button class="btn btn-info" onclick="syncNodes(${service.id})" style="padding: 4px 8px; font-size: 12px;">同步节点</button> `;
-                    }
-                    if (hasPermission('APPROVE_SERVICE')) {
-                        html += `<button class="btn btn-danger" onclick="offlineService(${service.id})" style="padding: 4px 8px; font-size: 12px;">下线</button> `;
-                    }
-                } else if (status === 'OFFLINE' && hasPermission('APPROVE_SERVICE')) {
+                    html += `<button class="btn btn-info" onclick="syncNodes(${service.id})" style="padding: 4px 8px; font-size: 12px;">同步节点</button> `;
+                    html += `<button class="btn btn-danger" onclick="offlineService(${service.id})" style="padding: 4px 8px; font-size: 12px;">下线</button> `;
+                } else if (status === 'OFFLINE') {
                     // 已下线状态显示上线按钮
                     html += `<button class="btn btn-success" onclick="onlineService(${service.id})" style="padding: 4px 8px; font-size: 12px;">上线</button> `;
-                } else if (status !== 'PENDING' && status !== 'APPROVED' && status !== 'OFFLINE' && hasPermission('SUBMIT_FOR_REVIEW')) {
-                    // 非待审批、非已审批、非已下线状态才显示提交审核按钮
+                } else if (status !== 'PENDING' && status !== 'APPROVED' && status !== 'OFFLINE') {
+                    // 非待审批、非已审批、非已下线状态显示提交审核按钮
                     html += `<button class="btn btn-primary" onclick="submitForReview(${service.id})" style="padding: 4px 8px; font-size: 12px;">提交审核</button> `;
                 }
                 
@@ -752,10 +706,6 @@
             try {
                 const response = await fetch(`${API_BASE}/${serviceId}`);
                 if (!response.ok) {
-                    if (response.status === 403) {
-                        alert('权限不足');
-                        return;
-                    }
                     throw new Error('加载失败');
                 }
                 
@@ -801,7 +751,7 @@
                         html += '<div class="method-parameters">';
                         for (const method of methods) {
                             html += `<div style="margin-bottom: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 5px;">`;
-                            html += `<strong>${escapeHtml(method.methodName)}</strong> → ${escapeHtml(method.returnType || 'void')}`;
+                            html += `<div style="margin-bottom: 8px;"><strong style="color: #667eea; font-size: 14px;">${escapeHtml(method.methodName)}()</strong></div>`;
                             
                             // 加载参数列表
                             try {
@@ -818,12 +768,8 @@
                                             html += `<td>${escapeHtml(param.parameterType)}</td>`;
                                             html += `<td>${escapeHtml(param.parameterDescription || '-')}</td>`;
                                             html += '<td>';
-                                            if (hasPermission('UPDATE_PARAMETER')) {
-                                                html += `<button class="btn btn-secondary" onclick="editParameter(${param.id}, ${method.id})" style="padding: 2px 6px; font-size: 11px;">编辑</button> `;
-                                            }
-                                            if (hasPermission('DELETE_PARAMETER')) {
-                                                html += `<button class="btn btn-danger" onclick="deleteParameter(${param.id})" style="padding: 2px 6px; font-size: 11px;">删除</button>`;
-                                            }
+                                            html += `<button class="btn btn-secondary" onclick="editParameter(${param.id}, ${method.id})" style="padding: 2px 6px; font-size: 11px;">编辑</button> `;
+                                            html += `<button class="btn btn-danger" onclick="deleteParameter(${param.id})" style="padding: 2px 6px; font-size: 11px;">删除</button>`;
                                             html += '</td>';
                                             html += '</tr>';
                                         });
@@ -835,10 +781,7 @@
                                 console.error('加载参数失败:', e);
                             }
                             
-                            if (hasPermission('CREATE_PARAMETER')) {
-                                html += `<button class="btn btn-primary" onclick="addParameter(${method.id})" style="margin-top: 5px; padding: 4px 8px; font-size: 11px;">添加参数</button>`;
-                            }
-                            
+                            html += `<button class="btn btn-primary" onclick="addParameter(${method.id})" style="margin-top: 5px; padding: 4px 8px; font-size: 11px;">添加参数</button>`;
                             html += '</div>';
                         }
                         html += '</div>';
@@ -866,7 +809,7 @@
         async function approveService() {
             const serviceId = document.getElementById('approval-service-id').value;
             const comment = document.getElementById('approval-comment').value;
-            const approver = currentUser ? currentUser.staffId : '';
+            const approver = 'admin';
 
             try {
                 const url = `${API_BASE}/${serviceId}/approve?approver=${encodeURIComponent(approver)}${comment ? '&comment=' + encodeURIComponent(comment) : ''}`;
@@ -897,7 +840,7 @@
         async function rejectService() {
             const serviceId = document.getElementById('approval-service-id').value;
             const comment = document.getElementById('approval-comment').value;
-            const approver = currentUser ? currentUser.staffId : '';
+            const approver = 'admin';
 
             try {
                 const url = `${API_BASE}/${serviceId}/reject?approver=${encodeURIComponent(approver)}${comment ? '&comment=' + encodeURIComponent(comment) : ''}`;
@@ -928,7 +871,7 @@
         async function submitForReview(serviceId) {
             if (!confirm('确认提交审核？')) return;
             
-            const submitter = currentUser ? currentUser.staffId : '';
+            const submitter = 'admin';
 
             try {
                 const url = `${API_BASE}/${serviceId}/submit-for-review?submitter=${encodeURIComponent(submitter)}`;
@@ -985,7 +928,7 @@
 
         // 下线服务
         async function offlineService(serviceId) {
-            if (!confirm('确认下线该服务？下线后将注销对应的MCP服务，且服务状态将变为已下线。')) return;
+            if (!confirm('确认下线该服务？服务状态将变为已下线。')) return;
 
             try {
                 const url = `${API_BASE}/${serviceId}/offline`;
@@ -1014,7 +957,7 @@
 
         // 上线服务
         async function onlineService(serviceId) {
-            if (!confirm('确认上线该服务？上线后将恢复为已审批状态，并重新注册到MCP。')) return;
+            if (!confirm('确认上线该服务？上线后将恢复为已审批状态。')) return;
 
             try {
                 const url = `${API_BASE}/${serviceId}/online`;
@@ -1251,6 +1194,42 @@
             } catch (e) {
                 return dateTimeStr;
             }
+        }
+
+        // 简化Java类型名称，去掉包名前缀
+        function simplifyTypeName(typeName) {
+            if (!typeName) return 'void';
+            // 如果是基本类型，直接返回
+            const primitiveTypes = ['void', 'int', 'long', 'double', 'float', 'boolean', 'byte', 'short', 'char'];
+            if (primitiveTypes.includes(typeName)) {
+                return typeName;
+            }
+            // 如果是数组类型，处理数组部分
+            if (typeName.endsWith('[]')) {
+                const baseType = typeName.slice(0, -2);
+                const simplified = simplifyTypeName(baseType);
+                return simplified + '[]';
+            }
+            // 如果是泛型类型，处理泛型部分
+            if (typeName.includes('<')) {
+                const genericMatch = typeName.match(/^(.+?)<(.+)>$/);
+                if (genericMatch) {
+                    const baseType = genericMatch[1];
+                    const genericParams = genericMatch[2];
+                    const simplifiedBase = baseType.includes('.') ? baseType.split('.').pop() : baseType;
+                    // 简化泛型参数
+                    const simplifiedParams = genericParams.split(',').map(p => {
+                        const trimmed = p.trim();
+                        return simplifyTypeName(trimmed);
+                    }).join(', ');
+                    return simplifiedBase + '<' + simplifiedParams + '>';
+                }
+            }
+            // 普通类型，去掉包名
+            if (typeName.includes('.')) {
+                return typeName.split('.').pop();
+            }
+            return typeName;
         }
     </script>
 </body>

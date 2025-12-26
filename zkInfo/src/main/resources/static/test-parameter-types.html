@@ -1,0 +1,1296 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dubbo服务参数类型测试页面</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        .content {
+            padding: 30px;
+        }
+        .config-section {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .config-section h3 {
+            color: #495057;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #495057;
+            font-size: 14px;
+        }
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #dee2e6;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .form-group textarea {
+            resize: vertical;
+            min-height: 100px;
+            font-family: 'Courier New', monospace;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .btn-secondary {
+            background: #6c757d;
+        }
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+        .service-selector {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .parameters-section {
+            background: #fff;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        .parameters-section h4 {
+            color: #495057;
+            margin-bottom: 15px;
+            font-size: 16px;
+        }
+        .parameter-item {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        .parameter-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .parameter-name {
+            font-weight: 600;
+            color: #495057;
+            font-size: 14px;
+        }
+        .parameter-type {
+            background: #667eea;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .parameter-description {
+            color: #6c757d;
+            font-size: 13px;
+            margin-bottom: 10px;
+        }
+        .parameter-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .response-section {
+            margin-top: 30px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .response-section h3 {
+            color: #495057;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+        .response-content {
+            background: #212529;
+            color: #f8f9fa;
+            padding: 20px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            white-space: pre-wrap;
+            max-height: 500px;
+            overflow-y: auto;
+            word-break: break-all;
+        }
+        .response-success {
+            border-left: 4px solid #28a745;
+        }
+        .response-error {
+            border-left: 4px solid #dc3545;
+        }
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .info-box {
+            background: #e3f2fd;
+            border: 1px solid #2196f3;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 20px;
+            color: #1976d2;
+            font-size: 14px;
+        }
+        .method-info {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 20px;
+            color: #856404;
+            font-size: 14px;
+        }
+        .method-info strong {
+            display: block;
+            margin-bottom: 5px;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔧 Dubbo服务参数类型测试页面</h1>
+            <p>参照 test-parameter-types.sh 脚本功能，通过Web界面测试Dubbo服务调用</p>
+        </div>
+        
+        <div class="content">
+            <!-- 配置区域 -->
+            <div class="config-section">
+                <h3>⚙️ 服务配置</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="baseUrl">服务地址 (Base URL):</label>
+                        <input type="text" id="baseUrl" value="http://localhost:9091" placeholder="http://localhost:9091">
+                    </div>
+                    <div class="form-group">
+                        <label for="sessionId">Session ID:</label>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="text" id="sessionId" value="test-web" placeholder="test-web" style="flex: 1;">
+                            <button onclick="fetchSessionId()" id="fetchSessionBtn" style="padding: 12px 20px; white-space: nowrap;">
+                                🔄 获取 Session ID
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 服务选择区域 -->
+            <div class="config-section">
+                <h3>📋 选择服务和方法</h3>
+                <div class="service-selector">
+                    <div class="form-group">
+                        <label for="serviceSelect">选择服务:</label>
+                        <select id="serviceSelect" onchange="loadMethods()">
+                            <option value="">-- 请先加载服务列表 --</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="methodSelect">选择方法:</label>
+                        <select id="methodSelect" onchange="loadParameters()">
+                            <option value="">-- 请先选择服务 --</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="margin-top: 15px;">
+                    <button onclick="loadServices()">🔄 加载服务列表</button>
+                    <button onclick="loadMethods()" class="btn-secondary" id="refreshMethodsBtn" disabled>🔄 刷新方法列表</button>
+                </div>
+                <div id="methodInfo" class="method-info" style="display: none;">
+                    <strong>方法信息:</strong>
+                    <div id="methodInfoContent"></div>
+                </div>
+            </div>
+
+            <!-- 参数填写区域 -->
+            <div id="parametersSection" class="parameters-section" style="display: none;">
+                <h4>📝 方法参数</h4>
+                <div id="parametersContainer">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📋</div>
+                        <p>请先选择服务和方法</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 手动输入参数区域 -->
+            <div class="config-section">
+                <h3>✏️ 手动输入参数 (JSON格式)</h3>
+                <div class="info-box">
+                    💡 提示：可以手动编辑JSON格式的参数，或者使用上方自动生成的参数表单。参数格式为对象，键为参数名，值为参数值。
+                </div>
+                <div class="form-group">
+                    <label for="manualArguments">参数 (JSON):</label>
+                    <textarea id="manualArguments" placeholder='{"productId": 1}'></textarea>
+                </div>
+            </div>
+
+            <!-- 执行测试 -->
+            <div class="config-section">
+                <h3>🚀 执行测试</h3>
+                <div class="form-group">
+                    <label for="toolName">工具名称 (完整方法名):</label>
+                    <input type="text" id="toolName" placeholder="com.zkinfo.demo.service.ProductService.getProductById" readonly>
+                </div>
+                <button onclick="executeTest()" id="executeBtn" style="width: 100%; padding: 15px; font-size: 16px;">
+                    ▶️ 执行测试
+                </button>
+            </div>
+
+            <!-- 响应结果区域 -->
+            <div class="response-section">
+                <h3>📊 测试结果</h3>
+                <div id="responseContent" class="response-content" style="display: none;"></div>
+                <div id="responseEmpty" class="empty-state">
+                    <div class="empty-state-icon">📭</div>
+                    <p>等待执行测试...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let services = [];
+        let methods = [];
+        let currentService = null;
+        let currentMethod = null;
+
+        // 获取基础URL
+        function getBaseUrl() {
+            return document.getElementById('baseUrl').value.trim() || 'http://localhost:9091';
+        }
+
+        // 获取Session ID
+        function getSessionId() {
+            return document.getElementById('sessionId').value.trim() || 'test-web';
+        }
+
+        // 从SSE端点获取Session ID
+        async function fetchSessionId() {
+            const baseUrl = getBaseUrl();
+            const sessionIdInput = document.getElementById('sessionId');
+            const fetchBtn = document.getElementById('fetchSessionBtn');
+            
+            fetchBtn.disabled = true;
+            fetchBtn.innerHTML = '<span class="loading"></span> 获取中...';
+            
+            try {
+                const endpoint = 'virtual-test-virtual-endpoint2';
+                const sseUrl = `${baseUrl}/sse/${endpoint}`;
+                
+                console.log('请求SSE端点:', sseUrl);
+                
+                // 使用 EventSource 来接收 SSE 流
+                return new Promise((resolve, reject) => {
+                    const eventSource = new EventSource(sseUrl);
+                    let sessionIdFound = false;
+                    
+                    // 设置超时
+                    const timeout = setTimeout(() => {
+                        eventSource.close();
+                        if (!sessionIdFound) {
+                            fetchBtn.disabled = false;
+                            fetchBtn.innerHTML = '🔄 获取 Session ID';
+                            reject(new Error('获取Session ID超时，请检查端点是否正确'));
+                        }
+                    }, 10000); // 10秒超时
+                    
+                    eventSource.addEventListener('endpoint', (event) => {
+                        try {
+                            const data = event.data;
+                            console.log('收到endpoint事件:', data);
+                            
+                            // 从URL中提取sessionId
+                            // 格式: data:http://xxxx/xxx?sessionId=xxx
+                            // 或者: http://xxxx/xxx?sessionId=xxx
+                            let url = data;
+                            if (url.startsWith('data:')) {
+                                url = url.substring(5).trim();
+                            }
+                            
+                            // 解析URL获取sessionId参数
+                            const urlObj = new URL(url);
+                            const sessionId = urlObj.searchParams.get('sessionId');
+                            
+                            if (sessionId) {
+                                sessionIdFound = true;
+                                sessionIdInput.value = sessionId;
+                                console.log('成功获取Session ID:', sessionId);
+                                clearTimeout(timeout);
+                                eventSource.close();
+                                // 恢复按钮状态
+                                fetchBtn.disabled = false;
+                                // 显示成功提示
+                                fetchBtn.innerHTML = '✅ 已获取';
+                                setTimeout(() => {
+                                    fetchBtn.innerHTML = '🔄 获取 Session ID';
+                                }, 2000);
+                                resolve(sessionId);
+                            } else {
+                                console.warn('未找到sessionId参数:', url);
+                            }
+                        } catch (error) {
+                            console.error('解析endpoint数据失败:', error);
+                            clearTimeout(timeout);
+                            eventSource.close();
+                            fetchBtn.disabled = false;
+                            fetchBtn.innerHTML = '🔄 获取 Session ID';
+                            reject(new Error('解析Session ID失败: ' + error.message));
+                        }
+                    });
+                    
+                    eventSource.addEventListener('message', (event) => {
+                        // 处理其他消息类型
+                        console.log('收到消息:', event.data);
+                    });
+                    
+                    eventSource.onerror = (error) => {
+                        console.error('SSE连接错误:', error);
+                        clearTimeout(timeout);
+                        eventSource.close();
+                        if (!sessionIdFound) {
+                            fetchBtn.disabled = false;
+                            fetchBtn.innerHTML = '🔄 获取 Session ID';
+                            reject(new Error('SSE连接失败，请检查端点是否正确'));
+                        }
+                    };
+                });
+            } catch (error) {
+                console.error('获取Session ID失败:', error);
+                alert('获取Session ID失败: ' + error.message + '\n\n请检查：\n1. 端点 virtual-test-virtual-endpoint2 是否存在\n2. 服务地址是否正确\n3. 网络连接是否正常');
+                fetchBtn.disabled = false;
+                fetchBtn.innerHTML = '🔄 获取 Session ID';
+                throw error;
+            }
+        }
+
+        // 加载服务列表
+        async function loadServices() {
+            const baseUrl = getBaseUrl();
+            const serviceSelect = document.getElementById('serviceSelect');
+            const executeBtn = document.getElementById('executeBtn');
+            
+            serviceSelect.innerHTML = '<option value="">加载中...</option>';
+            executeBtn.disabled = true;
+
+            try {
+                const response = await fetch(`${baseUrl}/api/dubbo-services?page=1&size=100`);
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('API错误响应:', errorText);
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const result = await response.json();
+                console.log('API响应:', result);
+                
+                // PageResult使用data字段存储列表
+                services = result.data || [];
+                
+                serviceSelect.innerHTML = '<option value="">-- 请选择服务 --</option>';
+                
+                if (services.length === 0) {
+                    serviceSelect.innerHTML = '<option value="">-- 暂无服务 --</option>';
+                    const total = result.total || 0;
+                    const message = total === 0 
+                        ? '数据库中暂无服务，请确保：\n1. 服务已注册到ZooKeeper\n2. 服务已审批通过\n3. 已同步服务信息到数据库'
+                        : `当前页无服务（总数: ${total}），请尝试调整分页参数`;
+                    alert(message);
+                    executeBtn.disabled = false; // 重新启用按钮
+                    return;
+                }
+
+                services.forEach(service => {
+                    const option = document.createElement('option');
+                    option.value = service.id;
+                    const status = service.approvalStatus || 'UNKNOWN';
+                    option.textContent = `${service.interfaceName} (${service.version || 'default'}) [${status}]`;
+                    serviceSelect.appendChild(option);
+                });
+
+                const total = result.total || services.length;
+                console.log(`成功加载 ${services.length} 个服务（共 ${total} 个）`);
+                // 不显示alert，避免打扰用户
+                executeBtn.disabled = false; // 加载成功后重新启用按钮
+            } catch (error) {
+                console.error('加载服务列表失败:', error);
+                serviceSelect.innerHTML = '<option value="">-- 加载失败 --</option>';
+                alert('加载服务列表失败: ' + error.message + '\n\n请检查：\n1. 服务是否正常运行\n2. API路径是否正确\n3. 网络连接是否正常');
+                executeBtn.disabled = false; // 加载失败后也要重新启用按钮
+            }
+        }
+
+        // 加载方法列表
+        async function loadMethods() {
+            const baseUrl = getBaseUrl();
+            const serviceSelect = document.getElementById('serviceSelect');
+            const methodSelect = document.getElementById('methodSelect');
+            const refreshMethodsBtn = document.getElementById('refreshMethodsBtn');
+            
+            const serviceId = serviceSelect.value;
+            if (!serviceId) {
+                methodSelect.innerHTML = '<option value="">-- 请先选择服务 --</option>';
+                refreshMethodsBtn.disabled = true;
+                return;
+            }
+
+            currentService = services.find(s => s.id == serviceId);
+            if (!currentService) {
+                alert('未找到选中的服务');
+                return;
+            }
+
+            methodSelect.innerHTML = '<option value="">加载中...</option>';
+            refreshMethodsBtn.disabled = true;
+
+            try {
+                const response = await fetch(`${baseUrl}/api/dubbo-services/${serviceId}/methods`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                methods = await response.json();
+                
+                methodSelect.innerHTML = '<option value="">-- 请选择方法 --</option>';
+                
+                if (methods.length === 0) {
+                    methodSelect.innerHTML = '<option value="">-- 暂无方法 --</option>';
+                    alert('该服务没有方法');
+                    return;
+                }
+
+                methods.forEach(method => {
+                    const option = document.createElement('option');
+                    option.value = method.id;
+                    option.textContent = `${method.methodName} (${method.returnType || 'void'})`;
+                    methodSelect.appendChild(option);
+                });
+
+                refreshMethodsBtn.disabled = false;
+            } catch (error) {
+                console.error('加载方法列表失败:', error);
+                methodSelect.innerHTML = '<option value="">-- 加载失败 --</option>';
+                alert('加载方法列表失败: ' + error.message);
+            }
+        }
+
+        // 加载参数列表
+        async function loadParameters() {
+            const baseUrl = getBaseUrl();
+            const methodSelect = document.getElementById('methodSelect');
+            const parametersSection = document.getElementById('parametersSection');
+            const parametersContainer = document.getElementById('parametersContainer');
+            const methodInfo = document.getElementById('methodInfo');
+            const methodInfoContent = document.getElementById('methodInfoContent');
+            const toolNameInput = document.getElementById('toolName');
+            
+            const methodId = methodSelect.value;
+            if (!methodId) {
+                parametersSection.style.display = 'none';
+                methodInfo.style.display = 'none';
+                return;
+            }
+
+            currentMethod = methods.find(m => m.id == methodId);
+            if (!currentMethod) {
+                alert('未找到选中的方法');
+                return;
+            }
+
+            // 更新工具名称
+            const fullMethodName = `${currentService.interfaceName}.${currentMethod.methodName}`;
+            toolNameInput.value = fullMethodName;
+
+            // 显示方法信息
+            methodInfoContent.innerHTML = `
+                <div><strong>接口:</strong> ${currentService.interfaceName}</div>
+                <div><strong>方法:</strong> ${currentMethod.methodName}</div>
+                <div><strong>返回类型:</strong> ${currentMethod.returnType || 'void'}</div>
+                <div><strong>版本:</strong> ${currentService.version || 'default'}</div>
+            `;
+            methodInfo.style.display = 'block';
+
+            parametersContainer.innerHTML = '<div class="empty-state"><div class="loading"></div><p>加载参数中...</p></div>';
+
+            try {
+                const response = await fetch(`${baseUrl}/api/dubbo-services/methods/${methodId}/parameters`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const parameters = await response.json();
+                
+                if (parameters.length === 0) {
+                    parametersContainer.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">ℹ️</div>
+                            <p>该方法没有参数</p>
+                        </div>
+                    `;
+                    parametersSection.style.display = 'block';
+                    // 清空手动输入
+                    document.getElementById('manualArguments').value = '{}';
+                    return;
+                }
+
+                // 按参数顺序排序
+                parameters.sort((a, b) => (a.parameterOrder || 0) - (b.parameterOrder || 0));
+
+                let html = '';
+                parameters.forEach(param => {
+                    const paramType = param.parameterType || 'Object';
+                    const paramName = param.parameterName || `param${param.parameterOrder}`;
+                    const paramDesc = param.parameterDescription || '';
+                    
+                    html += `
+                        <div class="parameter-item">
+                            <div class="parameter-header">
+                                <span class="parameter-name">${paramName}</span>
+                                <span class="parameter-type">${paramType}</span>
+                            </div>
+                            ${paramDesc ? `<div class="parameter-description">${paramDesc}</div>` : ''}
+                            <input type="text" 
+                                   class="parameter-input" 
+                                   data-param-name="${paramName}"
+                                   data-param-type="${paramType}"
+                                   placeholder="输入 ${paramType} 类型的值"
+                                   onchange="updateManualArguments()">
+                        </div>
+                    `;
+                });
+
+                parametersContainer.innerHTML = html;
+                parametersSection.style.display = 'block';
+                
+                // 初始化手动输入区域
+                updateManualArguments();
+            } catch (error) {
+                console.error('加载参数列表失败:', error);
+                parametersContainer.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">❌</div>
+                        <p>加载参数失败: ${error.message}</p>
+                    </div>
+                `;
+                parametersSection.style.display = 'block';
+            }
+        }
+
+        // 更新手动输入区域
+        function updateManualArguments() {
+            const paramInputs = document.querySelectorAll('.parameter-input');
+            const manualInput = document.getElementById('manualArguments');
+            
+            const arguments = {};
+            paramInputs.forEach(input => {
+                const paramName = input.dataset.paramName;
+                const paramType = input.dataset.paramType;
+                const value = input.value.trim();
+                
+                if (value) {
+                    // 根据类型转换值
+                    try {
+                        if (paramType.includes('int') || paramType.includes('Integer') || paramType.includes('Long') || paramType.includes('long')) {
+                            arguments[paramName] = parseInt(value) || 0;
+                        } else if (paramType.includes('double') || paramType.includes('Double') || paramType.includes('Float') || paramType.includes('float')) {
+                            arguments[paramName] = parseFloat(value) || 0.0;
+                        } else if (paramType.includes('boolean') || paramType.includes('Boolean')) {
+                            arguments[paramName] = value.toLowerCase() === 'true';
+                        } else if (value.startsWith('{') || value.startsWith('[')) {
+                            // JSON对象或数组
+                            arguments[paramName] = JSON.parse(value);
+                        } else {
+                            arguments[paramName] = value;
+                        }
+                    } catch (e) {
+                        // 如果解析失败，使用原始字符串
+                        arguments[paramName] = value;
+                    }
+                }
+            });
+            
+            manualInput.value = JSON.stringify(arguments, null, 2);
+        }
+
+        // SSE连接管理
+        let sseEventSource = null;
+        let currentRequestId = null;
+        let responseBuffer = [];
+        let sseConnectionReady = false;
+        let isReceivingResponse = false; // 标记是否正在接收响应
+
+        // 辅助函数：更新响应内容（用于显示临时状态，不会覆盖SSE响应）
+        function updateResponseContent(text, isFinalResponse = false) {
+            const responseContent = document.getElementById('responseContent');
+            const responseEmpty = document.getElementById('responseEmpty');
+            
+            if (!responseContent) return;
+            
+            // 如果正在接收SSE响应，且这不是最终响应，则不更新（避免覆盖）
+            if (isReceivingResponse && !isFinalResponse) {
+                console.log('正在接收SSE响应，跳过临时状态更新');
+                return;
+            }
+            
+            if (responseEmpty) {
+                responseEmpty.style.display = 'none';
+            }
+            responseContent.style.display = 'block';
+            responseContent.textContent = text;
+        }
+        
+        // 强制更新响应内容（用于SSE响应，会覆盖任何临时状态）
+        function forceUpdateResponseContent(text) {
+            const responseContent = document.getElementById('responseContent');
+            const responseEmpty = document.getElementById('responseEmpty');
+            
+            if (!responseContent) {
+                console.error('responseContent元素不存在');
+                return;
+            }
+            
+            if (responseEmpty) {
+                responseEmpty.style.display = 'none';
+            }
+            responseContent.style.display = 'block';
+            responseContent.style.visibility = 'visible';
+            responseContent.style.opacity = '1';
+            responseContent.textContent = text;
+            
+            // 强制触发重绘
+            void responseContent.offsetHeight;
+        }
+
+        // 建立SSE连接以接收实时响应
+        function establishSseConnection(sessionId) {
+            return new Promise((resolve, reject) => {
+                const baseUrl = getBaseUrl();
+                const endpoint = 'virtual-test-virtual-endpoint2';
+                const sseUrl = `${baseUrl}/sse/${endpoint}`;
+                
+                // 如果已有连接且已就绪，直接使用
+                if (sseEventSource && sseEventSource.readyState === EventSource.OPEN && sseConnectionReady) {
+                    console.log('复用现有SSE连接（已就绪）');
+                    resolve(sseEventSource);
+                    return;
+                }
+                
+                // 关闭旧连接
+                if (sseEventSource) {
+                    console.log('关闭旧SSE连接');
+                    sseEventSource.close();
+                    sseEventSource = null;
+                    sseConnectionReady = false;
+                }
+                
+                console.log('建立SSE连接:', sseUrl);
+                sseEventSource = new EventSource(sseUrl);
+                sseConnectionReady = false;
+                
+                // 重要：先注册所有事件监听器，再等待连接打开
+                // 这样可以确保在连接建立后立即能接收到消息
+                
+                // 监听endpoint事件（获取sessionId）
+                sseEventSource.addEventListener('endpoint', (event) => {
+                    const data = event.data;
+                    let url = data.startsWith('data:') ? data.substring(5).trim() : data;
+                    try {
+                        const urlObj = new URL(url);
+                        const extractedSessionId = urlObj.searchParams.get('sessionId');
+                        if (extractedSessionId && extractedSessionId !== sessionId) {
+                            console.log('SSE连接返回的sessionId:', extractedSessionId);
+                            // 更新输入框中的sessionId
+                            document.getElementById('sessionId').value = extractedSessionId;
+                        }
+                    } catch (e) {
+                        console.warn('解析endpoint URL失败:', e);
+                    }
+                });
+                
+                // 监听message事件（接收MCP响应）
+                sseEventSource.addEventListener('message', (event) => {
+                    try {
+                        console.log('========== 收到SSE message事件 ==========');
+                        console.log('原始数据:', event.data);
+                        console.log('数据类型:', typeof event.data);
+                        console.log('事件类型:', event.type);
+                        console.log('当前请求ID:', currentRequestId);
+                        
+                        // 数据可能是JSON字符串
+                        let data = event.data;
+                        if (typeof data === 'string') {
+                            // 尝试解析JSON
+                            try {
+                                data = JSON.parse(data);
+                                console.log('✅ JSON解析成功:', data);
+                            } catch (e) {
+                                // 如果不是JSON，直接使用字符串
+                                console.log('⚠️ 收到非JSON消息:', data);
+                                // 即使不是JSON，也尝试处理（可能是纯文本响应）
+                                console.log('尝试处理非JSON消息...');
+                                handleMcpResponse({ 
+                                    text: data,
+                                    raw: event.data,
+                                    id: currentRequestId 
+                                });
+                                return;
+                            }
+                        }
+                        
+                        console.log('解析后的数据:', data);
+                        console.log('数据ID:', data.id);
+                        console.log('数据是否有error:', !!data.error);
+                        console.log('数据是否有result:', !!data.result);
+                        
+                        // 无论ID是否匹配，都显示响应（确保所有消息都能显示）
+                        console.log('准备调用handleMcpResponse...');
+                        handleMcpResponse(data);
+                        console.log('handleMcpResponse调用完成');
+                        
+                    } catch (e) {
+                        console.error('❌ 处理SSE消息失败:', e);
+                        console.error('错误堆栈:', e.stack);
+                        console.error('事件对象:', event);
+                        // 即使出错，也尝试显示错误信息
+                        try {
+                            handleMcpResponse({
+                                error: {
+                                    code: -32603,
+                                    message: '处理SSE消息失败: ' + e.message
+                                },
+                                rawEvent: event.data
+                            });
+                        } catch (e2) {
+                            console.error('显示错误信息也失败:', e2);
+                            alert('处理响应失败: ' + e.message);
+                        }
+                    }
+                });
+                
+                // 监听所有事件类型（包括自定义事件）
+                sseEventSource.addEventListener('response', (event) => {
+                    try {
+                        let data = event.data;
+                        if (typeof data === 'string') {
+                            try {
+                                data = JSON.parse(data);
+                            } catch (e) {
+                                console.log('收到非JSON response事件:', data);
+                                return;
+                            }
+                        }
+                        console.log('收到response事件:', data);
+                        if (data.id && data.id === currentRequestId) {
+                            handleMcpResponse(data);
+                        }
+                    } catch (e) {
+                        console.error('处理response事件失败:', e, event);
+                    }
+                });
+                
+                // 监听heartbeat事件（心跳消息，可以忽略）
+                sseEventSource.addEventListener('heartbeat', (event) => {
+                    console.log('收到心跳:', event.data);
+                });
+                
+                // 监听所有未命名事件（默认message事件，作为备用）
+                sseEventSource.onmessage = (event) => {
+                    console.log('========== 收到SSE默认onmessage事件 ==========');
+                    console.log('事件数据:', event.data);
+                    console.log('事件类型:', event.type);
+                    console.log('当前请求ID:', currentRequestId);
+                    
+                    // 如果上面的message事件监听器没有处理，这里作为备用处理
+                    try {
+                        let data = event.data;
+                        if (typeof data === 'string') {
+                            try {
+                                data = JSON.parse(data);
+                                console.log('onmessage: JSON解析成功:', data);
+                            } catch (e) {
+                                console.log('onmessage: 非JSON数据:', data);
+                                // 即使不是JSON，也尝试处理
+                                handleMcpResponse({ 
+                                    text: data,
+                                    raw: event.data,
+                                    id: currentRequestId 
+                                });
+                                return;
+                            }
+                        }
+                        
+                        console.log('onmessage: 解析后的数据:', data);
+                        console.log('onmessage: 数据ID:', data.id);
+                        console.log('onmessage: 是否有error:', !!data.error);
+                        
+                        // 无论ID是否匹配，都显示响应（确保所有消息都能显示）
+                        console.log('onmessage: 准备调用handleMcpResponse...');
+                        handleMcpResponse(data);
+                        console.log('onmessage: handleMcpResponse调用完成');
+                    } catch (e) {
+                        console.error('❌ onmessage处理失败:', e);
+                        console.error('错误堆栈:', e.stack);
+                        // 即使出错，也尝试显示错误信息
+                        try {
+                            handleMcpResponse({
+                                error: {
+                                    code: -32603,
+                                    message: 'onmessage处理失败: ' + e.message
+                                },
+                                rawEvent: event.data
+                            });
+                        } catch (e2) {
+                            console.error('显示错误信息也失败:', e2);
+                            alert('处理响应失败: ' + e.message);
+                        }
+                    }
+                };
+                
+                // 设置连接超时
+                const connectTimeout = setTimeout(() => {
+                    if (sseEventSource.readyState !== EventSource.OPEN) {
+                        console.error('SSE连接超时，状态:', sseEventSource.readyState);
+                        sseEventSource.close();
+                        sseConnectionReady = false;
+                        reject(new Error('SSE连接超时：5秒内未能建立连接'));
+                    }
+                }, 10000); // 增加到10秒超时
+                
+                // 设置onopen回调（必须在所有addEventListener之后）
+                sseEventSource.onopen = () => {
+                    clearTimeout(connectTimeout);
+                    sseConnectionReady = true;
+                    console.log('✅ SSE连接已建立，状态:', sseEventSource.readyState, 'URL:', sseEventSource.url);
+                    console.log('✅ 所有事件监听器已注册，可以接收消息');
+                    // 立即resolve，不需要等待，因为事件监听器已经注册好了
+                    resolve(sseEventSource);
+                };
+                
+                sseEventSource.onerror = (error) => {
+                    console.error('❌ SSE连接错误:', error, '状态:', sseEventSource.readyState);
+                    if (sseEventSource.readyState === EventSource.CLOSED) {
+                        console.error('SSE连接已关闭');
+                        clearTimeout(connectTimeout);
+                        reject(new Error('SSE连接失败：连接已关闭'));
+                    } else if (sseEventSource.readyState === EventSource.CONNECTING) {
+                        console.warn('SSE连接仍在连接中...');
+                        // 不立即拒绝，等待连接完成
+                    }
+                };
+            });
+        }
+
+        // 处理MCP响应
+        function handleMcpResponse(responseData) {
+            console.log('========== handleMcpResponse被调用 ==========');
+            console.log('响应数据:', JSON.stringify(responseData, null, 2));
+            console.log('响应数据类型:', typeof responseData);
+            console.log('当前请求ID:', currentRequestId);
+            console.log('响应缓冲区长度:', responseBuffer.length);
+            
+            // 标记正在接收响应
+            isReceivingResponse = true;
+            
+            // 清除响应超时
+            if (window.clearResponseTimeout) {
+                window.clearResponseTimeout();
+            }
+            
+            // 使用requestAnimationFrame确保DOM更新在下一帧执行
+            requestAnimationFrame(() => {
+                try {
+                    const responseContent = document.getElementById('responseContent');
+                    const responseEmpty = document.getElementById('responseEmpty');
+                    
+                    if (!responseContent) {
+                        console.error('❌ responseContent元素不存在！');
+                        alert('错误：响应内容区域不存在！');
+                        return;
+                    }
+                    
+                    console.log('找到responseContent元素');
+                    
+                    // 确保响应内容区域可见
+                    if (responseEmpty) {
+                        responseEmpty.style.display = 'none';
+                        console.log('隐藏空状态提示');
+                    }
+                    
+                    // 强制设置显示属性
+                    responseContent.style.display = 'block';
+                    responseContent.style.visibility = 'visible';
+                    responseContent.style.opacity = '1';
+                    console.log('显示响应内容区域');
+                    
+                    // 添加到响应缓冲区
+                    responseBuffer.push({
+                        timestamp: new Date().toISOString(),
+                        data: responseData
+                    });
+                    console.log('已添加到响应缓冲区，当前长度:', responseBuffer.length);
+                    
+                    // 格式化并显示响应
+                    const formattedResponse = JSON.stringify({
+                        requestId: currentRequestId,
+                        responses: responseBuffer,
+                        latestResponse: responseData,
+                        timestamp: new Date().toISOString()
+                    }, null, 2);
+                    
+                    console.log('格式化响应完成，长度:', formattedResponse.length);
+                    console.log('准备更新DOM，响应内容前200字符:', formattedResponse.substring(0, 200));
+                    
+                    // 强制更新内容 - 使用辅助函数确保更新成功
+                    forceUpdateResponseContent(formattedResponse);
+                    
+                    // 验证内容是否更新
+                    const actualContent = responseContent.textContent || responseContent.innerText || '';
+                    console.log('✅ DOM更新后，实际内容长度:', actualContent.length);
+                    
+                    if (actualContent.length === 0) {
+                        console.error('❌ 警告：内容更新后长度为0！尝试使用innerHTML...');
+                        // 使用innerHTML作为备用
+                        responseContent.innerHTML = '<pre style="margin:0;padding:15px;white-space:pre-wrap;word-wrap:break-word;">' + 
+                            formattedResponse.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
+                        console.log('使用innerHTML更新，长度:', responseContent.innerHTML.length);
+                    }
+                    
+                    // 强制触发重绘
+                    void responseContent.offsetHeight; // 触发重排
+                    
+                    // 判断成功或失败并应用样式
+                    if (responseData.error) {
+                        console.log('检测到错误响应，应用错误样式');
+                        responseContent.classList.remove('response-success');
+                        responseContent.classList.add('response-error');
+                    } else if (responseData.result) {
+                        console.log('检测到成功响应，应用成功样式');
+                        responseContent.classList.remove('response-error');
+                        responseContent.classList.add('response-success');
+                    } else {
+                        console.log('响应既没有error也没有result，使用默认样式');
+                    }
+                    
+                    // 验证最终状态
+                    const computedStyle = window.getComputedStyle(responseContent);
+                    const finalContent = responseContent.textContent || responseContent.innerText || '';
+                    console.log('最终状态验证:', {
+                        display: computedStyle.display,
+                        visibility: computedStyle.visibility,
+                        opacity: computedStyle.opacity,
+                        contentLength: finalContent.length,
+                        hasContent: finalContent.length > 0
+                    });
+                    
+                    // 滚动到响应区域（延迟执行，确保内容已渲染）
+                    setTimeout(() => {
+                        responseContent.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }, 50);
+                    
+                    console.log('========== handleMcpResponse完成 ==========');
+                } catch (e) {
+                    console.error('❌ handleMcpResponse执行失败:', e);
+                    console.error('错误堆栈:', e.stack);
+                    alert('更新响应内容失败: ' + e.message);
+                } finally {
+                    // 标记响应接收完成
+                    isReceivingResponse = false;
+                }
+            });
+        }
+
+        // 执行测试
+        async function executeTest() {
+            const baseUrl = getBaseUrl();
+            let sessionId = getSessionId();
+            const toolName = document.getElementById('toolName').value.trim();
+            const manualArguments = document.getElementById('manualArguments').value.trim();
+            const responseContent = document.getElementById('responseContent');
+            const responseEmpty = document.getElementById('responseEmpty');
+            const executeBtn = document.getElementById('executeBtn');
+
+            if (!toolName) {
+                alert('请先选择服务和方法');
+                return;
+            }
+
+            let argumentsObj = {};
+            try {
+                if (manualArguments) {
+                    argumentsObj = JSON.parse(manualArguments);
+                }
+            } catch (e) {
+                alert('参数JSON格式错误: ' + e.message);
+                return;
+            }
+
+            executeBtn.disabled = true;
+            executeBtn.innerHTML = '<span class="loading"></span> 执行中...';
+            responseEmpty.style.display = 'none';
+            responseContent.style.display = 'block';
+            // 使用辅助函数更新内容，避免直接操作DOM
+            updateResponseContent('正在建立SSE连接...', false);
+            responseBuffer = []; // 清空响应缓冲区
+
+            try {
+                // 1. 建立SSE连接（确保连接完全建立）
+                console.log('步骤1: 建立SSE连接...');
+                await establishSseConnection(sessionId);
+                
+                // 验证连接状态
+                if (!sseEventSource || sseEventSource.readyState !== EventSource.OPEN) {
+                    throw new Error('SSE连接未就绪，状态: ' + (sseEventSource ? sseEventSource.readyState : 'null'));
+                }
+                console.log('✅ SSE连接已就绪，状态:', sseEventSource.readyState);
+                
+                // 等待一小段时间确保连接稳定
+                await new Promise(resolve => setTimeout(resolve, 200));
+                
+                // 更新sessionId（可能从SSE连接中获取）
+                sessionId = getSessionId();
+                console.log('使用SessionId:', sessionId);
+                
+                // 2. 准备请求
+                currentRequestId = `test-${Date.now()}`;
+                console.log('当前请求ID:', currentRequestId);
+                const requestBody = {
+                    jsonrpc: "2.0",
+                    id: currentRequestId,
+                    method: "tools/call",
+                    params: {
+                        name: toolName,
+                        arguments: argumentsObj
+                    }
+                };
+                
+                // 显示请求信息（但不覆盖后续的响应）
+                const requestInfo = 'SSE连接已建立，正在发送请求...\n\n请求ID: ' + currentRequestId + '\n\n请求内容:\n' + JSON.stringify(requestBody, null, 2);
+                updateResponseContent(requestInfo, false);
+                
+                // 3. 发送请求（响应将通过SSE接收）
+                console.log('步骤2: 发送MCP请求...', requestBody);
+                const response = await fetch(`${baseUrl}/mcp/message?sessionId=${sessionId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+                console.log('步骤3: 收到HTTP响应，状态:', response.status);
+
+                // 4. 检查HTTP响应状态
+                console.log('HTTP响应状态:', response.status, response.statusText);
+                if (response.status === 202) {
+                    // 202 Accepted 表示请求已接受，响应将通过SSE发送
+                    const waitingMsg = '请求已发送（202 Accepted），等待实时响应...\n\n请求ID: ' + currentRequestId + '\n\n请求内容:\n' + JSON.stringify(requestBody, null, 2);
+                    updateResponseContent(waitingMsg, false);
+                    
+                    // 设置超时，如果30秒内没有收到响应，显示提示
+                    let timeoutId = setTimeout(() => {
+                        if (responseBuffer.length === 0) {
+                            console.warn('⚠️ 30秒内未收到响应');
+                            const timeoutMsg = {
+                                error: {
+                                    code: -32000,
+                                    message: '响应超时：30秒内未收到响应，请检查：\n1. SSE连接是否正常\n2. 服务是否正常运行\n3. 查看浏览器控制台获取更多信息'
+                                },
+                                id: currentRequestId
+                            };
+                            handleMcpResponse(timeoutMsg);
+                        }
+                    }, 30000);
+                    
+                    window.currentTimeoutId = timeoutId; // 保存到全局变量
+                    window.clearResponseTimeout = function() {
+                        if (window.currentTimeoutId) {
+                            clearTimeout(window.currentTimeoutId);
+                            window.currentTimeoutId = null;
+                        }
+                    };
+                    
+                    // 启动轮询机制作为备用（如果SSE消息丢失）
+                    startPollingResponse(currentRequestId, sessionId, timeoutId);
+                    
+                    // 响应将通过SSE的message事件接收，由handleMcpResponse处理
+                    // 在handleMcpResponse中会清除超时
+                } else {
+                    // 如果不是202，尝试解析JSON响应
+                    let responseData;
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) {
+                        responseData = await response.json();
+                        handleMcpResponse(responseData);
+                    } else {
+                        const text = await response.text();
+                        responseData = {
+                            error: {
+                                code: response.status,
+                                message: `HTTP ${response.status}: ${response.statusText}`,
+                                data: text
+                            }
+                        };
+                        handleMcpResponse(responseData);
+                    }
+                }
+
+            } catch (error) {
+                console.error('执行测试失败:', error);
+                responseContent.textContent = `错误: ${error.message}\n\n堆栈:\n${error.stack}`;
+                responseContent.classList.add('response-error');
+            } finally {
+                executeBtn.disabled = false;
+                executeBtn.innerHTML = '▶️ 执行测试';
+            }
+        }
+
+        // 轮询响应（作为SSE的备用方案）
+        let pollingInterval = null;
+        function startPollingResponse(requestId, sessionId, timeoutId) {
+            // 如果已经有轮询，先清除
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+            }
+            
+            const baseUrl = getBaseUrl();
+            let pollCount = 0;
+            const maxPolls = 60; // 最多轮询60次（30秒，每次0.5秒）
+            
+            pollingInterval = setInterval(async () => {
+                pollCount++;
+                
+                // 如果已经收到响应，停止轮询
+                if (responseBuffer.length > 0) {
+                    console.log('已收到响应，停止轮询');
+                    clearInterval(pollingInterval);
+                    pollingInterval = null;
+                    return;
+                }
+                
+                // 如果超过最大轮询次数，停止
+                if (pollCount >= maxPolls) {
+                    console.log('轮询超时，停止轮询');
+                    clearInterval(pollingInterval);
+                    pollingInterval = null;
+                    return;
+                }
+                
+                // 轮询检查响应（通过重新发送请求获取响应）
+                // 注意：这里不能直接查询响应，因为MCP协议不支持查询
+                // 所以轮询主要是作为监控，实际响应还是通过SSE接收
+                console.log(`轮询检查响应 (${pollCount}/${maxPolls})...`);
+                
+            }, 500); // 每0.5秒轮询一次
+        }
+        
+        // 页面加载时自动加载服务列表
+        window.addEventListener('load', () => {
+            // 可以自动加载，也可以让用户手动点击
+            // loadServices();
+        });
+    </script>
+</body>
+</html>
+

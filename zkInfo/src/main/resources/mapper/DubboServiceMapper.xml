@@ -99,14 +99,16 @@
     </select>
     
     <!-- 根据服务唯一标识查找Dubbo服务 -->
+    <!-- 注意：使用 <=> 操作符进行 NULL-safe 比较，确保 NULL 值也能正确匹配 -->
     <select id="findByServiceKey" resultMap="DubboServiceResultMap">
         SELECT <include refid="serviceColumns"/>
         FROM zk_dubbo_service
         WHERE interface_name = #{interfaceName} 
-          AND (protocol = #{protocol} OR (protocol IS NULL AND #{protocol} IS NULL))
-          AND (version = #{version} OR (version IS NULL AND #{version} IS NULL))
-          AND (`group` = #{group} OR (`group` IS NULL AND #{group} IS NULL))
-          AND (application = #{application} OR (application IS NULL AND #{application} IS NULL))
+          AND (protocol &lt;=&gt; #{protocol})
+          AND (version &lt;=&gt; #{version})
+          AND (`group` &lt;=&gt; #{group})
+          AND (application &lt;=&gt; #{application})
+        LIMIT 1
     </select>
     
     <!-- 根据审批状态查找Dubbo服务 -->

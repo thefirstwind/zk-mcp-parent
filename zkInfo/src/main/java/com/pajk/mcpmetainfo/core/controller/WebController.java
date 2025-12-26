@@ -53,4 +53,16 @@ public class WebController {
     public String dubboServices() {
         return "dubbo-service-management.html";
     }
+    
+    /**
+     * 参数类型测试页面
+     * 
+     * 提供Dubbo服务参数类型测试界面的访问入口。
+     * 
+     * @return 重定向到参数类型测试页面
+     */
+    @GetMapping("/test")
+    public RedirectView testParameterTypes() {
+        return new RedirectView("/test-parameter-types.html");
+    }
 }
