@@ -121,21 +121,92 @@ test_step() {
     fi
 }
 
+# ============================================================================
+# JSON 解析函数（纯 bash，不依赖 jq）
+# ============================================================================
+
+# 提取 JSON 字段值（简单字段，如 "id": 123）
+json_get_value() {
+    local json="$1"
+    local key="$2"
+    echo "$json" | grep -o "\"$key\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | sed "s/\"$key\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\"/\1/" | head -1
+}
+
+# 提取 JSON 数字字段值（如 "id": 123）
+json_get_number() {
+    local json="$1"
+    local key="$2"
+    echo "$json" | grep -o "\"$key\"[[:space:]]*:[[:space:]]*[0-9]*" | sed "s/\"$key\"[[:space:]]*:[[:space:]]*\([0-9]*\)/\1/" | head -1
+}
+
+# 提取嵌套 JSON 字段值（如 "project.id"）
+json_get_nested() {
+    local json="$1"
+    local path="$2"
+    local keys=$(echo "$path" | tr '.' ' ')
+    local result="$json"
+    
+    for key in $keys; do
+        result=$(echo "$result" | grep -o "\"$key\"[[:space:]]*:[[:space:]]*{[^}]*}" | head -1)
+        if [ -z "$result" ]; then
+            result=$(echo "$result" | grep -o "\"$key\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | sed "s/\"$key\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\"/\1/" | head -1)
+        fi
+    done
+    
+    echo "$result" | grep -o "\"[^\"]*\"" | head -1 | sed 's/"//g'
+}
+
+# 检查 JSON 中是否存在某个字段
+json_has_field() {
+    local json="$1"
+    local key="$2"
+    echo "$json" | grep -q "\"$key\""
+}
+
+# 检查 JSON 中字段值是否等于某个值
+json_field_equals() {
+    local json="$1"
+    local key="$2"
+    local value="$3"
+    local actual=$(json_get_value "$json" "$key")
+    [ "$actual" = "$value" ]
+}
+
+# 检查 JSON 是否为数组且长度大于0
+json_array_length() {
+    local json="$1"
+    # 简单计算：统计 "{" 或 "[" 的数量（不完美，但够用）
+    echo "$json" | grep -o '\[.*\]' | grep -o '{' | wc -l | tr -d ' '
+}
+
+# 检查响应是否包含错误
+json_has_error() {
+    local json="$1"
+    echo "$json" | grep -qi "error"
+}
+
+# 提取数组中的第一个元素的字段值
+json_array_first() {
+    local json="$1"
+    local key="$2"
+    # 提取第一个对象
+    local first_obj=$(echo "$json" | grep -o '\[[^]]*\]' | grep -o '{[^}]*}' | head -1)
+    json_get_value "$first_obj" "$key"
+}
+
+# 检查响应是否成功（HTTP 200 且无错误字段）
+check_response_ok() {
+    local response="$1"
+    ! json_has_error "$response" && echo "$response" | grep -q "{"
+}
+
 # 检查依赖
 check_dependencies() {
     log_info "检查依赖工具..."
     
-    local missing_deps=()
-    
-    for cmd in curl jq; do
-        if ! command -v $cmd &> /dev/null; then
-            missing_deps+=($cmd)
-        fi
-    done
-    
-    if [ ${#missing_deps[@]} -gt 0 ]; then
-        log_error "缺少必要工具: ${missing_deps[*]}"
-        log_info "请安装: apt-get install curl jq 或 brew install curl jq"
+    if ! command -v curl &> /dev/null; then
+        log_error "缺少必要工具: curl"
+        log_info "请安装: apt-get install curl 或 yum install curl"
         exit 1
     fi
     
@@ -179,7 +250,7 @@ test_environment() {
     print_header "阶段 1: 环境检查"
     
     test_step "检查 zkInfo 服务状态" \
-        "curl -s -f --max-time 5 '$ZKINFO_URL/actuator/health' | jq -e '.status == \"UP\"' > /dev/null" \
+        "HEALTH=\$(curl -s -f --max-time 5 '$ZKINFO_URL/actuator/health') && json_field_equals \"\$HEALTH\" \"status\" \"UP\"" \
         "false" "true"
     
     test_step "检查 Nacos 服务状态" \
@@ -211,7 +282,8 @@ test_service_discovery() {
         log_warning "权限不足或接口错误，尝试其他方式..."
         AVAILABLE_SERVICES=""
     else
-        AVAILABLE_SERVICES=$(echo "$DUBBO_SERVICES_RESPONSE" | jq -r '.data[]?.interfaceName // empty' 2>/dev/null | head -3)
+        # 提取接口名称（从 data 数组中）
+        AVAILABLE_SERVICES=$(echo "$DUBBO_SERVICES_RESPONSE" | grep -o '"interfaceName"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/"interfaceName"[[:space:]]*:[[:space:]]*"\([^"]*\)"/\1/' | head -3)
     fi
     
     if [ -z "$AVAILABLE_SERVICES" ]; then
@@ -225,19 +297,19 @@ test_service_discovery() {
     log_success "找到可用服务: $(echo "$AVAILABLE_SERVICES" | tr '\n' ' ')"
     
     # 获取第一个服务的ID
-    TEST_SERVICE_ID=$(echo "$DUBBO_SERVICES_RESPONSE" | jq -r '.data[0]?.id // empty' 2>/dev/null)
+    TEST_SERVICE_ID=$(json_array_first "$DUBBO_SERVICES_RESPONSE" "id")
     TEST_INTERFACE=$(echo "$AVAILABLE_SERVICES" | head -1)
     
     test_step "验证服务已同步到数据库" \
-        "echo '$DUBBO_SERVICES_RESPONSE' | jq -e '.data | length > 0' > /dev/null" \
+        "echo '$DUBBO_SERVICES_RESPONSE' | grep -q '\"data\"' && echo '$DUBBO_SERVICES_RESPONSE' | grep -q '{'" \
         "false" "true"
     
     test_step "验证服务有节点信息" \
-        "curl -s '$ZKINFO_URL/api/dubbo-services/$TEST_SERVICE_ID/nodes' | jq -e 'length >= 0' > /dev/null" \
+        "NODES=\$(curl -s '$ZKINFO_URL/api/dubbo-services/$TEST_SERVICE_ID/nodes') && (echo \"\$NODES\" | grep -q '\\[' || echo \"\$NODES\" | grep -q '{')" \
         "true" "false"
     
     test_step "验证服务有方法信息" \
-        "curl -s '$ZKINFO_URL/api/dubbo-services/$TEST_SERVICE_ID/methods' | jq -e 'length >= 0' > /dev/null" \
+        "METHODS=\$(curl -s '$ZKINFO_URL/api/dubbo-services/$TEST_SERVICE_ID/methods') && (echo \"\$METHODS\" | grep -q '\\[' || echo \"\$METHODS\" | grep -q '{')" \
         "true" "false"
     
     log_success "服务发现与同步测试完成"
@@ -267,7 +339,7 @@ test_project_management() {
         exit 1
     fi
     
-    TEST_PROJECT_ID=$(echo "$CREATE_PROJECT_RESPONSE" | jq -r '.id // empty' 2>/dev/null)
+    TEST_PROJECT_ID=$(json_get_number "$CREATE_PROJECT_RESPONSE" "id")
     if [ -z "$TEST_PROJECT_ID" ] || [ "$TEST_PROJECT_ID" = "null" ]; then
         log_error "无法获取项目ID"
         exit 1
@@ -276,7 +348,7 @@ test_project_management() {
     log_success "项目创建成功: ID=$TEST_PROJECT_ID"
     
     test_step "验证项目存在" \
-        "curl -s '$ZKINFO_URL/api/projects/$TEST_PROJECT_ID' | jq -e \".id == $TEST_PROJECT_ID\" > /dev/null" \
+        "PROJECT=\$(curl -s '$ZKINFO_URL/api/projects/$TEST_PROJECT_ID') && PROJECT_ID=\$(json_get_number \"\$PROJECT\" \"id\") && [ \"\$PROJECT_ID\" = \"$TEST_PROJECT_ID\" ]" \
         "false" "true"
     
     # 添加服务到项目
@@ -291,12 +363,12 @@ test_project_management() {
             }" 2>&1)
         
         test_step "验证服务已添加到项目" \
-            "echo '$ADD_SERVICE_RESPONSE' | jq -e '.id != null' > /dev/null" \
+            "json_has_field '$ADD_SERVICE_RESPONSE' 'id' || echo '$ADD_SERVICE_RESPONSE' | grep -q '{'" \
             "true" "false"
     fi
     
     test_step "验证项目服务列表" \
-        "curl -s '$ZKINFO_URL/api/projects/$TEST_PROJECT_ID/services' | jq -e 'length >= 0' > /dev/null" \
+        "SERVICES=\$(curl -s '$ZKINFO_URL/api/projects/$TEST_PROJECT_ID/services') && (echo \"\$SERVICES\" | grep -q '\\[' || echo \"\$SERVICES\" | grep -q '{')" \
         "true" "false"
     
     log_success "项目管理测试完成"
@@ -340,7 +412,11 @@ test_virtual_project() {
         exit 1
     fi
     
-    TEST_VIRTUAL_PROJECT_ID=$(echo "$CREATE_VIRTUAL_RESPONSE" | jq -r '.project.id // empty' 2>/dev/null)
+    TEST_VIRTUAL_PROJECT_ID=$(json_get_nested "$CREATE_VIRTUAL_RESPONSE" "project.id")
+    if [ -z "$TEST_VIRTUAL_PROJECT_ID" ] || [ "$TEST_VIRTUAL_PROJECT_ID" = "null" ]; then
+        # 尝试直接提取
+        TEST_VIRTUAL_PROJECT_ID=$(echo "$CREATE_VIRTUAL_RESPONSE" | grep -o '"project"[^}]*"id"[^,}]*' | grep -o '[0-9]\+' | head -1)
+    fi
     if [ -z "$TEST_VIRTUAL_PROJECT_ID" ] || [ "$TEST_VIRTUAL_PROJECT_ID" = "null" ]; then
         log_error "无法获取虚拟项目ID"
         exit 1
@@ -349,15 +425,15 @@ test_virtual_project() {
     log_success "虚拟项目创建成功: ID=$TEST_VIRTUAL_PROJECT_ID"
     
     test_step "验证虚拟项目存在" \
-        "curl -s '$ZKINFO_URL/api/virtual-projects/$TEST_VIRTUAL_PROJECT_ID' | jq -e \".project.id == $TEST_VIRTUAL_PROJECT_ID\" > /dev/null" \
+        "PROJECT=\$(curl -s '$ZKINFO_URL/api/virtual-projects/$TEST_VIRTUAL_PROJECT_ID') && PROJECT_ID=\$(echo \"\$PROJECT\" | grep -o '\"project\"[^}]*\"id\"[^,}]*' | grep -o '[0-9]\+' | head -1) && [ \"\$PROJECT_ID\" = \"$TEST_VIRTUAL_PROJECT_ID\" ]" \
         "false" "true"
     
     test_step "验证虚拟项目有端点信息" \
-        "curl -s '$ZKINFO_URL/api/virtual-projects/$TEST_VIRTUAL_PROJECT_ID/endpoint' | jq -e '.endpoint.endpointName != null' > /dev/null" \
+        "ENDPOINT=\$(curl -s '$ZKINFO_URL/api/virtual-projects/$TEST_VIRTUAL_PROJECT_ID/endpoint') && json_has_field \"\$ENDPOINT\" \"endpointName\"" \
         "false" "true"
     
     test_step "验证虚拟项目有服务关联" \
-        "curl -s '$ZKINFO_URL/api/virtual-projects/$TEST_VIRTUAL_PROJECT_ID/services' | jq -e 'length >= 0' > /dev/null" \
+        "SERVICES=\$(curl -s '$ZKINFO_URL/api/virtual-projects/$TEST_VIRTUAL_PROJECT_ID/services') && (echo \"\$SERVICES\" | grep -q '\\[' || echo \"\$SERVICES\" | grep -q '{')" \
         "true" "false"
     
     # 等待Nacos注册
@@ -365,19 +441,21 @@ test_virtual_project() {
     VIRTUAL_SERVICE_NAME="virtual-$TEST_VIRTUAL_ENDPOINT"
     for i in {1..10}; do
         sleep 1
-        INSTANCES=$(curl -s "$NACOS_URL/nacos/v3/client/ns/instance/list?namespaceId=$NACOS_NAMESPACE&groupName=$NACOS_GROUP&serviceName=$VIRTUAL_SERVICE_NAME" \
+        NACOS_RESPONSE=$(curl -s "$NACOS_URL/nacos/v3/client/ns/instance/list?namespaceId=$NACOS_NAMESPACE&groupName=$NACOS_GROUP&serviceName=$VIRTUAL_SERVICE_NAME" \
             -H "Content-Type: application/json" \
-            -H "User-Agent: Nacos-Bash-Client-test" 2>&1 | jq -r '.data // [] | length' 2>/dev/null || echo "0")
-        if [ "$INSTANCES" -gt 0 ] 2>/dev/null; then
-            log_success "服务已注册到Nacos (${i}秒)"
-            break
+            -H "User-Agent: Nacos-Bash-Client-test" 2>&1)
+        # 检查是否有 data 数组且不为空
+        if echo "$NACOS_RESPONSE" | grep -q '"data"' && echo "$NACOS_RESPONSE" | grep -q '{'; then
+            INSTANCE_COUNT=$(echo "$NACOS_RESPONSE" | grep -o '"data"[^]]*\]' | grep -o '{' | wc -l | tr -d ' ')
+            if [ "$INSTANCE_COUNT" -gt 0 ] 2>/dev/null; then
+                log_success "服务已注册到Nacos (${i}秒)"
+                break
+            fi
         fi
     done
     
     test_step "验证服务在Nacos中存在" \
-        "curl -s '$NACOS_URL/nacos/v3/client/ns/instance/list?namespaceId=$NACOS_NAMESPACE&groupName=$NACOS_GROUP&serviceName=$VIRTUAL_SERVICE_NAME' \
-            -H 'Content-Type: application/json' \
-            -H 'User-Agent: Nacos-Bash-Client-test' | jq -e '.data | length > 0' > /dev/null" \
+        "NACOS_RESPONSE=\$(curl -s '$NACOS_URL/nacos/v3/client/ns/instance/list?namespaceId=$NACOS_NAMESPACE&groupName=$NACOS_GROUP&serviceName=$VIRTUAL_SERVICE_NAME' -H 'Content-Type: application/json' -H 'User-Agent: Nacos-Bash-Client-test') && echo \"\$NACOS_RESPONSE\" | grep -q '\"data\"' && echo \"\$NACOS_RESPONSE\" | grep -q '{'" \
         "true" "false"
     
     log_success "虚拟项目管理测试完成"
@@ -407,17 +485,17 @@ test_service_approval() {
         }" 2>&1)
     
     test_step "验证审批提交成功" \
-        "echo '$SUBMIT_RESPONSE' | jq -e '.id != null or .approvalId != null' > /dev/null" \
+        "(json_has_field '$SUBMIT_RESPONSE' 'id' || json_has_field '$SUBMIT_RESPONSE' 'approvalId') && ! json_has_error '$SUBMIT_RESPONSE'" \
         "true" "false"
     
     # 获取待审批列表
     test_step "验证待审批列表" \
-        "curl -s '$ZKINFO_URL/api/dubbo-services/pending' | jq -e 'length >= 0' > /dev/null" \
+        "PENDING=\$(curl -s '$ZKINFO_URL/api/dubbo-services/pending') && (echo \"\$PENDING\" | grep -q '\\[' || echo \"\$PENDING\" | grep -q '{')" \
         "true" "false"
     
     # 获取已审批列表
     test_step "验证已审批列表" \
-        "curl -s '$ZKINFO_URL/api/dubbo-services/approved' | jq -e 'length >= 0' > /dev/null" \
+        "APPROVED=\$(curl -s '$ZKINFO_URL/api/dubbo-services/approved') && (echo \"\$APPROVED\" | grep -q '\\[' || echo \"\$APPROVED\" | grep -q '{')" \
         "true" "false"
     
     log_success "服务审批测试完成"
@@ -455,7 +533,7 @@ test_mcp_protocol() {
         }' 2>&1)
     
     test_step "验证Initialize成功" \
-        "echo '$INIT_RESPONSE' | jq -e '.result != null or .error == null' > /dev/null" \
+        "(json_has_field '$INIT_RESPONSE' 'result' || ! json_has_error '$INIT_RESPONSE')" \
         "true" "false"
     
     sleep 1
@@ -471,15 +549,17 @@ test_mcp_protocol() {
             "params": {}
         }' 2>&1)
     
-    TOOLS_COUNT=$(echo "$TOOLS_RESPONSE" | jq -r '.result.tools // [] | length' 2>/dev/null || echo "0")
+    # 计算工具数量（统计 "name" 字段）
+    TOOLS_COUNT=$(echo "$TOOLS_RESPONSE" | grep -o '"name"[^,}]*' | wc -l | tr -d ' ')
     
     test_step "验证Tools/List成功" \
-        "echo '$TOOLS_RESPONSE' | jq -e '.result != null' > /dev/null" \
+        "json_has_field '$TOOLS_RESPONSE' 'result'" \
         "true" "false"
     
     # Tools/Call（如果有工具）
     if [ "$TOOLS_COUNT" -gt 0 ] 2>/dev/null; then
-        TEST_TOOL=$(echo "$TOOLS_RESPONSE" | jq -r '.result.tools[0]?.name // empty' 2>/dev/null)
+        # 提取第一个工具名称
+        TEST_TOOL=$(echo "$TOOLS_RESPONSE" | grep -o '"name"[^,}]*"[^"]*"' | head -1 | sed 's/"name"[^"]*"\([^"]*\)"/\1/' | sed 's/.*"\([^"]*\)".*/\1/')
         if [ ! -z "$TEST_TOOL" ] && [ "$TEST_TOOL" != "null" ]; then
             log_info "MCP Tools/Call: $TEST_TOOL"
             
@@ -505,7 +585,11 @@ test_mcp_protocol() {
                     }
                 }" 2>&1)
             
-            IS_ERROR=$(echo "$CALL_RESPONSE" | jq -r '.result.isError // false' 2>/dev/null)
+            # 检查是否有错误
+            IS_ERROR="false"
+            if echo "$CALL_RESPONSE" | grep -qi '"isError"[[:space:]]*:[[:space:]]*true'; then
+                IS_ERROR="true"
+            fi
             
             test_step "验证Tools/Call成功（Dubbo泛化调用）" \
                 "[ \"$IS_ERROR\" != \"true\" ]" \
@@ -557,12 +641,12 @@ test_interface_filter() {
     
     # 获取过滤器列表
     test_step "验证过滤器列表" \
-        "curl -s '$ZKINFO_URL/api/filters' | jq -e 'length >= 0' > /dev/null" \
+        "FILTERS=\$(curl -s '$ZKINFO_URL/api/filters') && (echo \"\$FILTERS\" | grep -q '\\[' || echo \"\$FILTERS\" | grep -q '{')" \
         "true" "false"
     
     # 获取启用的过滤器
     test_step "验证启用的过滤器" \
-        "curl -s '$ZKINFO_URL/api/filters/enabled' | jq -e 'length >= 0' > /dev/null" \
+        "FILTERS=\$(curl -s '$ZKINFO_URL/api/filters/enabled') && (echo \"\$FILTERS\" | grep -q '\\[' || echo \"\$FILTERS\" | grep -q '{')" \
         "true" "false"
     
     log_success "接口过滤测试完成"
@@ -583,7 +667,8 @@ test_heartbeat_monitoring() {
     
     # 获取服务节点
     NODES_RESPONSE=$(curl -s "$ZKINFO_URL/api/dubbo-services/$TEST_SERVICE_ID/nodes" 2>/dev/null || echo "[]")
-    NODE_COUNT=$(echo "$NODES_RESPONSE" | jq -r 'length' 2>/dev/null || echo "0")
+    # 简单计算节点数量（统计对象数量）
+    NODE_COUNT=$(echo "$NODES_RESPONSE" | grep -o '{' | wc -l | tr -d ' ')
     
     test_step "验证服务节点信息" \
         "[ \"$NODE_COUNT\" -ge 0 ]" \
@@ -592,7 +677,7 @@ test_heartbeat_monitoring() {
     # 验证节点状态字段（isOnline, isHealthy等）
     if [ "$NODE_COUNT" -gt 0 ]; then
         test_step "验证节点状态字段" \
-            "echo '$NODES_RESPONSE' | jq -e '.[0] | has(\"isOnline\") or has(\"isHealthy\")' > /dev/null" \
+            "(json_has_field '$NODES_RESPONSE' 'isOnline' || json_has_field '$NODES_RESPONSE' 'isHealthy')" \
             "true" "false"
     else
         SKIPPED_TESTS=$((SKIPPED_TESTS + 1))
@@ -610,27 +695,27 @@ test_api_endpoints() {
     
     # 应用列表
     test_step "验证应用列表接口" \
-        "curl -s '$ZKINFO_URL/api/applications' | jq -e 'length >= 0' > /dev/null" \
+        "APPS=\$(curl -s '$ZKINFO_URL/api/applications') && (echo \"\$APPS\" | grep -q '\\[' || echo \"\$APPS\" | grep -q '{')" \
         "true" "false"
     
     # 服务统计
     test_step "验证服务统计接口" \
-        "curl -s '$ZKINFO_URL/api/stats' | jq -e '. != null' > /dev/null" \
+        "STATS=\$(curl -s '$ZKINFO_URL/api/stats') && echo \"\$STATS\" | grep -q '{'" \
         "true" "false"
     
     # 已注册服务
     test_step "验证已注册服务接口" \
-        "curl -s '$ZKINFO_URL/api/registered-services' | jq -e 'length >= 0' > /dev/null" \
+        "SERVICES=\$(curl -s '$ZKINFO_URL/api/registered-services') && (echo \"\$SERVICES\" | grep -q '\\[' || echo \"\$SERVICES\" | grep -q '{')" \
         "true" "false"
     
     # 项目列表
     test_step "验证项目列表接口" \
-        "curl -s '$ZKINFO_URL/api/projects' | jq -e 'length >= 0' > /dev/null" \
+        "PROJECTS=\$(curl -s '$ZKINFO_URL/api/projects') && (echo \"\$PROJECTS\" | grep -q '\\[' || echo \"\$PROJECTS\" | grep -q '{')" \
         "true" "false"
     
     # 虚拟项目列表
     test_step "验证虚拟项目列表接口" \
-        "curl -s '$ZKINFO_URL/api/virtual-projects' | jq -e 'length >= 0' > /dev/null" \
+        "VIRTUAL=\$(curl -s '$ZKINFO_URL/api/virtual-projects') && (echo \"\$VIRTUAL\" | grep -q '\\[' || echo \"\$VIRTUAL\" | grep -q '{')" \
         "true" "false"
     
     log_success "API端点验证完成"

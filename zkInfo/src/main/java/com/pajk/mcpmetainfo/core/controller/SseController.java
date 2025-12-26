@@ -9,6 +9,8 @@ import com.pajk.mcpmetainfo.core.service.VirtualProjectService;
 import com.pajk.mcpmetainfo.core.service.NacosMcpRegistrationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -42,6 +44,7 @@ public class SseController {
     private final ProjectManagementService projectManagementService;
     private final VirtualProjectService virtualProjectService;
     private final NacosMcpRegistrationService nacosMcpRegistrationService;
+    private final Environment environment;
     
     // 使用共享的线程池，避免每个连接都创建新的线程池
     private static final ScheduledExecutorService executorService = Executors.newScheduledThreadPool(10);
@@ -446,11 +449,24 @@ public class SseController {
     /**
      * 从请求头构建 Base URL
      * 参考 mcp-router-v3 的实现，优先使用代理头（X-Forwarded-Host, X-Forwarded-Proto）
+     * 支持 context-path 和域名配置（生产环境）
      */
     private String buildBaseUrlFromRequest() {
-        // 在 WebMVC 中，我们需要从 HttpServletRequest 获取请求头
-        // 但由于这是私有方法，我们需要通过其他方式获取请求信息
-        // 这里先使用配置值，后续可以通过注入 HttpServletRequest 或使用 RequestContextHolder 获取
+        // 获取 context-path 配置
+        String contextPath = environment.getProperty("server.servlet.context-path", "");
+        // 确保 context-path 以 / 开头，但不以 / 结尾（除非是根路径）
+        if (contextPath != null && !contextPath.isEmpty() && !contextPath.equals("/")) {
+            if (!contextPath.startsWith("/")) {
+                contextPath = "/" + contextPath;
+            }
+            // 移除末尾的 /（除非是根路径）
+            if (contextPath.endsWith("/") && contextPath.length() > 1) {
+                contextPath = contextPath.substring(0, contextPath.length() - 1);
+            }
+        } else {
+            contextPath = "";
+        }
+        
         try {
             org.springframework.web.context.request.RequestAttributes requestAttributes = 
                     org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
@@ -476,21 +492,26 @@ public class SseController {
                 String scheme;
                 String hostPort;
                 
-                log.debug("🔍 Building base URL - forwardedProto: {}, forwardedHost: {}, forwardedPort: {}, Host: {}", 
-                        forwardedProto, forwardedHost, forwardedPort, request.getHeader("Host"));
+                log.debug("🔍 Building base URL - forwardedProto: {}, forwardedHost: {}, forwardedPort: {}, Host: {}, contextPath: {}", 
+                        forwardedProto, forwardedHost, forwardedPort, request.getHeader("Host"), contextPath);
                 
                 if (forwardedHost != null && !forwardedHost.isEmpty()) {
                     scheme = (forwardedProto != null && !forwardedProto.isEmpty()) ? forwardedProto : "http";
                     hostPort = forwardedHost;
                     // 如果 X-Forwarded-Host 不包含端口，且 X-Forwarded-Port 存在，则添加端口
+                    // 但如果是标准端口（80/443），则不添加端口号（生产环境通常使用域名，不需要端口）
                     if (!hostPort.contains(":") && forwardedPort != null && !forwardedPort.isEmpty()) {
-                        int port = Integer.parseInt(forwardedPort);
-                        // 只有非标准端口才添加
-                        if (!((scheme.equals("http") && port == 80) || (scheme.equals("https") && port == 443))) {
-                            hostPort = hostPort + ":" + forwardedPort;
+                        try {
+                            int port = Integer.parseInt(forwardedPort);
+                            // 只有非标准端口才添加
+                            if (!((scheme.equals("http") && port == 80) || (scheme.equals("https") && port == 443))) {
+                                hostPort = hostPort + ":" + forwardedPort;
+                            }
+                        } catch (NumberFormatException e) {
+                            log.debug("Invalid forwarded port: {}", forwardedPort);
                         }
                     }
-                    String baseUrl = scheme + "://" + hostPort;
+                    String baseUrl = scheme + "://" + hostPort + contextPath;
                     log.debug("Built base URL from forwarded headers: {}", baseUrl);
                     return baseUrl;
                 }
@@ -502,14 +523,14 @@ public class SseController {
                     if (reqScheme == null || reqScheme.isEmpty()) {
                         reqScheme = "http";
                     }
-                    // 处理 Host 头中的端口（如果是标准端口，则移除）
+                    // 处理 Host 头中的端口（如果是标准端口，则移除，生产环境通常使用域名）
                     String hostWithoutPort = host;
                     if (host.contains(":")) {
                         String[] parts = host.split(":");
                         if (parts.length == 2) {
                             try {
                                 int port = Integer.parseInt(parts[1]);
-                                // 如果是标准端口，移除端口号
+                                // 如果是标准端口，移除端口号（生产环境使用域名，不需要端口）
                                 if ((reqScheme.equals("http") && port == 80) || 
                                     (reqScheme.equals("https") && port == 443)) {
                                     hostWithoutPort = parts[0];
@@ -519,7 +540,7 @@ public class SseController {
                             }
                         }
                     }
-                    String baseUrl = reqScheme + "://" + hostWithoutPort;
+                    String baseUrl = reqScheme + "://" + hostWithoutPort + contextPath;
                     log.debug("Built base URL from Host header: {}", baseUrl);
                     return baseUrl;
                 }
@@ -528,8 +549,9 @@ public class SseController {
             log.warn("⚠️ Failed to build base URL from request headers: {}, falling back to default", e.getMessage());
         }
         
-        // 回退到默认配置
-        String baseUrl = "http://127.0.0.1:9091";
+        // 回退到默认配置（包含 context-path）
+        String defaultPort = environment.getProperty("server.port", "9091");
+        String baseUrl = "http://127.0.0.1:" + defaultPort + contextPath;
         log.debug("Built base URL from default config: {}", baseUrl);
         return baseUrl;
     }

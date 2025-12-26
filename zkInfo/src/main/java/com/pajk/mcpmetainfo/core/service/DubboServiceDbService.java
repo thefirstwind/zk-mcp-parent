@@ -50,12 +50,18 @@ public class DubboServiceDbService {
      */
     public DubboServiceEntity saveOrUpdateService(ProviderInfo providerInfo) {
         try {
-            // 根据服务唯一标识查找是否存在记录
+            // 如果 group 为空，使用 "default" 作为固定值（用于查询和保存）
+            String groupValue = providerInfo.getGroup();
+            if (groupValue == null || groupValue.trim().isEmpty()) {
+                groupValue = "default";
+            }
+            
+            // 根据服务唯一标识查找是否存在记录（使用规范化后的 group 值）
             DubboServiceEntity existingEntity = dubboServiceMapper.findByServiceKey(
                 providerInfo.getInterfaceName(), 
                 providerInfo.getProtocol(), 
                 providerInfo.getVersion(), 
-                providerInfo.getGroup(),
+                groupValue,
                 providerInfo.getApplication()
             );
             
@@ -74,6 +80,10 @@ public class DubboServiceDbService {
             } else {
                 // 如果不存在，则创建新记录
                 entity = new DubboServiceEntity(providerInfo);
+                // 确保 group 字段已设置为 "default"（如果原值为空）
+                if (entity.getGroup() == null || entity.getGroup().trim().isEmpty()) {
+                    entity.setGroup("default");
+                }
                 log.debug("保存新的Dubbo服务信息到数据库: {}", providerInfo.getInterfaceName());
                 dubboServiceMapper.insert(entity);
                 // 如果 insert 使用了 ON DUPLICATE KEY UPDATE，可能记录已存在，需要重新查询获取 ID
@@ -92,7 +102,8 @@ public class DubboServiceDbService {
                 }
             }
             
-            log.info("成功保存Dubbo服务信息: {} (ID: {})", providerInfo.getInterfaceName(), entity.getId());
+            log.info("成功保存Dubbo服务信息: {} (ID: {}, group: {})", 
+                    providerInfo.getInterfaceName(), entity.getId(), entity.getGroup());
             
             return entity;
         } catch (Exception e) {
@@ -317,11 +328,17 @@ public class DubboServiceDbService {
      * @return Dubbo服务信息实体
      */
     public Optional<DubboServiceEntity> findByServiceKey(ProviderInfo providerInfo) {
+        // 如果 group 为空，使用 "default" 作为固定值（用于查询）
+        String groupValue = providerInfo.getGroup();
+        if (groupValue == null || groupValue.trim().isEmpty()) {
+            groupValue = "default";
+        }
+        
         DubboServiceEntity entity = dubboServiceMapper.findByServiceKey(
             providerInfo.getInterfaceName(), 
             providerInfo.getProtocol(), 
             providerInfo.getVersion(), 
-            providerInfo.getGroup(),
+            groupValue,
             providerInfo.getApplication()
         );
         return Optional.ofNullable(entity);

@@ -123,7 +123,9 @@ public class DubboServiceEntity {
         this.interfaceName = providerInfo.getInterfaceName();
         this.protocol = providerInfo.getProtocol();
         this.version = providerInfo.getVersion();
-        this.group = providerInfo.getGroup();
+        // 如果 group 为空，使用 "default" 作为固定值
+        String groupValue = providerInfo.getGroup();
+        this.group = (groupValue == null || groupValue.trim().isEmpty()) ? "default" : groupValue;
         this.application = providerInfo.getApplication();
         
         // 初始化数据库相关字段

@@ -60,6 +60,55 @@ log_section() {
     echo ""
 }
 
+# ============================================================================
+# JSON 解析函数（纯 bash，不依赖 jq）
+# ============================================================================
+
+# 提取 JSON 字段值（简单字段，如 "id": 123）
+json_get_value() {
+    local json="$1"
+    local key="$2"
+    echo "$json" | grep -o "\"$key\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | sed "s/\"$key\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\"/\1/" | head -1
+}
+
+# 提取 JSON 数字字段值（如 "id": 123）
+json_get_number() {
+    local json="$1"
+    local key="$2"
+    echo "$json" | grep -o "\"$key\"[[:space:]]*:[[:space:]]*[0-9]*" | sed "s/\"$key\"[[:space:]]*:[[:space:]]*\([0-9]*\)/\1/" | head -1
+}
+
+# 提取嵌套 JSON 字段值（如 "project.id"）
+json_get_nested() {
+    local json="$1"
+    local path="$2"
+    # 简化处理：直接搜索路径中的最后一个key
+    local last_key=$(echo "$path" | awk -F'.' '{print $NF}')
+    echo "$json" | grep -o "\"$last_key\"[[:space:]]*:[[:space:]]*[0-9]*" | sed "s/\"$last_key\"[[:space:]]*:[[:space:]]*\([0-9]*\)/\1/" | head -1
+}
+
+# 检查 JSON 中是否存在某个字段
+json_has_field() {
+    local json="$1"
+    local key="$2"
+    echo "$json" | grep -q "\"$key\""
+}
+
+# 检查 JSON 中字段值是否等于某个值
+json_field_equals() {
+    local json="$1"
+    local key="$2"
+    local value="$3"
+    local actual=$(json_get_value "$json" "$key")
+    [ "$actual" = "$value" ]
+}
+
+# 检查响应是否包含错误
+json_has_error() {
+    local json="$1"
+    echo "$json" | grep -qi "error"
+}
+
 # 检查依赖
 check_dependencies() {
     if ! command -v curl &> /dev/null; then
@@ -67,9 +116,7 @@ check_dependencies() {
         exit 1
     fi
     
-    if ! command -v jq &> /dev/null; then
-        log_warning "jq 未安装，部分功能可能无法正常显示"
-    fi
+    log_success "依赖检查通过（使用纯 bash JSON 解析）"
 }
 
 # 1. 健康检查
@@ -77,8 +124,9 @@ verify_health() {
     log_section "1. 健康检查"
     
     log_info "检查 zkInfo 服务状态..."
-    if curl -s -f "${ZKINFO_URL}/actuator/health" > /dev/null; then
-        STATUS=$(curl -s "${ZKINFO_URL}/actuator/health" | jq -r '.status' 2>/dev/null || echo "UP")
+    HEALTH_RESPONSE=$(curl -s -f "${ZKINFO_URL}/actuator/health" 2>/dev/null)
+    if [ $? -eq 0 ] && [ ! -z "$HEALTH_RESPONSE" ]; then
+        STATUS=$(json_get_value "$HEALTH_RESPONSE" "status" || echo "UP")
         log_success "zkInfo 服务状态: $STATUS"
     else
         log_error "zkInfo 服务不可用"
@@ -86,7 +134,7 @@ verify_health() {
     fi
     
     log_info "检查服务统计信息..."
-    curl -s "${ZKINFO_URL}/api/stats" | jq '.' 2>/dev/null || curl -s "${ZKINFO_URL}/api/stats"
+    curl -s "${ZKINFO_URL}/api/stats"
     echo ""
 }
 
@@ -96,24 +144,27 @@ verify_services() {
     
     log_info "查询服务列表..."
     SERVICES_RESPONSE=$(curl -s "${ZKINFO_URL}/api/dubbo-services?page=1&size=5")
-    SERVICE_COUNT=$(echo "$SERVICES_RESPONSE" | jq -r '.total // 0' 2>/dev/null || echo "0")
+    SERVICE_COUNT=$(json_get_number "$SERVICES_RESPONSE" "total" || echo "0")
     log_success "找到 $SERVICE_COUNT 个服务"
     
     if [ "$SERVICE_COUNT" -gt 0 ]; then
-        FIRST_SERVICE_ID=$(echo "$SERVICES_RESPONSE" | jq -r '.data[0].id // empty' 2>/dev/null)
+        # 提取第一个服务的ID（从data数组中）
+        FIRST_SERVICE_ID=$(echo "$SERVICES_RESPONSE" | grep -o '"id"[[:space:]]*:[[:space:]]*[0-9]*' | head -1 | sed 's/"id"[[:space:]]*:[[:space:]]*\([0-9]*\)/\1/')
         if [ ! -z "$FIRST_SERVICE_ID" ] && [ "$FIRST_SERVICE_ID" != "null" ]; then
             log_info "查询服务详情 (ID: $FIRST_SERVICE_ID)..."
-            curl -s "${ZKINFO_URL}/api/dubbo-services/$FIRST_SERVICE_ID" | jq '.' 2>/dev/null || curl -s "${ZKINFO_URL}/api/dubbo-services/$FIRST_SERVICE_ID"
+            curl -s "${ZKINFO_URL}/api/dubbo-services/$FIRST_SERVICE_ID"
             echo ""
             
             log_info "查询服务节点..."
-            curl -s "${ZKINFO_URL}/api/dubbo-services/$FIRST_SERVICE_ID/nodes" | jq '.' 2>/dev/null || curl -s "${ZKINFO_URL}/api/dubbo-services/$FIRST_SERVICE_ID/nodes"
+            curl -s "${ZKINFO_URL}/api/dubbo-services/$FIRST_SERVICE_ID/nodes"
             echo ""
         fi
     fi
     
     log_info "查询待审批服务..."
-    curl -s "${ZKINFO_URL}/api/dubbo-services/pending?page=1&size=5" | jq '.total // 0' 2>/dev/null || echo "0"
+    PENDING_RESPONSE=$(curl -s "${ZKINFO_URL}/api/dubbo-services/pending?page=1&size=5")
+    PENDING_TOTAL=$(json_get_number "$PENDING_RESPONSE" "total" || echo "0")
+    echo "$PENDING_TOTAL"
     echo ""
 }
 
@@ -123,14 +174,16 @@ verify_projects() {
     
     log_info "查询所有项目..."
     PROJECTS=$(curl -s "${ZKINFO_URL}/api/projects")
-    PROJECT_COUNT=$(echo "$PROJECTS" | jq -r 'length // 0' 2>/dev/null || echo "0")
+    # 简单计算项目数量（统计对象数量）
+    PROJECT_COUNT=$(echo "$PROJECTS" | grep -o '{' | wc -l | tr -d ' ')
     log_success "找到 $PROJECT_COUNT 个项目"
     
     if [ "$PROJECT_COUNT" -gt 0 ]; then
-        FIRST_PROJECT_ID=$(echo "$PROJECTS" | jq -r '.[0].id // empty' 2>/dev/null)
+        # 提取第一个项目的ID
+        FIRST_PROJECT_ID=$(echo "$PROJECTS" | grep -o '"id"[[:space:]]*:[[:space:]]*[0-9]*' | head -1 | sed 's/"id"[[:space:]]*:[[:space:]]*\([0-9]*\)/\1/')
         if [ ! -z "$FIRST_PROJECT_ID" ] && [ "$FIRST_PROJECT_ID" != "null" ]; then
             log_info "查询项目详情 (ID: $FIRST_PROJECT_ID)..."
-            curl -s "${ZKINFO_URL}/api/projects/$FIRST_PROJECT_ID" | jq '.' 2>/dev/null || curl -s "${ZKINFO_URL}/api/projects/$FIRST_PROJECT_ID"
+            curl -s "${ZKINFO_URL}/api/projects/$FIRST_PROJECT_ID"
             echo ""
         fi
     fi
@@ -142,21 +195,23 @@ verify_virtual_projects() {
     
     log_info "查询所有虚拟项目..."
     VIRTUAL_PROJECTS=$(curl -s "${ZKINFO_URL}/api/virtual-projects")
-    VIRTUAL_COUNT=$(echo "$VIRTUAL_PROJECTS" | jq -r 'length // 0' 2>/dev/null || echo "0")
+    # 简单计算虚拟项目数量
+    VIRTUAL_COUNT=$(echo "$VIRTUAL_PROJECTS" | grep -o '{' | wc -l | tr -d ' ')
     log_success "找到 $VIRTUAL_COUNT 个虚拟项目"
     
     if [ "$VIRTUAL_COUNT" -gt 0 ]; then
-        FIRST_VIRTUAL_ID=$(echo "$VIRTUAL_PROJECTS" | jq -r '.[0].project.id // empty' 2>/dev/null)
-        ENDPOINT_NAME=$(echo "$VIRTUAL_PROJECTS" | jq -r '.[0].endpoint.endpointName // empty' 2>/dev/null)
+        # 提取第一个虚拟项目的ID和端点名称
+        FIRST_VIRTUAL_ID=$(echo "$VIRTUAL_PROJECTS" | grep -o '"project"[^}]*"id"[^,}]*' | grep -o '[0-9]\+' | head -1)
+        ENDPOINT_NAME=$(echo "$VIRTUAL_PROJECTS" | grep -o '"endpointName"[^,}]*"[^"]*"' | head -1 | sed 's/"endpointName"[^"]*"\([^"]*\)"/\1/' | sed 's/.*"\([^"]*\)".*/\1/')
         
         if [ ! -z "$FIRST_VIRTUAL_ID" ] && [ "$FIRST_VIRTUAL_ID" != "null" ]; then
             log_info "查询虚拟项目详情 (ID: $FIRST_VIRTUAL_ID)..."
-            curl -s "${ZKINFO_URL}/api/virtual-projects/$FIRST_VIRTUAL_ID" | jq '.' 2>/dev/null || curl -s "${ZKINFO_URL}/api/virtual-projects/$FIRST_VIRTUAL_ID"
+            curl -s "${ZKINFO_URL}/api/virtual-projects/$FIRST_VIRTUAL_ID"
             echo ""
             
             if [ ! -z "$ENDPOINT_NAME" ] && [ "$ENDPOINT_NAME" != "null" ]; then
                 log_info "查询端点信息 (Endpoint: $ENDPOINT_NAME)..."
-                curl -s "${ZKINFO_URL}/api/virtual-projects/$FIRST_VIRTUAL_ID/endpoint" | jq '.' 2>/dev/null || curl -s "${ZKINFO_URL}/api/virtual-projects/$FIRST_VIRTUAL_ID/endpoint"
+                curl -s "${ZKINFO_URL}/api/virtual-projects/$FIRST_VIRTUAL_ID/endpoint"
                 echo ""
             fi
         fi
@@ -169,12 +224,12 @@ verify_approval() {
     
     log_info "查询待审批记录..."
     PENDING=$(curl -s "${ZKINFO_URL}/api/approvals/pending")
-    PENDING_COUNT=$(echo "$PENDING" | jq -r 'length // 0' 2>/dev/null || echo "0")
+    PENDING_COUNT=$(echo "$PENDING" | grep -o '{' | wc -l | tr -d ' ')
     log_success "待审批记录数: $PENDING_COUNT"
     
     log_info "查询所有审批记录..."
     ALL_APPROVALS=$(curl -s "${ZKINFO_URL}/api/approvals?page=1&size=5")
-    TOTAL_COUNT=$(echo "$ALL_APPROVALS" | jq -r '.total // 0' 2>/dev/null || echo "0")
+    TOTAL_COUNT=$(json_get_number "$ALL_APPROVALS" "total" || echo "0")
     log_success "总审批记录数: $TOTAL_COUNT"
 }
 
@@ -184,7 +239,7 @@ verify_mcp() {
     
     # 获取一个虚拟项目端点
     VIRTUAL_PROJECTS=$(curl -s "${ZKINFO_URL}/api/virtual-projects")
-    ENDPOINT_NAME=$(echo "$VIRTUAL_PROJECTS" | jq -r '.[0].endpoint.endpointName // empty' 2>/dev/null)
+    ENDPOINT_NAME=$(echo "$VIRTUAL_PROJECTS" | grep -o '"endpointName"[^,}]*"[^"]*"' | head -1 | sed 's/"endpointName"[^"]*"\([^"]*\)"/\1/' | sed 's/.*"\([^"]*\)".*/\1/')
     
     if [ -z "$ENDPOINT_NAME" ] || [ "$ENDPOINT_NAME" = "null" ]; then
         log_warning "没有可用的虚拟项目端点，跳过MCP测试"
@@ -211,7 +266,7 @@ verify_mcp() {
             }
         }')
     
-    if echo "$INIT_RESPONSE" | jq -e '.result' > /dev/null 2>&1; then
+    if json_has_field "$INIT_RESPONSE" "result"; then
         log_success "MCP Initialize 成功"
     else
         log_warning "MCP Initialize 可能失败"
@@ -229,7 +284,8 @@ verify_mcp() {
             "params": {}
         }')
     
-    TOOLS_COUNT=$(echo "$TOOLS_RESPONSE" | jq -r '.result.tools // [] | length' 2>/dev/null || echo "0")
+    # 计算工具数量（统计 "name" 字段）
+    TOOLS_COUNT=$(echo "$TOOLS_RESPONSE" | grep -o '"name"[^,}]*' | wc -l | tr -d ' ')
     log_success "找到 $TOOLS_COUNT 个工具"
 }
 
@@ -239,7 +295,7 @@ verify_sse() {
     
     # 获取一个虚拟项目端点
     VIRTUAL_PROJECTS=$(curl -s "${ZKINFO_URL}/api/virtual-projects")
-    ENDPOINT_NAME=$(echo "$VIRTUAL_PROJECTS" | jq -r '.[0].endpoint.endpointName // empty' 2>/dev/null)
+    ENDPOINT_NAME=$(echo "$VIRTUAL_PROJECTS" | grep -o '"endpointName"[^,}]*"[^"]*"' | head -1 | sed 's/"endpointName"[^"]*"\([^"]*\)"/\1/' | sed 's/.*"\([^"]*\)".*/\1/')
     
     if [ -z "$ENDPOINT_NAME" ] || [ "$ENDPOINT_NAME" = "null" ]; then
         log_warning "没有可用的虚拟项目端点，跳过SSE测试"
@@ -265,19 +321,20 @@ verify_nacos() {
     
     log_info "查询Nacos服务列表..."
     NACOS_SERVICES=$(curl -s "${NACOS_URL}/nacos/v1/ns/service/list?pageNo=1&pageSize=10")
-    SERVICE_COUNT=$(echo "$NACOS_SERVICES" | jq -r '.count // 0' 2>/dev/null || echo "0")
+    SERVICE_COUNT=$(json_get_number "$NACOS_SERVICES" "count" || echo "0")
     log_success "Nacos中的服务数: $SERVICE_COUNT"
     
     # 检查虚拟项目是否注册
     VIRTUAL_PROJECTS=$(curl -s "${ZKINFO_URL}/api/virtual-projects")
-    ENDPOINT_NAME=$(echo "$VIRTUAL_PROJECTS" | jq -r '.[0].endpoint.endpointName // empty' 2>/dev/null)
+    ENDPOINT_NAME=$(echo "$VIRTUAL_PROJECTS" | grep -o '"endpointName"[^,}]*"[^"]*"' | head -1 | sed 's/"endpointName"[^"]*"\([^"]*\)"/\1/' | sed 's/.*"\([^"]*\)".*/\1/')
     
     if [ ! -z "$ENDPOINT_NAME" ] && [ "$ENDPOINT_NAME" != "null" ]; then
         log_info "检查虚拟项目在Nacos中的注册状态..."
         INSTANCES=$(curl -s "${NACOS_URL}/nacos/v3/client/ns/instance/list?namespaceId=${NACOS_NAMESPACE}&groupName=${NACOS_GROUP}&serviceName=virtual-${ENDPOINT_NAME}" \
             -H "Content-Type: application/json" \
             -H "User-Agent: Nacos-Bash-Client" 2>/dev/null)
-        INSTANCE_COUNT=$(echo "$INSTANCES" | jq -r '.data // [] | length' 2>/dev/null || echo "0")
+        # 计算实例数量
+        INSTANCE_COUNT=$(echo "$INSTANCES" | grep -o '{' | wc -l | tr -d ' ')
         
         if [ "$INSTANCE_COUNT" -gt 0 ]; then
             log_success "虚拟项目已注册到Nacos (实例数: $INSTANCE_COUNT)"

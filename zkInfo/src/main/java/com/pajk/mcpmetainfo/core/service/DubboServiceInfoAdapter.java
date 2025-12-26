@@ -32,7 +32,9 @@ public class DubboServiceInfoAdapter {
         serviceEntity.setInterfaceName(providerInfo.getInterfaceName());
         serviceEntity.setProtocol(providerInfo.getProtocol());
         serviceEntity.setVersion(providerInfo.getVersion());
-        serviceEntity.setGroup(providerInfo.getGroup());
+        // 如果 group 为空，使用 "default" 作为固定值
+        String groupValue = providerInfo.getGroup();
+        serviceEntity.setGroup((groupValue == null || groupValue.trim().isEmpty()) ? "default" : groupValue);
         serviceEntity.setApplication(providerInfo.getApplication());
         serviceEntity.setApprovalStatus(DubboServiceEntity.ApprovalStatus.INIT); // 默认为初始化状态
         serviceEntity.setCreatedAt(LocalDateTime.now());
@@ -97,7 +99,9 @@ public class DubboServiceInfoAdapter {
         serviceEntity.setInterfaceName(providerInfoEntity.getInterfaceName());
         serviceEntity.setProtocol(providerInfoEntity.getProtocol());
         serviceEntity.setVersion(providerInfoEntity.getVersion());
-        serviceEntity.setGroup(providerInfoEntity.getGroup());
+        // 如果 group 为空，使用 "default" 作为固定值
+        String groupValue = providerInfoEntity.getGroup();
+        serviceEntity.setGroup((groupValue == null || groupValue.trim().isEmpty()) ? "default" : groupValue);
         serviceEntity.setApplication(providerInfoEntity.getApplication());
         
         // 注意：ProviderInfoEntity 的审批字段已移除，审批状态现在通过 service_id 关联 zk_dubbo_service 获取
