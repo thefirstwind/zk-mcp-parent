@@ -36,6 +36,12 @@ public class VirtualProjectRegistrationService {
     @Autowired
     private McpToolSchemaGenerator mcpToolSchemaGenerator;
     
+    @Autowired(required = false)
+    private InterfaceWhitelistService interfaceWhitelistService;
+    
+    @Autowired(required = false)
+    private com.pajk.mcpmetainfo.persistence.mapper.DubboServiceMethodMapper dubboServiceMethodMapper;
+    
     @Value("${server.port:9091}")
     private int serverPort;
     
@@ -123,9 +129,24 @@ public class VirtualProjectRegistrationService {
     }
     
     /**
+     * 通过服务名称直接从 Nacos 注销虚拟项目
+     * 用于删除内存中不存在的虚拟项目
+     */
+    public void deregisterVirtualProjectFromNacosByServiceName(String serviceName, String version) {
+        try {
+            nacosMcpRegistrationService.deregisterVirtualProjectMcpService(serviceName, version);
+            log.info("✅ Deregistered virtual project from Nacos by serviceName: {}", serviceName);
+        } catch (Exception e) {
+            log.error("❌ Failed to deregister virtual project from Nacos by serviceName: {}", serviceName, e);
+            throw new RuntimeException("Failed to deregister virtual project from Nacos", e);
+        }
+    }
+    
+    /**
      * 聚合所有服务的Provider
      * 
      * 从不同实际项目的服务中收集Provider，去重后返回
+     * 优化：优先使用 service_id 直接查询，提高效率
      */
     private List<com.pajk.mcpmetainfo.core.model.ProviderInfo> aggregateProviders(List<ProjectService> projectServices) {
         Map<String, com.pajk.mcpmetainfo.core.model.ProviderInfo> uniqueProviders = new LinkedHashMap<>();
@@ -141,18 +162,30 @@ public class VirtualProjectRegistrationService {
                 continue;
             }
             
-            // 从 zk_dubbo_* 表查询所有 Provider（新逻辑）
-            // 注意：group可能为null或空字符串，需要特殊处理
-            String serviceGroup = projectService.getServiceGroup();
-            log.info("Looking for providers from zk_dubbo_* tables: {}:{}:{}", 
-                    projectService.getServiceInterface(),
-                    projectService.getServiceVersion(),
-                    serviceGroup);
+            List<com.pajk.mcpmetainfo.core.model.ProviderInfo> providers;
             
-            List<com.pajk.mcpmetainfo.core.model.ProviderInfo> allProviders = dubboServiceDbService.getAllProvidersFromDubboTables();
-            log.debug("Total providers available from zk_dubbo_* tables: {}", allProviders.size());
-            
-            List<com.pajk.mcpmetainfo.core.model.ProviderInfo> providers = allProviders.stream()
+            // 优化：优先使用 service_id 直接查询（如果存在）
+            if (projectService.getServiceId() != null) {
+                log.info("Using service_id {} to query providers directly: {}:{}:{}", 
+                        projectService.getServiceId(),
+                        projectService.getServiceInterface(),
+                        projectService.getServiceVersion(),
+                        projectService.getServiceGroup());
+                
+                providers = dubboServiceDbService.getProvidersByServiceId(projectService.getServiceId());
+                log.info("Found {} providers using service_id {}", providers.size(), projectService.getServiceId());
+            } else {
+                // 回退到模糊匹配（原有逻辑）
+                String serviceGroup = projectService.getServiceGroup();
+                log.info("Using fuzzy matching to query providers: {}:{}:{}", 
+                        projectService.getServiceInterface(),
+                        projectService.getServiceVersion(),
+                        serviceGroup);
+                
+                List<com.pajk.mcpmetainfo.core.model.ProviderInfo> allProviders = dubboServiceDbService.getAllProvidersFromDubboTables();
+                log.debug("Total providers available from zk_dubbo_* tables: {}", allProviders.size());
+                
+                providers = allProviders.stream()
                     .filter(p -> {
                         boolean interfaceMatch = p.getInterfaceName().equals(projectService.getServiceInterface());
                         if (!interfaceMatch) {
@@ -204,13 +237,38 @@ public class VirtualProjectRegistrationService {
                         return true;
                     })
                     .collect(Collectors.toList());
+            }
             
-            log.info("Found {} providers for service {}:{}:{} (requested group: {})", 
+            log.info("Found {} providers for service {}:{}:{} (serviceId={})", 
                     providers.size(), 
                     projectService.getServiceInterface(), 
                     projectService.getServiceVersion(),
-                    serviceGroup,
-                    serviceGroup);
+                    projectService.getServiceGroup(),
+                    projectService.getServiceId());
+            
+            // 数据完整性检查：如果 methods 为空，尝试从数据库补全
+            for (com.pajk.mcpmetainfo.core.model.ProviderInfo provider : providers) {
+                // 检查 methods 是否为空
+                if (provider.getMethods() == null || provider.getMethods().isEmpty()) {
+                    // 尝试从 zk_dubbo_service_method 查询
+                    if (projectService.getServiceId() != null) {
+                        try {
+                            List<com.pajk.mcpmetainfo.persistence.entity.DubboServiceMethodEntity> methods = 
+                                dubboServiceMethodMapper.findByServiceId(projectService.getServiceId());
+                            if (methods != null && !methods.isEmpty()) {
+                                String methodsStr = methods.stream()
+                                    .map(com.pajk.mcpmetainfo.persistence.entity.DubboServiceMethodEntity::getMethodName)
+                                    .collect(Collectors.joining(","));
+                                provider.setMethods(methodsStr);
+                                log.info("✅ Fixed methods for provider: {} -> {} methods", 
+                                        provider.getInterfaceName(), methods.size());
+                            }
+                        } catch (Exception e) {
+                            log.warn("Failed to fix methods for provider: {}", provider.getInterfaceName(), e);
+                        }
+                    }
+                }
+            }
             
             // 去重：使用接口名+版本+分组作为key，确保不同服务接口都被保留
             // 即使它们来自同一个地址和端口（同一个应用可能提供多个服务）

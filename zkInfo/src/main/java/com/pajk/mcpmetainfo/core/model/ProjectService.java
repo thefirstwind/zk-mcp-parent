@@ -67,6 +67,12 @@ public class ProjectService {
     private Long addedBy;
     
     /**
+     * 关联的 Dubbo 服务 ID（引用 zk_dubbo_service.id，可选）
+     * 如果存在，可以直接通过 service_id 查询，提高效率
+     */
+    private Long serviceId;
+    
+    /**
      * 构建服务唯一标识
      */
     public String buildServiceKey() {

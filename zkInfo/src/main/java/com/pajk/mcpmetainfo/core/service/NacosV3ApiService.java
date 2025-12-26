@@ -92,18 +92,6 @@ public class NacosV3ApiService {
             }
             params.put("ephemeral", String.valueOf(ephemeral));
             
-            // 注意：根据 Nacos v3 API 文档，metadata 应该作为请求体的一部分
-            // 但文档中注册实例的接口使用的是表单格式，metadata 可能需要特殊处理
-            // 这里先尝试将 metadata 作为 JSON 字符串放在请求体中
-            String metadataJson = null;
-            if (metadata != null && !metadata.isEmpty()) {
-                try {
-                    metadataJson = objectMapper.writeValueAsString(metadata);
-                } catch (Exception e) {
-                    log.warn("Failed to serialize metadata to JSON", e);
-                }
-            }
-            
             // 构建请求体（表单格式）
             StringBuilder body = new StringBuilder();
             for (Map.Entry<String, String> entry : params.entrySet()) {
@@ -115,18 +103,35 @@ public class NacosV3ApiService {
                     .append(URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8));
             }
             
-            // 如果 metadata 存在，尝试添加到请求体
-            // 注意：Nacos v3 API 的 metadata 传递方式可能需要根据实际 API 文档调整
-            // 根据文档，metadata 可能需要作为单独的字段传递
-            if (metadataJson != null) {
-                if (body.length() > 0) {
-                    body.append("&");
+            // 如果 metadata 存在，将每个键值对作为表单字段添加
+            // 根据 Nacos v3.1 API 文档，metadata 应该作为表单字段传递
+            // 格式：metadata.key1=value1&metadata.key2=value2
+            if (metadata != null && !metadata.isEmpty()) {
+                log.info("📦 Adding {} metadata fields to request body", metadata.size());
+                for (Map.Entry<String, String> entry : metadata.entrySet()) {
+                    if (body.length() > 0) {
+                        body.append("&");
+                    }
+                    String key = entry.getKey();
+                    String value = entry.getValue() != null ? entry.getValue() : "";
+                    body.append("metadata.")
+                        .append(URLEncoder.encode(key, StandardCharsets.UTF_8))
+                        .append("=")
+                        .append(URLEncoder.encode(value, StandardCharsets.UTF_8));
+                    log.debug("📦 Added metadata field: metadata.{}={}", key, value);
                 }
-                body.append("metadata=").append(URLEncoder.encode(metadataJson, StandardCharsets.UTF_8));
+                log.info("📦 Metadata fields added: {}", String.join(", ", metadata.keySet()));
+            } else {
+                log.warn("⚠️ Metadata is null or empty, skipping metadata in request");
             }
             
+            // 记录完整的请求体（用于调试）
+            String requestBody = body.toString();
+            log.debug("📦 Request body (first 500 chars): {}", 
+                    requestBody.length() > 500 ? requestBody.substring(0, 500) + "..." : requestBody);
+            
             HttpHeaders headers = buildHeaders();
-            HttpEntity<String> request = new HttpEntity<>(body.toString(), headers);
+            HttpEntity<String> request = new HttpEntity<>(requestBody, headers);
             
             ResponseEntity<Map> response = restTemplate.exchange(
                     url, HttpMethod.POST, request, Map.class);
@@ -135,8 +140,13 @@ public class NacosV3ApiService {
                 Map<String, Object> bodyMap = response.getBody();
                 Integer code = (Integer) bodyMap.get("code");
                 if (code != null && code == 0) {
-                    log.info("✅ Successfully registered instance to Nacos v3: {}:{} (service: {})", 
-                            ip, port, serviceName);
+                    log.info("✅ Successfully registered instance to Nacos v3: {}:{} (service: {}, metadata size: {})", 
+                            ip, port, serviceName, metadata != null ? metadata.size() : 0);
+                    if (metadata != null && !metadata.isEmpty()) {
+                        log.debug("📦 Registered metadata keys: {}", String.join(", ", metadata.keySet()));
+                    } else {
+                        log.warn("⚠️ Warning: metadata is empty when registering instance to Nacos v3!");
+                    }
                     return true;
                 } else {
                     String message = (String) bodyMap.get("message");
@@ -163,13 +173,14 @@ public class NacosV3ApiService {
      * @param ip IP地址
      * @param port 端口号
      * @param groupName 分组名，默认为DEFAULT_GROUP
+     * @param ephemeral 是否为临时节点（必填参数）
      * @return 是否注销成功
      */
-    public boolean deregisterInstance(String serviceName, String ip, int port, String groupName) {
+    public boolean deregisterInstance(String serviceName, String ip, int port, String groupName, boolean ephemeral) {
         try {
             String url = getBaseUrl() + "/v3/client/ns/instance";
             
-            // 构建查询参数
+            // 构建查询参数（所有参数都是必填的）
             StringBuilder queryParams = new StringBuilder();
             queryParams.append("namespaceId=").append(URLEncoder.encode(namespace, StandardCharsets.UTF_8));
             queryParams.append("&groupName=").append(URLEncoder.encode(
@@ -177,6 +188,7 @@ public class NacosV3ApiService {
             queryParams.append("&serviceName=").append(URLEncoder.encode(serviceName, StandardCharsets.UTF_8));
             queryParams.append("&ip=").append(URLEncoder.encode(ip, StandardCharsets.UTF_8));
             queryParams.append("&port=").append(port);
+            queryParams.append("&ephemeral=").append(ephemeral); // 必填参数
             
             url += "?" + queryParams.toString();
             
@@ -192,8 +204,8 @@ public class NacosV3ApiService {
                 if (code != null && code == 0) {
                     String data = (String) bodyMap.get("data");
                     if ("ok".equals(data)) {
-                        log.info("✅ Successfully deregistered instance from Nacos v3: {}:{} (service: {})", 
-                                ip, port, serviceName);
+                        log.info("✅ Successfully deregistered instance from Nacos v3: {}:{} (service: {}, ephemeral: {})", 
+                                ip, port, serviceName, ephemeral);
                         return true;
                     }
                 }

@@ -184,7 +184,7 @@ public class VirtualProjectController {
     }
     
     /**
-     * 删除虚拟项目
+     * 删除虚拟项目（通过 ID）
      */
     @DeleteMapping("/{virtualProjectId}")
     public ResponseEntity<Map<String, Object>> deleteVirtualProject(
@@ -202,6 +202,68 @@ public class VirtualProjectController {
             log.error("删除虚拟项目失败: {}", virtualProjectId, e);
             Map<String, Object> error = new HashMap<>();
             error.put("error", "删除虚拟项目失败: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(error);
+        }
+    }
+    
+    /**
+     * 删除虚拟项目（通过 endpointName）
+     * 支持删除内存中不存在的虚拟项目（从 Nacos 删除）
+     */
+    @DeleteMapping("/by-endpoint/{endpointName}")
+    public ResponseEntity<Map<String, Object>> deleteVirtualProjectByEndpointName(
+            @PathVariable String endpointName) {
+        try {
+            boolean success = virtualProjectService.deleteVirtualProjectByEndpointName(endpointName);
+            
+            Map<String, Object> response = new HashMap<>();
+            if (success) {
+                response.put("message", "虚拟项目删除成功");
+                response.put("endpointName", endpointName);
+                response.put("deletedFromNacos", true);
+                return ResponseEntity.ok(response);
+            } else {
+                response.put("error", "虚拟项目删除失败");
+                response.put("endpointName", endpointName);
+                return ResponseEntity.internalServerError().body(response);
+            }
+            
+        } catch (Exception e) {
+            log.error("删除虚拟项目失败: endpointName={}", endpointName, e);
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "删除虚拟项目失败: " + e.getMessage());
+            error.put("endpointName", endpointName);
+            return ResponseEntity.internalServerError().body(error);
+        }
+    }
+    
+    /**
+     * 删除虚拟项目（通过 serviceName）
+     * 支持删除内存中不存在的虚拟项目（从 Nacos 删除）
+     */
+    @DeleteMapping("/by-service/{serviceName}")
+    public ResponseEntity<Map<String, Object>> deleteVirtualProjectByServiceName(
+            @PathVariable String serviceName) {
+        try {
+            boolean success = virtualProjectService.deleteVirtualProjectByServiceName(serviceName);
+            
+            Map<String, Object> response = new HashMap<>();
+            if (success) {
+                response.put("message", "虚拟项目删除成功");
+                response.put("serviceName", serviceName);
+                response.put("deletedFromNacos", true);
+                return ResponseEntity.ok(response);
+            } else {
+                response.put("error", "虚拟项目删除失败");
+                response.put("serviceName", serviceName);
+                return ResponseEntity.internalServerError().body(response);
+            }
+            
+        } catch (Exception e) {
+            log.error("删除虚拟项目失败: serviceName={}", serviceName, e);
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "删除虚拟项目失败: " + e.getMessage());
+            error.put("serviceName", serviceName);
             return ResponseEntity.internalServerError().body(error);
         }
     }

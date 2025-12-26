@@ -68,3 +68,4 @@ public interface InterfaceWhitelistMapper {
     InterfaceWhitelistEntity findByPrefix(@Param("prefix") String prefix);
 }
 
+

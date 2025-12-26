@@ -41,6 +41,9 @@ public class ProjectManagementService {
         this.filterService = filterService;
     }
     
+    @Autowired(required = false)
+    private DubboServiceDbService dubboServiceDbService;
+    
     /**
      * 创建项目
      */
@@ -95,6 +98,32 @@ public class ProjectManagementService {
     public void addProjectService(ProjectService projectService) {
         Long projectId = projectService.getProjectId();
         
+        // 如果 serviceId 为空，尝试查找对应的 zk_dubbo_service.id
+        if (projectService.getServiceId() == null && dubboServiceDbService != null) {
+            try {
+                // 构建 ProviderInfo 用于查找
+                com.pajk.mcpmetainfo.core.model.ProviderInfo tempProvider = new com.pajk.mcpmetainfo.core.model.ProviderInfo();
+                tempProvider.setInterfaceName(projectService.getServiceInterface());
+                tempProvider.setVersion(projectService.getServiceVersion());
+                tempProvider.setGroup(projectService.getServiceGroup());
+                
+                java.util.Optional<com.pajk.mcpmetainfo.persistence.entity.DubboServiceEntity> serviceOpt = 
+                    dubboServiceDbService.findByServiceKey(tempProvider);
+                
+                if (serviceOpt.isPresent()) {
+                    projectService.setServiceId(serviceOpt.get().getId());
+                    log.info("✅ Found service_id for ProjectService: {} -> serviceId={}", 
+                            projectService.buildServiceKey(), serviceOpt.get().getId());
+                } else {
+                    log.warn("⚠️ Cannot find service_id for ProjectService: {}, will use fuzzy matching", 
+                            projectService.buildServiceKey());
+                }
+            } catch (Exception e) {
+                log.warn("⚠️ Failed to find service_id for ProjectService: {}, error: {}", 
+                        projectService.buildServiceKey(), e.getMessage());
+            }
+        }
+        
         // 添加到项目服务列表
         projectServiceCache.computeIfAbsent(projectId, k -> new ArrayList<>())
                 .add(projectService);
@@ -111,8 +140,8 @@ public class ProjectManagementService {
                     projectService.getServiceVersion());
         }
         
-        log.info("Added project service: projectId={}, service={}", 
-                projectId, serviceKey);
+        log.info("Added project service: projectId={}, service={}, serviceId={}", 
+                projectId, serviceKey, projectService.getServiceId());
     }
     
     /**

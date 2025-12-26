@@ -38,3 +38,4 @@ FROM zk_dubbo_service_node
 GROUP BY service_id, address
 HAVING COUNT(*) > 1;
 
+

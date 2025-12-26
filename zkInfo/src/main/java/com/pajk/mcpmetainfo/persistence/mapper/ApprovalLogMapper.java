@@ -14,3 +14,4 @@ public interface ApprovalLogMapper {
     List<ApprovalLog> findByProviderIdOrderByCreatedAtDesc(@Param("providerId") Long providerId);
 }
 
+

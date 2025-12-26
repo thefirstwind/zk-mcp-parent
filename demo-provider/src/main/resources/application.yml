@@ -11,21 +11,36 @@ dubbo:
   application:
     name: demo-provider
     version: 1.0.0
+    # 设置全局参数，确保注册到 ZooKeeper 的 metadata 中使用 hessian2
+    parameters:
+      prefer.serialization: hessian2  # 关键：设置优先序列化方式为 hessian2，避免 fastjson2
   registry:
     address: zookeeper://localhost:2181
     timeout: 10000
   protocol:
     name: dubbo
     port: 20883
+    serialization: hessian2  # 强制使用 hessian2 序列化
+    # 协议级别也设置 prefer.serialization
+    parameters:
+      prefer.serialization: hessian2
   provider:
     timeout: 3000
     retries: 0
     loadbalance: roundrobin
+    serialization: hessian2  # Provider 端强制使用 hessian2 序列化
+    # Provider 级别也设置 prefer.serialization，确保注册信息正确
+    parameters:
+      prefer.serialization: hessian2
   consumer:
     timeout: 3000
     retries: 0
   scan:
     base-packages: com.zkinfo.demo.service.impl
+  # 元数据上报配置（重要：用于在ZooKeeper中存储服务元数据，包括方法参数信息）
+  metadata-report:
+    address: zookeeper://localhost:2181
+    timeout: 10000
 
 # 日志配置
 logging:

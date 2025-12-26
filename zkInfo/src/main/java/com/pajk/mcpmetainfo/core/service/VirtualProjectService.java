@@ -29,6 +29,9 @@ public class VirtualProjectService {
     private final ProjectManagementService projectManagementService;
     private final VirtualProjectRegistrationService registrationService;
     
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private InterfaceWhitelistService interfaceWhitelistService;
+    
     // 虚拟项目缓存：virtualProjectId -> Project
     private final Map<Long, Project> virtualProjectCache = new ConcurrentHashMap<>();
     
@@ -61,6 +64,17 @@ public class VirtualProjectService {
                 project.getId(), project.getProjectCode(), project.getProjectName());
         
         // 2. 关联服务（从不同实际项目中选择）
+        // 检查所需服务是否在白名单中（如果配置了白名单）
+        if (interfaceWhitelistService != null && interfaceWhitelistService.isWhitelistConfigured()) {
+            for (ServiceSelection selection : request.getServices()) {
+                if (!interfaceWhitelistService.isAllowed(selection.getServiceInterface())) {
+                    log.warn("⚠️ Service {} is not in whitelist, virtual project may not work correctly. " +
+                            "Please add it to whitelist or ensure the service is already persisted.", 
+                            selection.getServiceInterface());
+                }
+            }
+        }
+        
         for (ServiceSelection selection : request.getServices()) {
             log.info("Processing service selection: interface={}, version={}, group={}", 
                     selection.getServiceInterface(), selection.getVersion(), selection.getGroup());
@@ -84,11 +98,12 @@ public class VirtualProjectService {
         }
         
         // 3. 创建Endpoint映射
+        // 注意：mcpServiceName 使用 "virtual-{endpointName}" 格式，与 VirtualProjectRegistrationService 保持一致
         VirtualProjectEndpoint endpoint = VirtualProjectEndpoint.builder()
                 .virtualProjectId(project.getId())
                 .endpointName(request.getEndpointName())
                 .endpointPath("/sse/" + request.getEndpointName())
-                .mcpServiceName("mcp-" + request.getEndpointName())
+                .mcpServiceName("virtual-" + request.getEndpointName())
                 .description(request.getDescription())
                 .status(VirtualProjectEndpoint.EndpointStatus.ACTIVE)
                 .createdAt(java.time.LocalDateTime.now())
@@ -177,11 +192,14 @@ public class VirtualProjectService {
     }
     
     /**
-     * 删除虚拟项目
+     * 删除虚拟项目（通过 ID）
      */
     public void deleteVirtualProject(Long virtualProjectId) {
         Project project = virtualProjectCache.get(virtualProjectId);
         if (project == null) {
+            log.warn("Virtual project not found in memory: virtualProjectId={}, will try to delete from Nacos", virtualProjectId);
+            // 即使内存中没有，也尝试从 Nacos 删除（可能服务重启后内存丢失）
+            // 但无法确定 endpointName，所以只能记录警告
             return;
         }
         
@@ -206,6 +224,50 @@ public class VirtualProjectService {
         endpointCache.remove(virtualProjectId);
         
         log.info("Deleted virtual project: virtualProjectId={}", virtualProjectId);
+    }
+    
+    /**
+     * 删除虚拟项目（通过 endpointName）
+     * 即使内存中没有虚拟项目，也能从 Nacos 删除
+     */
+    public boolean deleteVirtualProjectByEndpointName(String endpointName) {
+        // 1. 先尝试从内存中查找
+        VirtualProjectEndpoint endpoint = getEndpointByEndpointName(endpointName);
+        if (endpoint != null) {
+            // 找到虚拟项目，使用完整的删除流程
+            Long virtualProjectId = endpoint.getVirtualProjectId();
+            deleteVirtualProject(virtualProjectId);
+            return true;
+        }
+        
+        // 2. 内存中没有，直接从 Nacos 删除
+        log.warn("Virtual project not found in memory: endpointName={}, will delete from Nacos directly", endpointName);
+        try {
+            // 构建服务名称（virtual-{endpointName}）
+            String serviceName = "virtual-" + endpointName;
+            registrationService.deregisterVirtualProjectFromNacosByServiceName(serviceName, "1.0.0");
+            log.info("✅ Deleted virtual project from Nacos (not in memory): endpointName={}, serviceName={}", 
+                    endpointName, serviceName);
+            return true;
+        } catch (Exception e) {
+            log.error("❌ Failed to delete virtual project from Nacos: endpointName={}", endpointName, e);
+            return false;
+        }
+    }
+    
+    /**
+     * 删除虚拟项目（通过 serviceName，从 Nacos 查询）
+     * 支持删除内存中不存在的虚拟项目
+     */
+    public boolean deleteVirtualProjectByServiceName(String serviceName) {
+        // 如果 serviceName 以 virtual- 开头，提取 endpointName
+        String endpointName = serviceName;
+        if (serviceName.startsWith("virtual-")) {
+            endpointName = serviceName.substring("virtual-".length());
+        }
+        
+        // 尝试通过 endpointName 删除
+        return deleteVirtualProjectByEndpointName(endpointName);
     }
     
     /**

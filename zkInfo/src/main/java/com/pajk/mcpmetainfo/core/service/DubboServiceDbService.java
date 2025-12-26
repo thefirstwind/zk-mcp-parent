@@ -608,6 +608,47 @@ public class DubboServiceDbService {
     }
     
     /**
+     * 根据 service_id 查询 Provider 信息（用于虚拟节点创建，优化版本）
+     * 
+     * @param serviceId 服务ID
+     * @return Provider 信息列表
+     */
+    public List<ProviderInfo> getProvidersByServiceId(Long serviceId) {
+        try {
+            List<ProviderInfo> providers = new java.util.ArrayList<>();
+            
+            // 1. 查询服务信息
+            DubboServiceEntity service = dubboServiceMapper.findById(serviceId);
+            if (service == null) {
+                log.warn("Service not found: serviceId={}", serviceId);
+                return providers;
+            }
+            
+            // 2. 查询该服务的所有节点
+            List<DubboServiceNodeEntity> nodes = dubboServiceNodeMapper.findByServiceId(serviceId);
+            if (nodes == null || nodes.isEmpty()) {
+                log.debug("No nodes found for service: serviceId={}", serviceId);
+                return providers;
+            }
+            
+            // 3. 对每个节点，查询对应的 Provider 信息
+            for (DubboServiceNodeEntity node : nodes) {
+                ProviderInfo providerInfo = convertToProviderInfo(service, node);
+                if (providerInfo != null && providerInfo.isOnline()) {
+                    providers.add(providerInfo);
+                }
+            }
+            
+            log.debug("从 zk_dubbo_* 表查询到 {} 个在线 Provider (serviceId={})", providers.size(), serviceId);
+            return providers;
+            
+        } catch (Exception e) {
+            log.error("根据 service_id 查询 Provider 信息失败: serviceId={}", serviceId, e);
+            return java.util.Collections.emptyList();
+        }
+    }
+    
+    /**
      * 从 zk_dubbo_* 表查询所有 Provider 信息（用于虚拟节点创建）
      * 
      * 注意：此方法使用新的 zk_dubbo_* 表结构，而不是老的 zk_provider* 表

@@ -13,6 +13,7 @@ import org.apache.curator.framework.state.ConnectionState;
 import org.apache.curator.framework.state.ConnectionStateListener;
 import org.apache.curator.retry.RetryForever;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
@@ -53,6 +54,7 @@ public class ZooKeeperService {
     @Autowired
     private ProviderService providerService;
     
+    @Lazy
     @Autowired(required = false)
     private DubboToMcpRegistrationService dubboToMcpRegistrationService;
     

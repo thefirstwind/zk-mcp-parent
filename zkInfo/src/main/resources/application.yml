@@ -54,6 +54,19 @@ mybatis:
     use-generated-keys: true
     default-executor-type: simple
 
+# Dubbo配置（用于MCP泛化调用）
+dubbo:
+  application:
+    name: zkinfo-mcp-client
+  consumer:
+    serialization: hessian2  # 强制使用 hessian2 序列化
+    generic: true  # 启用泛化调用
+    timeout: 3000
+    retries: 0
+    check: false
+  protocol:
+    serialization: hessian2  # 协议级别强制使用 hessian2
+
 # ZooKeeper配置
 zookeeper:
   connect-string: ${ZK_CONNECT_STRING:localhost:2181}
@@ -70,7 +83,7 @@ zookeeper:
 # 如果为空，则允许所有接口入库（不推荐，建议配置白名单以确保安全）
 zk:
   whitelist:
-    interfaces: ${ZK_WHITELIST_INTERFACES:com.zkinfo.demo}  # 配置文件白名单（支持多个，逗号分隔）
+    interfaces: ${ZK_WHITELIST_INTERFACES:com.zkinfo.demo.service.UserService,com.zkinfo.demo.service.ProductService,com.zkinfo.demo.service.OrderService}  # 配置文件白名单（支持多个，逗号分隔）
     database:
       enabled: ${ZK_WHITELIST_DB_ENABLED:true}  # 是否启用数据库白名单（默认启用）
     cache:

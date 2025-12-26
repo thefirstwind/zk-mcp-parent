@@ -146,7 +146,8 @@ public class OrderServiceImpl implements OrderService {
         log.info("Order total calculated: {} = {}", orderId, total);
         return total;
     }
-}
+
+}   
 
 
 

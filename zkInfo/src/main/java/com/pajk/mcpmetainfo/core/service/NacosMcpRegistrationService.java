@@ -136,7 +136,8 @@ public class NacosMcpRegistrationService {
             publishConfigsToNacos(serviceId, mcpServiceName, version, tools);
             
             // 4. 注册服务实例到Nacos服务列表（使用虚拟项目名称作为 application）
-            // 虚拟项目使用持久节点（ephemeral=false），不需要心跳机制
+            // 虚拟项目使用永久节点（ephemeral=false），即使 zkInfo 停止也不会自动删除
+            // 需要手动删除或通过 API 删除
             registerInstanceToNacos(mcpServiceName, serviceId, version, tools, providers, virtualProjectName, false);
             
             log.info("✅ Successfully registered virtual project MCP service: {} to Nacos (application: {})", 
@@ -518,25 +519,39 @@ public class NacosMcpRegistrationService {
         instance.setEnabled(true);
         instance.setEphemeral(ephemeral);
         
-        // 对于虚拟项目（持久节点），记录日志
-        if (!ephemeral) {
+        // 对于虚拟项目，记录节点类型日志
+        if (ephemeral) {
+            log.info("📌 Registering virtual project as ephemeral node (ephemeral=true): {} - will be auto-deleted when zkInfo stops", mcpServiceName);
+        } else {
             log.info("📌 Registering virtual project as persistent node (ephemeral=false): {}", mcpServiceName);
         }
         
-        // 设置元数据
+        // 设置元数据（MCP 客户端初始化所需的关键字段）
         Map<String, String> metadata = new HashMap<>();
+        
+        // 基础信息
         metadata.put("version", version != null ? version : "1.0.0");
-        metadata.put("sseEndpoint", "/sse");
-        metadata.put("sseMessageEndpoint", "/mcp/message");
         metadata.put("protocol", "mcp-sse");
+        metadata.put("scheme", "http"); // 添加 scheme 字段（MCP 客户端需要）
+        
+        // SSE 端点信息（MCP 客户端初始化时需要使用）
+        // 注意：endpoint 应该包含完整的路径，客户端会使用 baseUrl + endpoint
+        // 对于虚拟项目，sseEndpoint 应该是 /sse/{endpointName}
+        String endpointName = mcpServiceName.replace("virtual-", ""); // 去掉 virtual- 前缀
+        String sseEndpoint = "/sse/" + endpointName;
+        metadata.put("sseEndpoint", sseEndpoint);
+        metadata.put("sseMessageEndpoint", "/mcp/message");
+        
+        // 服务标识
         metadata.put("serverName", mcpServiceName);
         metadata.put("serverId", serviceId);
         
-        // 设置application：归属应用应该设置为服务名（mcpServiceName）
-        // 这是 Nacos 服务列表中的服务名，用于标识服务归属
-        String finalApplication = mcpServiceName;
+        // 设置application：对于虚拟项目，使用传入的 application 参数（虚拟项目名称）
+        // 如果 application 为 null，则使用服务名（mcpServiceName）作为备选
+        String finalApplication = application != null && !application.isEmpty() ? application : mcpServiceName;
         metadata.put("application", finalApplication);
-        log.info("📦 Setting application for MCP service: {} -> {} (service name)", mcpServiceName, finalApplication);
+        log.info("📦 Setting application for MCP service: {} -> {} (virtual project: {})", 
+                mcpServiceName, finalApplication, application != null ? application : "N/A");
         
         // 工具数量（而不是完整的工具名称列表，避免超过 Nacos metadata 1024 字节限制）
         // 工具列表已经存储在 Nacos 配置中心的 mcp-tools.json 中，可以通过 toolsDescriptionRef 获取
@@ -558,6 +573,18 @@ public class NacosMcpRegistrationService {
         
         log.debug("📦 Metadata size: {} bytes (limit: 1024)", totalSize);
         
+        // 记录元数据内容（用于调试）
+        log.info("📦 Metadata for virtual project {}: version={}, sseEndpoint={}, sseMessageEndpoint={}, protocol={}, serverName={}, serverId={}, application={}, tools.count={}", 
+                mcpServiceName,
+                metadata.get("version"),
+                metadata.get("sseEndpoint"),
+                metadata.get("sseMessageEndpoint"),
+                metadata.get("protocol"),
+                metadata.get("serverName"),
+                metadata.get("serverId"),
+                metadata.get("application"),
+                metadata.get("tools.count"));
+        
         // 计算server配置的MD5
         String serverDataId = serviceId + "-" + version + "-mcp-server.json";
         try {
@@ -578,25 +605,65 @@ public class NacosMcpRegistrationService {
             log.warn("Failed to get server config for MD5 calculation", e);
         }
         
+        // 确保 metadata 不为空
+        if (metadata == null || metadata.isEmpty()) {
+            log.error("❌ Metadata is empty! Cannot register instance without metadata.");
+            throw new RuntimeException("Metadata is required for MCP service registration");
+        }
+        
+        // 记录元数据内容（用于调试和验证）
+        log.info("📦 Registering instance with {} metadata fields: {}", metadata.size(), String.join(", ", metadata.keySet()));
+        log.debug("📦 Metadata details for {}: {}", mcpServiceName, metadata);
+        
         instance.setMetadata(metadata);
         
-        // 注册实例：优先使用 v3 API，否则使用 SDK
-        if (useV3Api && nacosV3ApiService != null) {
-            boolean success = nacosV3ApiService.registerInstance(
-                    mcpServiceName, localIp, serverPort, serviceGroup, 
-                    "DEFAULT", ephemeral, metadata);
-            if (success) {
-                log.info("✅ Registered instance to Nacos v3: {}:{} in group: {} (application: {}, ephemeral: {})", 
-                        localIp, serverPort, serviceGroup, finalApplication != null ? finalApplication : "N/A", ephemeral);
-            } else {
-                log.warn("⚠️ Failed to register via v3 API, falling back to SDK");
-                namingService.registerInstance(mcpServiceName, serviceGroup, instance);
-            }
-        } else {
-            // 使用 SDK 注册（向后兼容）
+        // 注册实例：优先使用 SDK（因为 SDK 的 metadata 传递更可靠），v3 API 作为备选
+        // 注意：Nacos SDK 的 registerInstance 方法会正确处理 metadata
+        // 而 v3 API 的 metadata 传递可能存在问题，所以优先使用 SDK
+        try {
+            // 使用 SDK 注册（确保 metadata 正确传递）
             namingService.registerInstance(mcpServiceName, serviceGroup, instance);
-            log.info("✅ Registered instance to Nacos (SDK): {}:{} in group: {} (application: {}, ephemeral: {})", 
-                    localIp, serverPort, serviceGroup, finalApplication != null ? finalApplication : "N/A", ephemeral);
+            log.info("✅ Registered instance to Nacos (SDK): {}:{} in group: {} (application: {}, ephemeral: {}, metadata: {} fields)", 
+                    localIp, serverPort, serviceGroup, finalApplication != null ? finalApplication : "N/A", ephemeral, metadata.size());
+            log.info("📦 Registered metadata keys: {}", String.join(", ", metadata.keySet()));
+            
+            // 验证注册后的实例是否包含 metadata（通过查询实例列表）
+            try {
+                List<com.alibaba.nacos.api.naming.pojo.Instance> instances = namingService.getAllInstances(mcpServiceName, serviceGroup);
+                for (com.alibaba.nacos.api.naming.pojo.Instance registeredInstance : instances) {
+                    if (localIp.equals(registeredInstance.getIp()) && serverPort == registeredInstance.getPort()) {
+                        Map<String, String> registeredMetadata = registeredInstance.getMetadata();
+                        if (registeredMetadata != null && !registeredMetadata.isEmpty()) {
+                            log.info("✅ Verified: Instance metadata in Nacos: {} fields - {}", 
+                                    registeredMetadata.size(), String.join(", ", registeredMetadata.keySet()));
+                        } else {
+                            log.error("❌ ERROR: Instance registered but metadata is empty in Nacos! Expected {} fields: {}", 
+                                    metadata.size(), String.join(", ", metadata.keySet()));
+                        }
+                        break;
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("⚠️ Failed to verify instance metadata after registration: {}", e.getMessage());
+            }
+        } catch (Exception e) {
+            log.error("❌ Failed to register via SDK: {}", e.getMessage(), e);
+            // 如果 SDK 失败，尝试使用 v3 API（作为最后的备选）
+            if (useV3Api && nacosV3ApiService != null) {
+                log.warn("⚠️ Trying v3 API as fallback...");
+                boolean success = nacosV3ApiService.registerInstance(
+                        mcpServiceName, localIp, serverPort, serviceGroup, 
+                        "DEFAULT", ephemeral, metadata);
+                if (success) {
+                    log.info("✅ Registered instance to Nacos v3 (fallback): {}:{} in group: {} (application: {}, ephemeral: {}, metadata: {} fields)", 
+                            localIp, serverPort, serviceGroup, finalApplication != null ? finalApplication : "N/A", ephemeral, metadata.size());
+                } else {
+                    log.error("❌ Failed to register via v3 API fallback");
+                    throw new RuntimeException("Failed to register instance to Nacos", e);
+                }
+            } else {
+                throw new RuntimeException("Failed to register instance to Nacos", e);
+            }
         }
     }
     
@@ -899,12 +966,36 @@ public class NacosMcpRegistrationService {
             String mcpServiceName = buildMcpServiceName(serviceInterface, version);
             String localIp = getLocalIp();
             
+            // 查询实例的 ephemeral 状态（普通 Dubbo 服务都是临时节点）
+            boolean ephemeral = true; // 普通 Dubbo 服务默认都是临时节点
+            if (useV3Api && nacosV3ApiService != null) {
+                try {
+                    List<Map<String, Object>> instances = nacosV3ApiService.getInstanceList(
+                            mcpServiceName, serviceGroup, null, false);
+                    for (Map<String, Object> instance : instances) {
+                        String instanceIp = (String) instance.get("ip");
+                        Integer instancePort = (Integer) instance.get("port");
+                        if (localIp.equals(instanceIp) && serverPort == instancePort) {
+                            Object ephemeralObj = instance.get("ephemeral");
+                            if (ephemeralObj instanceof Boolean) {
+                                ephemeral = (Boolean) ephemeralObj;
+                            } else if (ephemeralObj instanceof String) {
+                                ephemeral = Boolean.parseBoolean((String) ephemeralObj);
+                            }
+                            break;
+                        }
+                    }
+                } catch (Exception e) {
+                    log.debug("Failed to query instance ephemeral status, using default (ephemeral=true): {}", e.getMessage());
+                }
+            }
+            
             // 注销实例：优先使用 v3 API，否则使用 SDK
             if (useV3Api && nacosV3ApiService != null) {
                 boolean success = nacosV3ApiService.deregisterInstance(
-                        mcpServiceName, localIp, serverPort, serviceGroup);
+                        mcpServiceName, localIp, serverPort, serviceGroup, ephemeral);
                 if (success) {
-                    log.info("✅ Deregistered MCP service (v3 API): {} from Nacos", mcpServiceName);
+                    log.info("✅ Deregistered MCP service (v3 API): {} from Nacos (ephemeral: {})", mcpServiceName, ephemeral);
                 } else {
                     log.warn("⚠️ Failed to deregister via v3 API, falling back to SDK");
                     namingService.deregisterInstance(mcpServiceName, serviceGroup, localIp, serverPort);
@@ -920,27 +1011,107 @@ public class NacosMcpRegistrationService {
     
     /**
      * 注销虚拟项目MCP服务从Nacos（使用指定的服务名称）
+     * 包括：删除服务实例和所有相关配置
      */
     public void deregisterVirtualProjectMcpService(String mcpServiceName, String version) {
         try {
             String localIp = getLocalIp();
             
-            // 注销实例：优先使用 v3 API，否则使用 SDK
+            // 1. 生成服务ID（与注册时保持一致）
+            String serviceId = generateServiceId(mcpServiceName, version);
+            
+            // 2. 删除 Nacos 配置中心的配置
+            deleteConfigsFromNacos(serviceId, mcpServiceName, version);
+            
+            // 3. 查询实例的 ephemeral 状态（用于正确删除）
+            // 注意：虚拟节点是永久节点（ephemeral=false），需要查询实际状态以确保正确删除
+            boolean ephemeral = false; // 默认值：虚拟节点是永久节点（ephemeral=false）
+            if (useV3Api && nacosV3ApiService != null) {
+                try {
+                    List<Map<String, Object>> instances = nacosV3ApiService.getInstanceList(
+                            mcpServiceName, serviceGroup, null, false);
+                    for (Map<String, Object> instance : instances) {
+                        String instanceIp = (String) instance.get("ip");
+                        Integer instancePort = (Integer) instance.get("port");
+                        if (localIp.equals(instanceIp) && serverPort == instancePort) {
+                            // 获取 ephemeral 状态
+                            Object ephemeralObj = instance.get("ephemeral");
+                            if (ephemeralObj instanceof Boolean) {
+                                ephemeral = (Boolean) ephemeralObj;
+                            } else if (ephemeralObj instanceof String) {
+                                ephemeral = Boolean.parseBoolean((String) ephemeralObj);
+                            }
+                            log.info("🔍 Found instance ephemeral status: {} (service: {}, ip: {}, port: {})", 
+                                    ephemeral, mcpServiceName, localIp, serverPort);
+                            break;
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("⚠️ Failed to query instance ephemeral status, using default (ephemeral=false for virtual projects): {}", e.getMessage());
+                }
+            }
+            
+            // 4. 注销服务实例：优先使用 v3 API，否则使用 SDK
             if (useV3Api && nacosV3ApiService != null) {
                 boolean success = nacosV3ApiService.deregisterInstance(
-                        mcpServiceName, localIp, serverPort, serviceGroup);
+                        mcpServiceName, localIp, serverPort, serviceGroup, ephemeral);
                 if (success) {
-                    log.info("✅ Deregistered virtual project MCP service (v3 API): {} from Nacos", mcpServiceName);
+                    log.info("✅ Deregistered virtual project MCP service instance (v3 API): {} from Nacos (ephemeral: {})", 
+                            mcpServiceName, ephemeral);
                 } else {
-                    log.warn("⚠️ Failed to deregister via v3 API, falling back to SDK");
+                    log.warn("⚠️ Failed to deregister instance via v3 API, falling back to SDK");
                     namingService.deregisterInstance(mcpServiceName, serviceGroup, localIp, serverPort);
                 }
             } else {
                 namingService.deregisterInstance(mcpServiceName, serviceGroup, localIp, serverPort);
-                log.info("✅ Deregistered virtual project MCP service (SDK): {} from Nacos", mcpServiceName);
+                log.info("✅ Deregistered virtual project MCP service instance (SDK): {} from Nacos", mcpServiceName);
             }
+            
+            log.info("✅ Successfully deregistered virtual project MCP service: {} (serviceId: {}, ephemeral: {})", 
+                    mcpServiceName, serviceId, ephemeral);
         } catch (Exception e) {
             log.error("❌ Failed to deregister virtual project MCP service: {}", mcpServiceName, e);
+        }
+    }
+    
+    /**
+     * 从 Nacos 配置中心删除配置
+     * 删除注册时创建的所有配置：tools、versions、server
+     */
+    private void deleteConfigsFromNacos(String serviceId, String mcpServiceName, String version) {
+        try {
+            // 1. 删除 mcp-tools.json
+            String toolsDataId = serviceId + "-" + version + "-mcp-tools.json";
+            try {
+                configService.removeConfig(toolsDataId, TOOLS_GROUP);
+                log.info("✅ Deleted tools config: {}", toolsDataId);
+            } catch (Exception e) {
+                log.warn("⚠️ Failed to delete tools config: {} - {}", toolsDataId, e.getMessage());
+            }
+            
+            // 2. 删除 mcp-versions.json
+            String versionsDataId = serviceId + "-mcp-versions.json";
+            try {
+                configService.removeConfig(versionsDataId, VERSIONS_GROUP);
+                log.info("✅ Deleted versions config: {}", versionsDataId);
+            } catch (Exception e) {
+                log.warn("⚠️ Failed to delete versions config: {} - {}", versionsDataId, e.getMessage());
+            }
+            
+            // 3. 删除 mcp-server.json
+            String serverDataId = serviceId + "-" + version + "-mcp-server.json";
+            try {
+                configService.removeConfig(serverDataId, SERVER_GROUP);
+                log.info("✅ Deleted server config: {}", serverDataId);
+            } catch (Exception e) {
+                log.warn("⚠️ Failed to delete server config: {} - {}", serverDataId, e.getMessage());
+            }
+            
+            log.info("✅ Successfully deleted all configs for virtual project: {} (serviceId: {})", 
+                    mcpServiceName, serviceId);
+        } catch (Exception e) {
+            log.error("❌ Failed to delete configs from Nacos: serviceId={}, mcpServiceName={}", 
+                    serviceId, mcpServiceName, e);
         }
     }
 }

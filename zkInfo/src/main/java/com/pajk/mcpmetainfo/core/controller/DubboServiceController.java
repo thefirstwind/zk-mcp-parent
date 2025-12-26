@@ -10,8 +10,6 @@ import com.pajk.mcpmetainfo.core.service.DubboServiceDbService;
 import com.pajk.mcpmetainfo.core.service.DubboServiceMethodService;
 import com.pajk.mcpmetainfo.core.service.ZkWatcherSchedulerService;
 import com.pajk.mcpmetainfo.core.model.PageResult;
-import com.pajk.mcpmetainfo.core.model.UserRole;
-import com.pajk.mcpmetainfo.core.util.PermissionChecker;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -75,8 +73,6 @@ public class DubboServiceController {
             @RequestParam String approver,
             @RequestParam(required = false) String comment) {
         try {
-            // 权限校验
-            PermissionChecker.checkPermission(UserRole.Permission.APPROVE_SERVICE);
             // 审批服务
             DubboServiceEntity approvedService = dubboServiceDbService.approveService(id, approver, true, comment);
             
@@ -91,9 +87,6 @@ public class DubboServiceController {
             }
             
             return ResponseEntity.ok("Dubbo服务审批成功，已添加ZooKeeper watcher");
-        } catch (SecurityException e) {
-            log.warn("权限不足: {}", e.getMessage());
-            return ResponseEntity.status(403).body("权限不足: " + e.getMessage());
         } catch (Exception e) {
             log.error("审批Dubbo服务失败", e);
             return ResponseEntity.status(500).body("审批失败: " + e.getMessage());
@@ -131,12 +124,8 @@ public class DubboServiceController {
             @RequestParam(required = false) String comment) {
         try {
             // 权限校验
-            PermissionChecker.checkPermission(UserRole.Permission.REJECT_SERVICE);
             dubboServiceDbService.approveService(id, approver, false, comment);
             return ResponseEntity.ok("Dubbo服务拒绝成功");
-        } catch (SecurityException e) {
-            log.warn("权限不足: {}", e.getMessage());
-            return ResponseEntity.status(403).body("权限不足: " + e.getMessage());
         } catch (Exception e) {
             log.error("拒绝Dubbo服务失败", e);
             return ResponseEntity.status(500).body("拒绝失败: " + e.getMessage());
@@ -156,7 +145,6 @@ public class DubboServiceController {
             @RequestParam(defaultValue = "10") int size) {
         try {
             // 权限校验
-            PermissionChecker.checkPermission(UserRole.Permission.VIEW_SERVICE);
             PageResult<DubboServiceEntity> result = dubboServiceDbService.findByApprovalStatusWithPagination(
                 DubboServiceEntity.ApprovalStatus.PENDING, page, size);
             return ResponseEntity.ok(result);
@@ -182,7 +170,6 @@ public class DubboServiceController {
             @RequestParam(defaultValue = "10") int size) {
         try {
             // 权限校验
-            PermissionChecker.checkPermission(UserRole.Permission.VIEW_SERVICE);
             PageResult<DubboServiceEntity> result = dubboServiceDbService.findByApprovalStatusWithPagination(
                 DubboServiceEntity.ApprovalStatus.APPROVED, page, size);
             return ResponseEntity.ok(result);
@@ -208,7 +195,6 @@ public class DubboServiceController {
             @RequestParam(defaultValue = "10") int size) {
         try {
             // 权限校验
-            PermissionChecker.checkPermission(UserRole.Permission.VIEW_SERVICE);
             // 使用数据库分页查询
             PageResult<DubboServiceEntity> result = dubboServiceDbService.findWithPagination(page, size);
             return ResponseEntity.ok(result);
@@ -231,7 +217,6 @@ public class DubboServiceController {
     public ResponseEntity<DubboServiceEntity> getServiceById(@PathVariable Long id) {
         try {
             // 权限校验
-            PermissionChecker.checkPermission(UserRole.Permission.VIEW_SERVICE);
             DubboServiceEntity service = dubboServiceDbService.findById(id);
             if (service != null) {
                 return ResponseEntity.ok(service);
@@ -259,7 +244,6 @@ public class DubboServiceController {
     public ResponseEntity<String> createParameter(@RequestBody DubboMethodParameterEntity parameter) {
         try {
             // 权限校验
-            PermissionChecker.checkPermission(UserRole.Permission.CREATE_PARAMETER);
             
             // 获取 interfaceName 和 version：优先使用参数中的，如果为空则从方法实体中获取
             String interfaceName = parameter.getInterfaceName();
@@ -287,9 +271,6 @@ public class DubboServiceController {
                 version,
                 List.of(parameter));
             return ResponseEntity.ok("方法参数创建成功");
-        } catch (SecurityException e) {
-            log.warn("权限不足: {}", e.getMessage());
-            return ResponseEntity.status(403).body("权限不足: " + e.getMessage());
         } catch (Exception e) {
             log.error("创建方法参数失败", e);
             return ResponseEntity.status(500).body("创建失败: " + e.getMessage());
@@ -309,7 +290,6 @@ public class DubboServiceController {
             @RequestBody DubboMethodParameterEntity parameter) {
         try {
             // 权限校验
-            PermissionChecker.checkPermission(UserRole.Permission.UPDATE_PARAMETER);
             // 设置ID
             parameter.setId(id);
             
@@ -335,9 +315,6 @@ public class DubboServiceController {
             // 调用更新方法
             dubboMethodParameterMapper.update(parameter);
             return ResponseEntity.ok("方法参数更新成功");
-        } catch (SecurityException e) {
-            log.warn("权限不足: {}", e.getMessage());
-            return ResponseEntity.status(403).body("权限不足: " + e.getMessage());
         } catch (Exception e) {
             log.error("更新方法参数失败", e);
             return ResponseEntity.status(500).body("更新失败: " + e.getMessage());
@@ -354,13 +331,9 @@ public class DubboServiceController {
     public ResponseEntity<String> deleteParameter(@PathVariable Long id) {
         try {
             // 权限校验
-            PermissionChecker.checkPermission(UserRole.Permission.DELETE_PARAMETER);
             // 调用删除方法
             dubboMethodParameterMapper.deleteById(id);
             return ResponseEntity.ok("方法参数删除成功");
-        } catch (SecurityException e) {
-            log.warn("权限不足: {}", e.getMessage());
-            return ResponseEntity.status(403).body("权限不足: " + e.getMessage());
         } catch (Exception e) {
             log.error("删除方法参数失败", e);
             return ResponseEntity.status(500).body("删除失败: " + e.getMessage());
@@ -377,7 +350,6 @@ public class DubboServiceController {
     public ResponseEntity<DubboMethodParameterEntity> getParameterById(@PathVariable Long id) {
         try {
             // 权限校验
-            PermissionChecker.checkPermission(UserRole.Permission.VIEW_PARAMETER);
             // 获取参数详情
             DubboMethodParameterEntity parameter = dubboMethodParameterMapper.findById(id);
             if (parameter != null) {
@@ -404,7 +376,6 @@ public class DubboServiceController {
     public ResponseEntity<List<DubboMethodParameterEntity>> getParametersByMethodId(@PathVariable Long methodId) {
         try {
             // 权限校验
-            PermissionChecker.checkPermission(UserRole.Permission.VIEW_PARAMETER);
             // 获取方法的所有参数
             List<DubboMethodParameterEntity> parameters = dubboMethodParameterMapper.findByMethodId(methodId);
             return ResponseEntity.ok(parameters);
@@ -432,7 +403,6 @@ public class DubboServiceController {
             @RequestParam String submitter) {
         try {
             // 权限校验
-            PermissionChecker.checkPermission(UserRole.Permission.SUBMIT_FOR_REVIEW);
             DubboServiceEntity service = dubboServiceDbService.findById(id);
             if (service == null) {
                 return ResponseEntity.notFound().build();
@@ -447,9 +417,6 @@ public class DubboServiceController {
             dubboServiceMapper.update(service);
             
             return ResponseEntity.ok("Dubbo服务已提交审核");
-        } catch (SecurityException e) {
-            log.warn("权限不足: {}", e.getMessage());
-            return ResponseEntity.status(403).body("权限不足: " + e.getMessage());
         } catch (Exception e) {
             log.error("提交Dubbo服务审核失败", e);
             return ResponseEntity.status(500).body("提交审核失败: " + e.getMessage());
@@ -483,7 +450,6 @@ public class DubboServiceController {
     public ResponseEntity<List<DubboServiceMethodEntity>> getMethodsByServiceId(@PathVariable Long serviceId) {
         try {
             // 权限校验
-            PermissionChecker.checkPermission(UserRole.Permission.VIEW_SERVICE);
             List<DubboServiceMethodEntity> methods = dubboServiceDbService.findMethodsByServiceId(serviceId);
             return ResponseEntity.ok(methods);
         } catch (SecurityException e) {
@@ -505,7 +471,6 @@ public class DubboServiceController {
     public ResponseEntity<String> syncNodes(@PathVariable Long id) {
         try {
             // 权限校验
-            PermissionChecker.checkPermission(UserRole.Permission.VIEW_SERVICE);
             DubboServiceEntity service = dubboServiceDbService.findById(id);
             if (service == null) {
                 return ResponseEntity.notFound().build();
@@ -587,9 +552,6 @@ public class DubboServiceController {
                     service.getInterfaceName(), id, syncedCount);
             return ResponseEntity.ok(String.format("节点同步成功，共同步 %d 个Provider节点", syncedCount));
             
-        } catch (SecurityException e) {
-            log.warn("权限不足: {}", e.getMessage());
-            return ResponseEntity.status(403).body("权限不足: " + e.getMessage());
         } catch (Exception e) {
             log.error("同步节点失败", e);
             return ResponseEntity.status(500).body("同步节点失败: " + e.getMessage());
@@ -693,7 +655,6 @@ public class DubboServiceController {
     public ResponseEntity<String> offlineService(@PathVariable Long id) {
         try {
             // 权限校验
-            PermissionChecker.checkPermission(UserRole.Permission.APPROVE_SERVICE);
             DubboServiceEntity service = dubboServiceDbService.findById(id);
             if (service == null) {
                 return ResponseEntity.notFound().build();
@@ -727,9 +688,6 @@ public class DubboServiceController {
             
             log.info("成功下线服务: {} (ID: {})", service.getInterfaceName(), id);
             return ResponseEntity.ok("服务已下线，MCP服务已注销");
-        } catch (SecurityException e) {
-            log.warn("权限不足: {}", e.getMessage());
-            return ResponseEntity.status(403).body("权限不足: " + e.getMessage());
         } catch (Exception e) {
             log.error("下线服务失败", e);
             return ResponseEntity.status(500).body("下线服务失败: " + e.getMessage());
@@ -746,7 +704,6 @@ public class DubboServiceController {
     public ResponseEntity<String> onlineService(@PathVariable Long id) {
         try {
             // 权限校验
-            PermissionChecker.checkPermission(UserRole.Permission.APPROVE_SERVICE);
             DubboServiceEntity service = dubboServiceDbService.findById(id);
             if (service == null) {
                 return ResponseEntity.notFound().build();
@@ -844,9 +801,6 @@ public class DubboServiceController {
             
             log.info("成功上线服务: {} (ID: {})", service.getInterfaceName(), id);
             return ResponseEntity.ok("服务已上线，状态已恢复为已审批，MCP服务已重新注册");
-        } catch (SecurityException e) {
-            log.warn("权限不足: {}", e.getMessage());
-            return ResponseEntity.status(403).body("权限不足: " + e.getMessage());
         } catch (Exception e) {
             log.error("上线服务失败", e);
             return ResponseEntity.status(500).body("上线服务失败: " + e.getMessage());
@@ -858,30 +812,4 @@ public class DubboServiceController {
      * 
      * @return 当前用户信息（包含staffId和角色）
      */
-    @GetMapping("/current-user")
-    public ResponseEntity<Map<String, Object>> getCurrentUser() {
-        try {
-            Map<String, Object> userInfo = new HashMap<>();
-            String staffId = PermissionChecker.getCurrentStaffId();
-            UserRole role = PermissionChecker.getCurrentUserRole();
-            
-            userInfo.put("staffId", staffId);
-            userInfo.put("role", role != null ? role.name() : null);
-            userInfo.put("roleDescription", role != null ? role.getDescription() : null);
-            
-            // 获取用户的所有权限
-            if (role != null) {
-                Map<String, Boolean> permissions = new HashMap<>();
-                for (UserRole.Permission permission : UserRole.Permission.values()) {
-                    permissions.put(permission.name(), role.hasPermission(permission));
-                }
-                userInfo.put("permissions", permissions);
-            }
-            
-            return ResponseEntity.ok(userInfo);
-        } catch (Exception e) {
-            log.error("获取当前用户信息失败", e);
-            return ResponseEntity.status(500).build();
-        }
-    }
 }

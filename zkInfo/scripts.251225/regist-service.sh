@@ -103,7 +103,7 @@ curl -X POST http://localhost:9091/api/virtual-projects \
   -d '{
     "name": "数据分析场景",
     "description": "用于数据分析的虚拟项目",
-    "endpointName": "data-analysis",
+    "endpointName": "data-analysis2",
     "services": [
       {
         "serviceInterface": "com.zkinfo.demo.service.UserService",

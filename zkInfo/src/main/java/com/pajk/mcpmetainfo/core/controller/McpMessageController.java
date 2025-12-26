@@ -55,21 +55,23 @@ public class McpMessageController {
     @PostMapping(value = "/message", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Map<String, Object>> handleMessage(
             @RequestParam(required = false) String sessionId,
+            @RequestParam(required = false) String endpoint,  // 从 URL 参数获取 endpoint
             @RequestBody Map<String, Object> request,
             @org.springframework.web.bind.annotation.RequestHeader(value = "X-Service-Name", required = false) String serviceNameHeader) {
         
-        log.info("📨 MCP message request: sessionId={}, method={}, X-Service-Name={}", 
-                sessionId, request.get("method"), serviceNameHeader);
+        log.info("📨 MCP message request: sessionId={}, endpoint={}, method={}, X-Service-Name={}", 
+                sessionId, endpoint, request.get("method"), serviceNameHeader);
         
         // 获取 endpoint（参考 mcp-router-v3 的 session 管理）
-        String endpoint = null;
+        // 优先级：1. URL 参数 endpoint, 2. session, 3. X-Service-Name header, 4. 请求参数, 5. 自动查找
+        String resolvedEndpoint = endpoint;  // 先使用 URL 参数中的 endpoint
         
-        // 1. 如果 sessionId 存在，首先尝试从 session 中获取 endpoint
-        if (sessionId != null && !sessionId.isEmpty()) {
-            endpoint = sessionManager.getEndpointForSession(sessionId);
+        // 1. 如果 URL 参数中没有 endpoint，且 sessionId 存在，尝试从 session 中获取 endpoint
+        if ((resolvedEndpoint == null || resolvedEndpoint.isEmpty()) && sessionId != null && !sessionId.isEmpty()) {
+            resolvedEndpoint = sessionManager.getEndpointForSession(sessionId);
             
             // 2. 如果找不到 endpoint，尝试从 session 中获取 serviceName
-            if (endpoint == null) {
+            if (resolvedEndpoint == null || resolvedEndpoint.isEmpty()) {
                 String serviceName = sessionManager.getServiceName(sessionId);
                 if (serviceName != null && !serviceName.isEmpty()) {
                     // 如果 serviceName 以 virtual- 开头，去掉前缀
@@ -85,18 +87,18 @@ public class McpMessageController {
                     java.util.Optional<EndpointResolver.EndpointInfo> endpointInfoOpt = 
                             endpointResolver.resolveEndpoint(tryEndpoint);
                     if (endpointInfoOpt.isPresent()) {
-                        endpoint = tryEndpoint;
-                        log.info("📝 Using endpoint from session serviceName: {} -> {}", serviceName, endpoint);
+                        resolvedEndpoint = tryEndpoint;
+                        log.info("📝 Using endpoint from session serviceName: {} -> {}", serviceName, resolvedEndpoint);
                     } else {
-                        endpoint = tryEndpoint;
-                        log.info("📝 Using serviceName as endpoint: {}", endpoint);
+                        resolvedEndpoint = tryEndpoint;
+                        log.info("📝 Using serviceName as endpoint: {}", resolvedEndpoint);
                     }
                 }
             }
         }
         
         // 3. 如果 endpoint 仍然为 null，尝试从请求头或请求中推断 endpoint（RESTful 调用场景）
-        if (endpoint == null) {
+        if (resolvedEndpoint == null || resolvedEndpoint.isEmpty()) {
             log.debug("⚠️ Endpoint not found in session, trying to infer from request");
             
             // 1. 尝试从请求头获取服务名
@@ -113,11 +115,11 @@ public class McpMessageController {
                 java.util.Optional<EndpointResolver.EndpointInfo> endpointInfoOpt = 
                         endpointResolver.resolveEndpoint(tryEndpoint);
                 if (endpointInfoOpt.isPresent()) {
-                    endpoint = tryEndpoint;
-                    log.info("📝 Using endpoint from X-Service-Name header: {} -> {}", serviceNameHeader, endpoint);
+                    resolvedEndpoint = tryEndpoint;
+                    log.info("📝 Using endpoint from X-Service-Name header: {} -> {}", serviceNameHeader, resolvedEndpoint);
                 } else {
-                    endpoint = tryEndpoint;
-                    log.info("📝 Using X-Service-Name as endpoint: {}", endpoint);
+                    resolvedEndpoint = tryEndpoint;
+                    log.info("📝 Using X-Service-Name as endpoint: {}", resolvedEndpoint);
                 }
             } else {
                 // 2. 尝试从请求参数中获取（如果 mcp-router-v3 传递了服务名）
@@ -137,11 +139,11 @@ public class McpMessageController {
                     java.util.Optional<EndpointResolver.EndpointInfo> endpointInfoOpt = 
                             endpointResolver.resolveEndpoint(tryEndpoint);
                     if (endpointInfoOpt.isPresent()) {
-                        endpoint = tryEndpoint;
-                        log.info("📝 Using endpoint from request params: {} -> {}", serviceName, endpoint);
+                        resolvedEndpoint = tryEndpoint;
+                        log.info("📝 Using endpoint from request params: {} -> {}", serviceName, resolvedEndpoint);
                     } else {
-                        endpoint = tryEndpoint;
-                        log.info("📝 Using request param serviceName as endpoint: {}", endpoint);
+                        resolvedEndpoint = tryEndpoint;
+                        log.info("📝 Using request param serviceName as endpoint: {}", resolvedEndpoint);
                     }
                 } else {
                     // 3. 尝试从所有虚拟项目中查找（如果只有一个虚拟项目，使用它）
@@ -149,15 +151,20 @@ public class McpMessageController {
                     if (virtualProjects != null && virtualProjects.size() == 1) {
                         VirtualProjectService.VirtualProjectInfo vp = virtualProjects.get(0);
                         if (vp.getEndpoint() != null) {
-                            endpoint = vp.getEndpoint().getEndpointName();
-                            log.info("📝 Using single virtual project endpoint: {}", endpoint);
+                            resolvedEndpoint = vp.getEndpoint().getEndpointName();
+                            log.info("📝 Using single virtual project endpoint: {}", resolvedEndpoint);
                         }
                     } else if (virtualProjects != null && virtualProjects.size() > 1) {
                         log.warn("⚠️ Multiple virtual projects found ({}), cannot auto-select endpoint. " +
-                                "Please specify endpoint via X-Service-Name header or session.", virtualProjects.size());
+                                "Please specify endpoint via URL parameter, X-Service-Name header or session.", virtualProjects.size());
                     }
                 }
             }
+        }
+        
+        // 使用解析后的 endpoint（如果 resolvedEndpoint 不为空，使用它；否则使用原始的 endpoint 参数）
+        if (resolvedEndpoint != null && !resolvedEndpoint.isEmpty()) {
+            endpoint = resolvedEndpoint;
         }
         
         // 如果 endpoint 仍然为 null，记录警告但继续处理（某些方法可能不需要 endpoint）
@@ -529,6 +536,9 @@ public class McpMessageController {
 
         // MCP 协议中，arguments 应该是 Map<String, Object>，根据方法签名提取参数
         Object argumentsObj = params.get("arguments");
+        log.info("📥 Received arguments: type={}, value={}", 
+                argumentsObj != null ? argumentsObj.getClass().getSimpleName() : "null", argumentsObj);
+        
         Object[] args;
 
         // 从 toolName 中提取接口名和方法名
@@ -538,15 +548,21 @@ public class McpMessageController {
         String interfaceName = toolParts.length > 1 ? 
                 String.join(".", java.util.Arrays.copyOf(toolParts, toolParts.length - 1)) : null;
 
+        log.info("🔍 Parsed tool name: interface={}, method={}", interfaceName, methodName);
+
         if (argumentsObj instanceof java.util.Map) {
             @SuppressWarnings("unchecked")
             java.util.Map<String, Object> argumentsMap = (java.util.Map<String, Object>) argumentsObj;
+            log.info("📋 Arguments Map: keys={}, size={}", argumentsMap.keySet(), argumentsMap.size());
             
             if (interfaceName != null) {
                 // 根据方法签名从 argumentsMap 中提取参数
+                log.info("🔧 Extracting parameters using method signature for {}.{}", interfaceName, methodName);
                 args = mcpToolSchemaGenerator.extractMethodParameters(interfaceName, methodName, argumentsMap);
+                log.info("✅ Extracted {} parameters", args != null ? args.length : 0);
             } else {
                 // 如果无法获取接口名，使用向后兼容逻辑
+                log.warn("⚠️ Interface name is null, using backward compatibility logic");
                 if (argumentsMap.containsKey("args") && argumentsMap.get("args") instanceof java.util.List) {
                     @SuppressWarnings("unchecked")
                     java.util.List<Object> argsList = (java.util.List<Object>) argumentsMap.get("args");
@@ -564,11 +580,19 @@ public class McpMessageController {
             @SuppressWarnings("unchecked")
             java.util.List<Object> argumentsList = (java.util.List<Object>) argumentsObj;
             args = argumentsList.toArray();
+            log.info("📋 Arguments List: size={}, converted to array", argumentsList.size());
         } else {
             args = new Object[0];
+            log.info("📋 Arguments is not Map or List, using empty array");
         }
 
         log.info("📨 Executing tool call: tool={}, endpoint={}, argsCount={}", toolName, endpoint, args.length);
+        if (args != null && args.length > 0) {
+            for (int i = 0; i < args.length; i++) {
+                log.info("   args[{}]: type={}, value={}", i, 
+                        args[i] != null ? args[i].getClass().getSimpleName() : "null", args[i]);
+            }
+        }
 
         // 执行工具调用（McpExecutorService 会根据 toolName 自动查找对应的服务）
         McpExecutorService.McpCallResult result = mcpExecutorService.executeToolCallSync(

@@ -18,3 +18,4 @@ public interface ProviderParameterMapper {
     List<ProviderParameterEntity> findByProviderId(@Param("providerId") Long providerId);
 }
 
+

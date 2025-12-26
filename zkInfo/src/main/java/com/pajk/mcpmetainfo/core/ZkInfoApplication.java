@@ -30,6 +30,15 @@ public class ZkInfoApplication {
             System.setProperty("java.awt.headless", "true");
             System.setProperty("file.encoding", "UTF-8");
             
+            // 检查并设置 Java 模块系统参数（用于支持 Dubbo Javassist）
+            // 如果 JVM 参数中未设置，则通过系统属性设置（作为备选方案）
+            // 注意：这些参数最好在启动时通过命令行设置，但这里作为备选方案
+            if (System.getProperty("java.util.logging.manager") == null) {
+                // 检查是否已经设置了 --add-opens
+                // 如果没有，尝试通过反射设置（但这可能不会生效，因为模块系统在启动时就已经确定）
+                // 所以最好还是通过 JVM 启动参数设置
+            }
+            
             // 启动Spring Boot应用
             SpringApplication app = new SpringApplication(ZkInfoApplication.class);
             

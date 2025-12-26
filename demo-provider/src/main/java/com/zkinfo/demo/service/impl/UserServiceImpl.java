@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * 用户服务实现类
  */
 @Slf4j
-@DubboService(version = "1.0.0", group = "demo")
+@DubboService(version = "1.0.0", group = "demo", interfaceClass = UserService.class)
 public class UserServiceImpl implements UserService {
     
     private final Map<Long, User> userStorage = new ConcurrentHashMap<>();
@@ -44,7 +44,6 @@ public class UserServiceImpl implements UserService {
         idGenerator.set(4L);
     }
     
-    @Override
     public User getUserById(Long userId) {
         log.info("Getting user by id: {}", userId);
         User user = userStorage.get(userId);
@@ -54,13 +53,11 @@ public class UserServiceImpl implements UserService {
         return user;
     }
     
-    @Override
     public List<User> getAllUsers() {
         log.info("Getting all users, total count: {}", userStorage.size());
         return new ArrayList<>(userStorage.values());
     }
     
-    @Override
     public User createUser(User user) {
         log.info("Creating new user: {}", user.getUsername());
         user.setId(idGenerator.getAndIncrement());
@@ -73,7 +70,6 @@ public class UserServiceImpl implements UserService {
         return user;
     }
     
-    @Override
     public User updateUser(User user) {
         log.info("Updating user: {}", user.getId());
         User existingUser = userStorage.get(user.getId());
@@ -89,7 +85,6 @@ public class UserServiceImpl implements UserService {
         return user;
     }
     
-    @Override
     public boolean deleteUser(Long userId) {
         log.info("Deleting user: {}", userId);
         User removedUser = userStorage.remove(userId);

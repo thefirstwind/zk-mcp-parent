@@ -1,12 +1,18 @@
 package com.pajk.mcpmetainfo.core.util;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pajk.mcpmetainfo.core.model.ProviderInfo;
 import com.pajk.mcpmetainfo.core.service.ProviderService;
+import com.pajk.mcpmetainfo.core.service.ZooKeeperService;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.curator.framework.CuratorFramework;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 /**
@@ -26,6 +32,13 @@ public class McpToolSchemaGenerator {
     
     @Autowired(required = false)
     private ParameterConverter parameterConverter;
+    
+    @Lazy
+    @Autowired(required = false)
+    private ZooKeeperService zooKeeperService;
+    
+    // ObjectMapper 用于解析 JSON
+    private final ObjectMapper objectMapper = new ObjectMapper();
     
     /**
      * 方法签名信息
@@ -58,6 +71,8 @@ public class McpToolSchemaGenerator {
      * @return inputSchema Map
      */
     public Map<String, Object> createInputSchemaFromMethod(String interfaceName, String methodName) {
+        log.info("🔧 创建 inputSchema: interface={}, method={}", interfaceName, methodName);
+        
         Map<String, Object> inputSchema = new HashMap<>();
         inputSchema.put("type", "object");
         
@@ -69,16 +84,15 @@ public class McpToolSchemaGenerator {
             MethodSignatureInfo methodInfo = getMethodSignatureFromMetadata(interfaceName, methodName);
             
             if (methodInfo != null && methodInfo.getParameterCount() >= 0) {
-                log.debug("✅ Found method {}.{} with {} parameters", 
+                log.info("✅ 找到方法签名: {}.{} with {} parameters", 
                         interfaceName, methodName, methodInfo.getParameterCount());
                 
                 if (methodInfo.getParameterCount() == 0) {
                     // 无参数方法（如 getAllUsers），不需要 args，也不需要 timeout
-                    log.debug("  → No parameters, creating schema without 'args' and 'timeout'");
+                    log.info("  → 无参数方法，properties 为空");
                     // 无参数方法，properties 为空
                 } else {
-                    log.debug("  → Has {} parameters, creating schema with method parameters", 
-                            methodInfo.getParameterCount());
+                    log.info("  → 有 {} 个参数，创建 schema", methodInfo.getParameterCount());
                     // 有参数方法（如 getUserById(Long userId)）
                     // 为每个参数创建属性
                     List<MethodParameter> params = methodInfo.getParameters();
@@ -87,7 +101,16 @@ public class McpToolSchemaGenerator {
                         String paramName = param.getName();
                         String paramType = param.getType();
                         
-                        log.debug("    Parameter[{}]: {} ({})", i, paramName, paramType);
+                        if (paramName == null || paramName.isEmpty()) {
+                            log.warn("    ⚠️ 参数[{}] 名称为空，使用默认名称", i);
+                            paramName = "param" + i;
+                        }
+                        if (paramType == null || paramType.isEmpty()) {
+                            log.warn("    ⚠️ 参数[{}] {} 类型为空，使用默认类型", i, paramName);
+                            paramType = "java.lang.Object";
+                        }
+                        
+                        log.info("    Parameter[{}]: name={}, type={}", i, paramName, paramType);
                         
                         Map<String, Object> paramProperty = new HashMap<>();
                         paramProperty.put("description", getParameterDescriptionFromType(paramType, paramName));
@@ -97,8 +120,8 @@ public class McpToolSchemaGenerator {
                         paramProperty.put("type", jsonType);
                         
                         // 如果是数组或集合类型，设置 items
-                        if (paramType.endsWith("[]") || paramType.contains("List") || 
-                            paramType.contains("Set") || paramType.contains("Collection")) {
+                        if (paramType != null && (paramType.endsWith("[]") || paramType.contains("List") || 
+                            paramType.contains("Set") || paramType.contains("Collection"))) {
                             Map<String, Object> items = new HashMap<>();
                             items.put("type", "any");
                             paramProperty.put("items", items);
@@ -107,11 +130,11 @@ public class McpToolSchemaGenerator {
                         properties.put(paramName, paramProperty);
                         required.add(paramName);
                     }
-                    // 有参数方法，不需要 timeout
+                    log.info("  ✅ 成功创建 {} 个参数的 properties", properties.size());
                 }
             } else {
                 // 如果找不到方法签名信息，使用通用 schema（向后兼容）
-                log.warn("⚠️ Method signature not found for {}.{} in metadata, using generic schema", 
+                log.warn("⚠️ 未找到方法签名信息: {}.{}，使用通用 schema", 
                         interfaceName, methodName);
                 Map<String, Object> argsProperty = new HashMap<>();
                 argsProperty.put("type", "array");
@@ -121,7 +144,7 @@ public class McpToolSchemaGenerator {
                 required.add("args");
             }
         } catch (Exception e) {
-            log.error("❌ Error creating inputSchema for {}.{}: {}", 
+            log.error("❌ 创建 inputSchema 失败: {}.{}, error={}", 
                     interfaceName, methodName, e.getMessage(), e);
             // 发生错误时，使用通用 schema
             Map<String, Object> argsProperty = new HashMap<>();
@@ -137,14 +160,28 @@ public class McpToolSchemaGenerator {
             inputSchema.put("required", required);
         }
         
+        log.info("✅ inputSchema 创建完成: {}.{}, properties数量={}, required数量={}", 
+                interfaceName, methodName, properties.size(), required.size());
+        
         return inputSchema;
     }
     
     /**
      * 从 metadata 或方法名模式推断方法签名
+     * 优先级：ZooKeeper metadata > 数据库 > 方法名推断
      */
     private MethodSignatureInfo getMethodSignatureFromMetadata(String interfaceName, String methodName) {
-        // 1. 优先从 MethodSignatureResolver 获取（从数据库）
+        // 1. 优先从 ZooKeeper metadata 获取（最准确）
+        if (zooKeeperService != null && providerService != null) {
+            MethodSignatureInfo infoFromZK = getMethodSignatureFromZooKeeper(interfaceName, methodName);
+            if (infoFromZK != null && infoFromZK.getParameterCount() >= 0) {
+                log.info("✅ 从 ZooKeeper metadata 获取到方法签名: {}.{} with {} parameters", 
+                        interfaceName, methodName, infoFromZK.getParameterCount());
+                return infoFromZK;
+            }
+        }
+        
+        // 2. 从 MethodSignatureResolver 获取（从数据库）
         if (methodSignatureResolver != null) {
             MethodSignatureResolver.MethodSignature signature = 
                     methodSignatureResolver.getMethodSignature(interfaceName, methodName);
@@ -163,22 +200,206 @@ public class McpToolSchemaGenerator {
             }
         }
         
-        // 2. 尝试从 ProviderService 获取 ProviderInfo 并解析 metadata
-        if (providerService != null) {
+        // 3. 基于方法名模式推断参数（fallback）
+        log.warn("⚠️ 无法从 metadata 或数据库获取方法签名，使用方法名推断: {}.{}", interfaceName, methodName);
+        return inferMethodSignatureFromName(methodName);
+    }
+    
+    /**
+     * 从 ZooKeeper metadata 获取方法签名
+     * 路径格式：/dubbo/metadata/{interfaceName}/{version}/{group}/provider/{application}
+     */
+    private MethodSignatureInfo getMethodSignatureFromZooKeeper(String interfaceName, String methodName) {
+        if (zooKeeperService == null || providerService == null) {
+            return null;
+        }
+        
+        CuratorFramework client = zooKeeperService.getClient();
+        if (client == null) {
+            log.debug("   ZooKeeper 客户端未初始化");
+            return null;
+        }
+        
+        try {
+            // 获取 Provider 信息
             List<ProviderInfo> providers = providerService.getAllProviders().stream()
                     .filter(p -> interfaceName.equals(p.getInterfaceName()))
                     .filter(ProviderInfo::isOnline)
                     .toList();
             
-            if (!providers.isEmpty()) {
-                // 可以从 ProviderInfo 的 parameters 中获取更多信息
-                // 但目前 ProviderInfo 只存储了 methods 字符串，没有详细的参数信息
-                // 所以我们需要基于方法名模式推断
+            if (providers.isEmpty()) {
+                log.debug("   未找到可用的 Provider: {}", interfaceName);
+                return null;
+            }
+            
+            // 使用第一个可用的 Provider
+            ProviderInfo provider = providers.get(0);
+            String version = provider.getVersion() != null ? provider.getVersion() : "1.0.0";
+            String group = provider.getGroup() != null && !provider.getGroup().isEmpty() ? provider.getGroup() : "";
+            String application = provider.getApplication() != null ? provider.getApplication() : "";
+            
+            log.debug("   从 ZooKeeper metadata 获取方法签名: interface={}, method={}, version={}, group={}, application={}", 
+                    interfaceName, methodName, version, group, application);
+            
+            // 构建 metadata 路径（优先使用用户指定的路径格式）
+            List<String> metadataPaths = new ArrayList<>();
+            
+            // 格式1（优先）: /dubbo/metadata/{interfaceName}/{version}/{group}/provider/{application}
+            if (!group.isEmpty() && !application.isEmpty()) {
+                String path1 = String.format("/dubbo/metadata/%s/%s/%s/provider/%s", 
+                        interfaceName, version, group, application);
+                metadataPaths.add(path1);
+                log.debug("   尝试路径1: {}", path1);
+            }
+            
+            // 格式2: /dubbo/metadata/{interfaceName}/{version}/provider/{application}
+            if (!application.isEmpty()) {
+                String path2 = String.format("/dubbo/metadata/%s/%s/provider/%s", 
+                        interfaceName, version, application);
+                metadataPaths.add(path2);
+                log.debug("   尝试路径2: {}", path2);
+            }
+            
+            // 格式3: /dubbo/metadata/{interfaceName}/provider/{application}
+            if (!application.isEmpty()) {
+                String path3 = String.format("/dubbo/metadata/%s/provider/%s", 
+                        interfaceName, application);
+                metadataPaths.add(path3);
+                log.debug("   尝试路径3: {}", path3);
+            }
+            
+            // 格式4: /dubbo/metadata/{interfaceName}/provider
+            String path4 = String.format("/dubbo/metadata/%s/provider", interfaceName);
+            metadataPaths.add(path4);
+            log.debug("   尝试路径4: {}", path4);
+            
+            // 尝试读取 metadata
+            for (String metadataPath : metadataPaths) {
+                try {
+                    if (client.checkExists().forPath(metadataPath) != null) {
+                        log.debug("   找到 metadata 路径: {}", metadataPath);
+                        
+                        // 如果是目录，尝试读取目录下的所有节点
+                        if (metadataPath.endsWith("/provider") || metadataPath.endsWith("/provider/")) {
+                            List<String> children = client.getChildren().forPath(metadataPath);
+                            if (children != null && !children.isEmpty()) {
+                                for (String child : children) {
+                                    String childPath = metadataPath + "/" + child;
+                                    MethodSignatureInfo info = parseMethodSignatureFromMetadata(client, childPath, methodName);
+                                    if (info != null) {
+                                        log.info("   ✅ 从子节点 {} 成功获取方法签名", childPath);
+                                        return info;
+                                    }
+                                }
+                            }
+                        } else {
+                            // 直接读取文件
+                            MethodSignatureInfo info = parseMethodSignatureFromMetadata(client, metadataPath, methodName);
+                            if (info != null) {
+                                log.info("   ✅ 从文件 {} 成功获取方法签名", metadataPath);
+                                return info;
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    log.debug("   读取 metadata 路径失败: {}, error: {}", metadataPath, e.getMessage());
+                }
+            }
+            
+        } catch (Exception e) {
+            log.warn("   ❌ 从 ZooKeeper metadata 获取方法签名失败: interface={}, method={}, error={}", 
+                    interfaceName, methodName, e.getMessage());
+        }
+        
+        return null;
+    }
+    
+    /**
+     * 从 metadata JSON 中解析方法签名
+     */
+    private MethodSignatureInfo parseMethodSignatureFromMetadata(CuratorFramework client, String metadataPath, String methodName) {
+        try {
+            byte[] data = client.getData().forPath(metadataPath);
+            if (data == null || data.length == 0) {
+                return null;
+            }
+            
+            String metadataJson = new String(data, StandardCharsets.UTF_8);
+            JsonNode rootNode = objectMapper.readTree(metadataJson);
+            JsonNode methodsNode = rootNode.get("methods");
+            
+            if (methodsNode == null || !methodsNode.isArray()) {
+                return null;
+            }
+            
+            for (JsonNode methodNode : methodsNode) {
+                JsonNode nameNode = methodNode.get("name");
+                if (nameNode != null && methodName.equals(nameNode.asText())) {
+                    // 找到目标方法，解析 parameterTypes
+                    MethodSignatureInfo info = new MethodSignatureInfo();
+                    
+                    JsonNode parameterTypesNode = methodNode.get("parameterTypes");
+                    if (parameterTypesNode != null && parameterTypesNode.isArray()) {
+                        int paramIndex = 0;
+                        for (JsonNode typeNode : parameterTypesNode) {
+                            String paramType = typeNode.asText();
+                            MethodParameter param = new MethodParameter();
+                            
+                            // 尝试从 metadata 获取参数名（如果有 parameterNames 字段）
+                            JsonNode parameterNamesNode = methodNode.get("parameterNames");
+                            String paramName;
+                            if (parameterNamesNode != null && parameterNamesNode.isArray() && 
+                                paramIndex < parameterNamesNode.size()) {
+                                paramName = parameterNamesNode.get(paramIndex).asText();
+                            } else {
+                                // 如果没有参数名，使用默认名称或从类型推断
+                                paramName = inferParameterNameFromType(paramType, paramIndex);
+                            }
+                            
+                            param.setName(paramName);
+                            param.setType(paramType);
+                            info.getParameters().add(param);
+                            paramIndex++;
+                        }
+                        info.setParameterCount(info.getParameters().size());
+                        log.debug("   ✅ 成功解析方法签名: {} 个参数", info.getParameterCount());
+                        return info;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("   解析 metadata JSON 失败: path={}, error={}", metadataPath, e.getMessage());
+        }
+        
+        return null;
+    }
+    
+    /**
+     * 从类型推断参数名
+     */
+    private String inferParameterNameFromType(String paramType, int index) {
+        // 如果是 POJO 类型，提取类名作为参数名
+        if (paramType != null && paramType.contains(".")) {
+            String simpleName = paramType.substring(paramType.lastIndexOf(".") + 1);
+            // 转换为驼峰命名：User -> user, OrderItem -> orderItem
+            if (!simpleName.isEmpty()) {
+                return Character.toLowerCase(simpleName.charAt(0)) + simpleName.substring(1);
             }
         }
         
-        // 3. 基于方法名模式推断参数（fallback）
-        return inferMethodSignatureFromName(methodName);
+        // 基础类型使用默认名称
+        if (paramType != null) {
+            if (paramType.contains("Long") || paramType.equals("long")) {
+                return "id";
+            } else if (paramType.contains("String")) {
+                return "name";
+            } else if (paramType.contains("Integer") || paramType.equals("int")) {
+                return "value";
+            }
+        }
+        
+        // 默认使用 param0, param1 等
+        return "param" + index;
     }
     
     /**
@@ -385,6 +606,9 @@ public class McpToolSchemaGenerator {
      * @return 方法参数数组（按方法签名顺序，已转换为正确的 Java 类型）
      */
     public Object[] extractMethodParameters(String interfaceName, String methodName, Map<String, Object> params) {
+        log.info("🔍 extractMethodParameters: interface={}, method={}, params={}", 
+                interfaceName, methodName, params != null ? params.keySet() : "null");
+        
         try {
             // 从 metadata 获取方法签名
             MethodSignatureInfo methodInfo = getMethodSignatureFromMetadata(interfaceName, methodName);
@@ -393,12 +617,25 @@ public class McpToolSchemaGenerator {
                 List<MethodParameter> parameters = methodInfo.getParameters();
                 Object[] args = new Object[parameters.size()];
                 
+                log.info("📋 Method signature found: {} parameters", parameters.size());
+                for (int i = 0; i < parameters.size(); i++) {
+                    MethodParameter param = parameters.get(i);
+                    log.debug("   Parameter[{}]: name={}, type={}", i, param.getName(), param.getType());
+                }
+                
                 // 检测 Dubbo 版本（简化处理，默认使用 2.x）
                 String dubboVersion = "2.x"; // TODO: 从 ProviderInfo 获取实际版本
                 
+                boolean hasMissingParams = false;
                 for (int i = 0; i < parameters.size(); i++) {
                     MethodParameter param = parameters.get(i);
                     Object rawValue = params.get(param.getName());
+                    
+                    if (rawValue == null) {
+                        log.warn("⚠️ Parameter[{}] '{}' not found in params Map. Available keys: {}", 
+                                i, param.getName(), params.keySet());
+                        hasMissingParams = true;
+                    }
                     
                     // 使用 ParameterConverter 转换参数类型
                     if (parameterConverter != null && rawValue != null && param.getType() != null) {
@@ -407,11 +644,86 @@ public class McpToolSchemaGenerator {
                                 i, param.getName(), rawValue.getClass().getSimpleName(), param.getType());
                     } else {
                         args[i] = rawValue;
+                        if (rawValue != null) {
+                            log.debug("✅ Using parameter[{}] {} as-is: {}", i, param.getName(), rawValue);
+                        }
                     }
                 }
+                
+                // 如果参数名不匹配导致参数丢失，尝试从 params Map 中提取所有非系统字段
+                if (hasMissingParams && params != null && !params.isEmpty()) {
+                    log.warn("⚠️ Some parameters missing by name, attempting to extract from params Map");
+                    List<Object> extractedArgs = new ArrayList<>();
+                    for (Map.Entry<String, Object> entry : params.entrySet()) {
+                        String key = entry.getKey();
+                        if (!key.equals("timeout") && !key.equals("args")) {
+                            extractedArgs.add(entry.getValue());
+                            log.debug("   ✅ Extracted parameter: {} = {}", key, entry.getValue());
+                        }
+                    }
+                    if (!extractedArgs.isEmpty() && extractedArgs.size() == parameters.size()) {
+                        log.info("✅ Extracted {} parameters from params Map (matched parameter count)", 
+                                extractedArgs.size());
+                        return extractedArgs.toArray();
+                    } else if (!extractedArgs.isEmpty()) {
+                        log.warn("⚠️ Extracted {} parameters but method signature expects {}", 
+                                extractedArgs.size(), parameters.size());
+                        // 仍然返回提取的参数，让调用方处理
+                        return extractedArgs.toArray();
+                    }
+                }
+                
                 return args;
             } else if (methodInfo != null && methodInfo.getParameterCount() == 0) {
-                // 无参数方法
+                // 方法签名显示无参数，但检查 params 中是否有参数值
+                // 如果 params 不为空且不包含 "args" 字段，说明可能有参数但方法签名不正确
+                if (params != null && !params.isEmpty() && !params.containsKey("args")) {
+                    log.warn("⚠️ Method signature shows no parameters for {}.{}, but params Map is not empty: {}. " +
+                            "Attempting to extract parameters from params Map.", 
+                            interfaceName, methodName, params.keySet());
+                    
+                    // 尝试从 params Map 中提取参数值（按常见参数名模式）
+                    List<Object> extractedArgs = new ArrayList<>();
+                    
+                    // 常见参数名模式：productId, userId, orderId, id 等
+                    String[] commonParamNames = {
+                        "productId", "userId", "orderId", "id",
+                        "product", "user", "order",
+                        "productName", "userName", "orderName"
+                    };
+                    
+                    for (String paramName : commonParamNames) {
+                        if (params.containsKey(paramName)) {
+                            extractedArgs.add(params.get(paramName));
+                            log.debug("   ✅ Extracted parameter from params: {} = {}", paramName, params.get(paramName));
+                        }
+                    }
+                    
+                    // 如果找到了参数，返回它们
+                    if (!extractedArgs.isEmpty()) {
+                        log.info("✅ Extracted {} parameters from params Map despite method signature showing 0 parameters", 
+                                extractedArgs.size());
+                        return extractedArgs.toArray();
+                    }
+                    
+                    // 如果没找到常见参数名，尝试将所有非系统字段作为参数
+                    // 排除系统字段：timeout, args 等
+                    for (Map.Entry<String, Object> entry : params.entrySet()) {
+                        String key = entry.getKey();
+                        if (!key.equals("timeout") && !key.equals("args")) {
+                            extractedArgs.add(entry.getValue());
+                            log.debug("   ✅ Extracted parameter from params: {} = {}", key, entry.getValue());
+                        }
+                    }
+                    
+                    if (!extractedArgs.isEmpty()) {
+                        log.info("✅ Extracted {} parameters from params Map (all non-system fields)", 
+                                extractedArgs.size());
+                        return extractedArgs.toArray();
+                    }
+                }
+                
+                // 真正的无参数方法
                 return new Object[0];
             } else {
                 // 如果找不到方法签名，尝试向后兼容：从 args 字段获取
@@ -422,6 +734,23 @@ public class McpToolSchemaGenerator {
                     List<Object> argsList = (List<Object>) params.get("args");
                     return argsList.toArray();
                 }
+                
+                // 如果 params 不为空，尝试提取参数
+                if (params != null && !params.isEmpty() && !params.containsKey("args")) {
+                    log.warn("⚠️ Attempting to extract parameters from params Map as fallback");
+                    List<Object> extractedArgs = new ArrayList<>();
+                    for (Map.Entry<String, Object> entry : params.entrySet()) {
+                        String key = entry.getKey();
+                        if (!key.equals("timeout") && !key.equals("args")) {
+                            extractedArgs.add(entry.getValue());
+                        }
+                    }
+                    if (!extractedArgs.isEmpty()) {
+                        log.info("✅ Extracted {} parameters from params Map as fallback", extractedArgs.size());
+                        return extractedArgs.toArray();
+                    }
+                }
+                
                 return new Object[0];
             }
         } catch (Exception e) {
@@ -433,6 +762,23 @@ public class McpToolSchemaGenerator {
                 List<Object> argsList = (List<Object>) params.get("args");
                 return argsList.toArray();
             }
+            
+            // 如果 params 不为空，尝试提取参数
+            if (params != null && !params.isEmpty()) {
+                log.warn("⚠️ Attempting to extract parameters from params Map after error");
+                List<Object> extractedArgs = new ArrayList<>();
+                for (Map.Entry<String, Object> entry : params.entrySet()) {
+                    String key = entry.getKey();
+                    if (!key.equals("timeout") && !key.equals("args")) {
+                        extractedArgs.add(entry.getValue());
+                    }
+                }
+                if (!extractedArgs.isEmpty()) {
+                    log.info("✅ Extracted {} parameters from params Map after error", extractedArgs.size());
+                    return extractedArgs.toArray();
+                }
+            }
+            
             return new Object[0];
         }
     }
