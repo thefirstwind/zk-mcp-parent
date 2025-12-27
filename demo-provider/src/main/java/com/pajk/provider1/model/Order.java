@@ -1,4 +1,4 @@
-package com.zkinfo.demo.model;
+package com.pajk.provider1.model;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

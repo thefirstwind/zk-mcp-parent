@@ -72,9 +72,9 @@
 - ✅ **状态**: 正常工作
 - **日志证据**: 
   ```
-  发现新服务: com.zkinfo.demo.service.UserService/providers
+  发现新服务: service.com.pajk.provider2.UserService/providers
   发现新服务: com.example.dubbo.api.UserService/providers
-  发现新服务: metadata/com.zkinfo.demo.service.UserService/1.0.0
+  发现新服务: metadata/service.com.pajk.provider2.UserService/1.0.0
   ```
 - **说明**: 服务能够正常监听ZooKeeper中的服务变化
 

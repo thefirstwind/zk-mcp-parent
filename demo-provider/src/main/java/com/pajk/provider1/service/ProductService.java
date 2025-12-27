@@ -1,6 +1,6 @@
-package com.zkinfo.demo.service;
+package com.pajk.provider1.service;
 
-import com.zkinfo.demo.model.Product;
+import com.pajk.provider1.model.Product;
 import java.util.List;
 
 /**

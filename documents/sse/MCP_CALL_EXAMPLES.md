@@ -27,8 +27,8 @@ curl -s "http://localhost:9091/api/applications/demo-provider/mcp" | jq '.'
 {
   "tools": [
     {
-      "name": "com.zkinfo.demo.service.ProductService.getProductById",
-      "description": "调用 com.zkinfo.demo.service.ProductService 服务的 getProductById 方法",
+      "name": "service.com.pajk.provider2.ProductService.getProductById",
+      "description": "调用 service.com.pajk.provider2.ProductService 服务的 getProductById 方法",
       "type": "function",
       "inputSchema": {
         "type": "object",
@@ -54,9 +54,9 @@ curl -s "http://localhost:9091/api/applications/demo-provider/mcp" | jq '.'
   ],
   "services": [
     {
-      "name": "com.zkinfo.demo.service.ProductService",
-      "description": "Dubbo服务: com.zkinfo.demo.service.ProductService",
-      "interface": "com.zkinfo.demo.service.ProductService",
+      "name": "service.com.pajk.provider2.ProductService",
+      "description": "Dubbo服务: service.com.pajk.provider2.ProductService",
+      "interface": "service.com.pajk.provider2.ProductService",
       "methods": ["getProductById", "searchProducts", "updateStock"],
       "version": "1.0.0",
       "group": "demo",
@@ -82,7 +82,7 @@ curl -s "http://localhost:9091/api/applications/demo-provider/mcp" | jq '.'
 curl -X POST "http://localhost:9091/api/mcp/call" \
   -H "Content-Type: application/json" \
   -d '{
-    "toolName": "com.zkinfo.demo.service.ProductService.getProductById",
+    "toolName": "service.com.pajk.provider2.ProductService.getProductById",
     "args": [1],
     "timeout": 5000
   }' | jq '.'
@@ -100,7 +100,7 @@ curl -X POST "http://localhost:9091/api/mcp/call" \
     "createTime": "2025-10-27T17:54:34.382741",
     "updateTime": "2025-10-27T17:54:34.382743",
     "id": 1,
-    "class": "com.zkinfo.demo.model.User",
+    "class": "model.com.pajk.provider2.User",
     "email": "alice@example.com",
     "age": 25,
     "status": "ACTIVE",
@@ -115,7 +115,7 @@ curl -X POST "http://localhost:9091/api/mcp/call" \
 curl -X POST "http://localhost:9091/api/mcp/call-async" \
   -H "Content-Type: application/json" \
   -d '{
-    "toolName": "com.zkinfo.demo.service.OrderService.createOrder",
+    "toolName": "service.com.pajk.provider2.OrderService.createOrder",
     "args": [
       {
         "userId": 456,
@@ -132,7 +132,7 @@ curl -X POST "http://localhost:9091/api/mcp/call-async" \
 {
   "accepted": true,
   "message": "调用请求已接受，正在异步执行",
-  "toolName": "com.zkinfo.demo.service.OrderService.createOrder"
+  "toolName": "service.com.pajk.provider2.OrderService.createOrder"
 }
 ```
 
@@ -149,7 +149,7 @@ curl -s "http://localhost:9091/api/applications/demo-provider/mcp" | \
 curl -X POST "http://localhost:9091/api/mcp/call" \
   -H "Content-Type: application/json" \
   -d '{
-    "toolName": "com.zkinfo.demo.service.UserService.getUserById",
+    "toolName": "service.com.pajk.provider2.UserService.getUserById",
     "args": [1],
     "timeout": 3000
   }' | jq '.'
@@ -162,7 +162,7 @@ curl -X POST "http://localhost:9091/api/mcp/call" \
 curl -X POST "http://localhost:9091/api/mcp/call" \
   -H "Content-Type: application/json" \
   -d '{
-    "toolName": "com.zkinfo.demo.service.OrderService.createOrder",
+    "toolName": "service.com.pajk.provider2.OrderService.createOrder",
     "args": [
       {
         "userId": 1,
@@ -182,7 +182,7 @@ curl -X POST "http://localhost:9091/api/mcp/call" \
 curl -X POST "http://localhost:9091/api/mcp/call" \
   -H "Content-Type: application/json" \
   -d '{
-    "toolName": "com.zkinfo.demo.service.ProductService.searchProducts",
+    "toolName": "service.com.pajk.provider2.ProductService.searchProducts",
     "args": ["iPhone"],
     "timeout": 3000
   }' | jq '.'
@@ -239,14 +239,14 @@ client = ZkInfoMcpClient()
 
 # 获取用户信息
 result = client.call_tool(
-    "com.zkinfo.demo.service.UserService.getUserById",
+    "service.com.pajk.provider2.UserService.getUserById",
     args=[1]
 )
 print("用户信息:", result)
 
 # 创建订单
 order_result = client.call_tool(
-    "com.zkinfo.demo.service.OrderService.createOrder",
+    "service.com.pajk.provider2.OrderService.createOrder",
     args=[{
         "userId": 1,
         "productId": 123,
@@ -295,7 +295,7 @@ const client = new ZkInfoMcpClient();
 
 // 获取产品信息
 client.callTool(
-    'com.zkinfo.demo.service.ProductService.getProductById',
+    'service.com.pajk.provider2.ProductService.getProductById',
     [123]
 ).then(result => {
     console.log('产品信息:', result);
@@ -309,9 +309,9 @@ client.callTool(
 ```python
 # 批量调用多个服务
 tools_to_call = [
-    ("com.zkinfo.demo.service.UserService.getUserById", [1]),
-    ("com.zkinfo.demo.service.ProductService.getProductById", [123]),
-    ("com.zkinfo.demo.service.OrderService.getOrdersByUserId", [1])
+    ("service.com.pajk.provider2.UserService.getUserById", [1]),
+    ("service.com.pajk.provider2.ProductService.getProductById", [123]),
+    ("service.com.pajk.provider2.OrderService.getOrdersByUserId", [1])
 ]
 
 results = []
@@ -342,7 +342,7 @@ def safe_call_tool(client, tool_name, args):
 # 安全调用示例
 user_info = safe_call_tool(
     client, 
-    "com.zkinfo.demo.service.UserService.getUserById", 
+    "service.com.pajk.provider2.UserService.getUserById", 
     [1]
 )
 ```
@@ -393,7 +393,7 @@ curl -s "http://localhost:9091/api/debug/zk-tree" 2>/dev/null | jq '.' || echo "
    curl -X POST "http://localhost:9091/api/mcp/call" \
      -H "Content-Type: application/json" \
      -d '{
-       "toolName": "com.zkinfo.demo.service.UserService.getUserById",
+       "toolName": "service.com.pajk.provider2.UserService.getUserById",
        "args": [1],
        "timeout": 10000
      }' | jq '.'
@@ -406,13 +406,13 @@ curl -s "http://localhost:9091/api/debug/zk-tree" 2>/dev/null | jq '.' || echo "
    ```bash
    # 查看具体工具的参数定义
    curl -s "http://localhost:9091/api/mcp" | \
-     jq '.[0].tools[] | select(.name == "com.zkinfo.demo.service.UserService.getUserById") | .inputSchema' | head -20
+     jq '.[0].tools[] | select(.name == "service.com.pajk.provider2.UserService.getUserById") | .inputSchema' | head -20
    
    # 测试正确的参数格式
    curl -X POST "http://localhost:9091/api/mcp/call" \
      -H "Content-Type: application/json" \
      -d '{
-       "toolName": "com.zkinfo.demo.service.UserService.getUserById",
+       "toolName": "service.com.pajk.provider2.UserService.getUserById",
        "args": [1],
        "timeout": 3000
      }' | jq '.'
@@ -468,9 +468,9 @@ BASE_URL="http://localhost:9091"
 
 # 定义要调用的工具列表
 declare -a TOOLS=(
-    "com.zkinfo.demo.service.UserService.getAllUsers:[]"
-    "com.zkinfo.demo.service.UserService.getUserById:[1]"
-    "com.zkinfo.demo.service.ProductService.getProductById:[123]"
+    "service.com.pajk.provider2.UserService.getAllUsers:[]"
+    "service.com.pajk.provider2.UserService.getUserById:[1]"
+    "service.com.pajk.provider2.ProductService.getProductById:[123]"
 )
 
 echo "🚀 开始批量调用MCP工具..."

@@ -10,7 +10,7 @@
 ### 当前问题
 
 1. **类型推断不准确**: 仅通过 Map 的键来推断对象类型，容易误判
-2. **缺少方法签名信息**: 无法获取准确的参数类型（如 `com.zkinfo.demo.model.User`）
+2. **缺少方法签名信息**: 无法获取准确的参数类型（如 `model.com.pajk.provider2.User`）
 3. **不支持嵌套对象**: 无法处理嵌套对象、List、Map 等复杂结构
 4. **Dubbo2/Dubbo3 差异**: 未区分 Dubbo2 和 Dubbo3 的不同处理方式
 
@@ -28,7 +28,7 @@ public Product updateProduct(Long id, Product product);
 {
   "method": "tools/call",
   "params": {
-    "name": "com.zkinfo.demo.service.OrderService.createOrder",
+    "name": "service.com.pajk.provider2.OrderService.createOrder",
     "arguments": {
       "order": {
         "userId": 1001,
@@ -154,16 +154,16 @@ Boolean -> boolean / Boolean
 #### 1.2 复杂对象类型
 ```java
 Map -> POJO (使用 Jackson 转换)
-  - User: com.zkinfo.demo.model.User
-  - Order: com.zkinfo.demo.model.Order
-  - Product: com.zkinfo.demo.model.Product
+  - User: model.com.pajk.provider2.User
+  - Order: model.com.pajk.provider2.Order
+  - Product: model.com.pajk.provider2.Product
 ```
 
 #### 1.3 集合类型
 ```java
 List<Map> -> List<POJO>
-  - List<User> -> List<com.zkinfo.demo.model.User>
-  - List<Order> -> List<com.zkinfo.demo.model.Order>
+  - List<User> -> List<model.com.pajk.provider2.User>
+  - List<Order> -> List<model.com.pajk.provider2.Order>
 ```
 
 #### 1.4 嵌套对象
@@ -177,7 +177,7 @@ User.address -> Address (如果存在)
 #### Dubbo2
 ```java
 // 需要明确指定参数类型
-String[] parameterTypes = {"com.zkinfo.demo.model.Order"};
+String[] parameterTypes = {"model.com.pajk.provider2.Order"};
 Object[] args = {convertedOrder};
 genericService.$invoke("createOrder", parameterTypes, args);
 ```
@@ -290,7 +290,7 @@ JSON Arguments Map
 │ - 获取参数列表: DubboMethodParameterEntity                  │
 │ - 返回: MethodSignature {                                  │
 │     parameters: [                                           │
-│       {name: "order", type: "com.zkinfo.demo.model.Order"} │
+│       {name: "order", type: "model.com.pajk.provider2.Order"} │
 │     ]                                                       │
 │   }                                                         │
 └──────────────────────┬──────────────────────────────────────┘
@@ -298,7 +298,7 @@ JSON Arguments Map
                        ▼
 ┌─────────────────────────────────────────────────────────────┐
 │ ParameterConverter.convertToJavaObject()                    │
-│ - 输入: Map, targetType="com.zkinfo.demo.model.Order"      │
+│ - 输入: Map, targetType="model.com.pajk.provider2.Order"      │
 │ - 使用 Jackson ObjectMapper 转换                            │
 │ - 处理嵌套对象: orderItems → List<Order.OrderItem>         │
 │ - 输出: Order 对象                                          │
@@ -381,7 +381,7 @@ private Object convertPOJO(Object value, String targetType) {
 
 ```java
 private Object convertCollection(Object value, String targetType) {
-    // 解析泛型类型: List<com.zkinfo.demo.model.User>
+    // 解析泛型类型: List<model.com.pajk.provider2.User>
     String elementType = extractElementType(targetType);
     
     if (value instanceof List) {
@@ -437,7 +437,7 @@ private String detectDubboVersion(ProviderInfo provider) {
 }
 ```
 
-**期望**: `user` Map 转换为 `com.zkinfo.demo.model.User` 对象
+**期望**: `user` Map 转换为 `model.com.pajk.provider2.User` 对象
 
 ### 测试用例 2: 嵌套对象参数
 
@@ -462,7 +462,7 @@ private String detectDubboVersion(ProviderInfo provider) {
 ```
 
 **期望**: 
-- `order` Map 转换为 `com.zkinfo.demo.model.Order` 对象
+- `order` Map 转换为 `model.com.pajk.provider2.Order` 对象
 - `orderItems` List<Map> 转换为 `List<Order.OrderItem>`
 
 ### 测试用例 3: 集合类型参数
@@ -482,7 +482,7 @@ private String detectDubboVersion(ProviderInfo provider) {
 }
 ```
 
-**期望**: `users` List<Map> 转换为 `List<com.zkinfo.demo.model.User>`
+**期望**: `users` List<Map> 转换为 `List<model.com.pajk.provider2.User>`
 
 ---
 

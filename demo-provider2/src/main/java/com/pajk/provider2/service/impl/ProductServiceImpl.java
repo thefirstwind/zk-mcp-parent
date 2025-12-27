@@ -1,12 +1,11 @@
-package com.zkinfo.demo.service.impl;
+package com.pajk.provider2.service.impl;
 
-import com.zkinfo.demo.model.Product;
-import com.zkinfo.demo.service.ProductService;
+import com.pajk.provider2.model.Product;
+import com.pajk.provider2.service.ProductService;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.dubbo.config.annotation.DubboService;
+import com.alibaba.dubbo.config.annotation.Service;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -14,10 +13,11 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 /**
- * 产品服务实现类
+ * 产品服务实现类 (Dubbo 2.5)
+ * 注意：Dubbo 2.5 不支持 group 参数
  */
 @Slf4j
-@DubboService(version = "1.0.0", group = "demo")
+@Service(version = "1.0.0", interfaceClass = ProductService.class)
 public class ProductServiceImpl implements ProductService {
     
     private final Map<Long, Product> productStorage = new ConcurrentHashMap<>();
@@ -141,8 +141,4 @@ public class ProductServiceImpl implements ProductService {
         return price;
     }
 }
-
-
-
-
 

@@ -465,7 +465,7 @@ curl -s -X POST http://localhost:9091/mcp/jsonrpc \
 ### 当前Bug分析
 
 #### Bug #1: getPopularProducts 调用失败
-**错误信息**: `No such method getPopularProducts in class interface com.zkinfo.demo.service.ProductService`
+**错误信息**: `No such method getPopularProducts in class interface service.com.pajk.provider2.ProductService`
 
 **根因分析**:
 1. 接口定义存在但实现可能有问题

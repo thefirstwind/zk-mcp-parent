@@ -19,7 +19,7 @@ spring:
     deserialization:
       fail-on-unknown-properties: false
   datasource:
-    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:mcp_bridge}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=GMT%2B8&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:mcp_bridge}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=GMT%2B8&allowPublicKeyRetrieval=true
     username: ${MYSQL_USERNAME:mcp_user}
     password: ${MYSQL_PASSWORD:mcp_user}
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -58,20 +58,27 @@ mybatis:
 dubbo:
   application:
     name: zkinfo-mcp-client
+    qos-enable: false
+    qos-port: -1
   consumer:
     serialization: hessian2  # 强制使用 hessian2 序列化
     generic: true  # 启用泛化调用
-    timeout: 3000
+    timeout: 30000  # 超时时间改为 30 秒（30000 毫秒），避免调用超时
     retries: 0
     check: false
   protocol:
+    port: -1
     serialization: hessian2  # 协议级别强制使用 hessian2
+  registry:
+    client: curator
+curator:
+  version: 4.3.0
 
 # ZooKeeper配置
 zookeeper:
-  connect-string: ${ZK_CONNECT_STRING:localhost:2181}
-  session-timeout: 60000  # 增加到60秒，减少会话超时导致的连接中断
-  connection-timeout: 30000  # 增加到30秒，给连接更多时间
+  connect-string: ${ZK_CONNECT_STRING:127.0.0.1:2181}
+  session-timeout: 90000  # 增加到90秒，减少会话超时导致的连接中断
+  connection-timeout: 60000  # 增加到60秒，给连接更多时间，提高连接稳定性
   base-path: /dubbo
   retry:
     max-retries: 3  # 注意：使用RetryForever时此参数不再使用
@@ -83,7 +90,7 @@ zookeeper:
 # 如果为空，则允许所有接口入库（不推荐，建议配置白名单以确保安全）
 zk:
   whitelist:
-    interfaces: ${ZK_WHITELIST_INTERFACES:com.zkinfo.demo.service.UserService,com.zkinfo.demo.service.ProductService,com.zkinfo.demo.service.OrderService}  # 配置文件白名单（支持多个，逗号分隔）
+    interfaces: ${ZK_WHITELIST_INTERFACES:com.zkinfo.demo.service}  # 配置文件白名单（支持多个，逗号分隔）
     database:
       enabled: ${ZK_WHITELIST_DB_ENABLED:true}  # 是否启用数据库白名单（默认启用）
     cache:
@@ -91,7 +98,7 @@ zk:
 
 # Nacos配置
 nacos:
-  server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+  server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
   namespace: ${NACOS_NAMESPACE:public}
   username: ${NACOS_USERNAME:nacos}
   password: ${NACOS_PASSWORD:nacos}
@@ -115,6 +122,13 @@ logging:
     com.pajk.mcpmetainfo.core: DEBUG
     org.apache.curator: INFO
     org.apache.zookeeper: WARN
+    org.apache.dubbo.remoting.zookeeper: WARN  # 降低 Dubbo ZooKeeper 客户端日志级别
+    org.apache.dubbo.registry.zookeeper: WARN  # 降低 Dubbo ZooKeeper 注册中心日志级别
+    # 降低连接恢复相关的警告日志级别（这些是正常的重连信息，不影响功能）
+    org.apache.dubbo.remoting.zookeeper.curator.CuratorZookeeperClient: INFO  # 将 WARN 降为 INFO
+    # 降低 Dubbo 3.x 配置中心相关的警告（未配置配置中心是正常的，不影响功能）
+    org.apache.dubbo.registry.client.migration.MigrationRuleListener: INFO  # 将 WARN 降为 INFO
+    org.apache.dubbo.common.config.Environment: INFO  # 将 WARN 降为 INFO
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50}:%line - %msg%n"
     file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50}:%line - %msg%n"
@@ -174,7 +188,7 @@ spring:
       on-profile: dev
 
 zookeeper:
-  connect-string: ${ZK_CONNECT_STRING:localhost:2181}
+  connect-string: ${ZK_CONNECT_STRING:127.0.0.1:2181}
 
 logging:
   level:
@@ -188,7 +202,7 @@ spring:
       on-profile: prod
 
 zookeeper:
-  connect-string: ${ZK_CONNECT_STRING:localhost:2181}
+  connect-string: ${ZK_CONNECT_STRING:127.0.0.1:2181}
 
 logging:
   level:

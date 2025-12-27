@@ -32,8 +32,8 @@ curl -X GET "http://localhost:9091/api/applications" \
     "lastHeartbeat": "2024-01-01T12:00:00",
     "providers": [
       {
-        "interface": "com.zkinfo.demo.service.UserService",
-        "url": "dubbo://192.168.1.100:20883/com.zkinfo.demo.service.UserService",
+        "interface": "service.com.pajk.provider2.UserService",
+        "url": "dubbo://192.168.1.100:20883/service.com.pajk.provider2.UserService",
         "status": "ACTIVE"
       }
     ]
@@ -58,20 +58,20 @@ curl -X GET "http://localhost:9091/api/applications/demo-provider" \
   "lastHeartbeat": "2024-01-01T12:00:00",
   "providers": [
     {
-      "interface": "com.zkinfo.demo.service.UserService",
-      "url": "dubbo://192.168.1.100:20883/com.zkinfo.demo.service.UserService",
+      "interface": "service.com.pajk.provider2.UserService",
+      "url": "dubbo://192.168.1.100:20883/service.com.pajk.provider2.UserService",
       "status": "ACTIVE",
       "methods": ["getUserById", "getAllUsers", "createUser", "updateUser", "deleteUser"]
     },
     {
-      "interface": "com.zkinfo.demo.service.ProductService",
-      "url": "dubbo://192.168.1.100:20883/com.zkinfo.demo.service.ProductService",
+      "interface": "service.com.pajk.provider2.ProductService",
+      "url": "dubbo://192.168.1.100:20883/service.com.pajk.provider2.ProductService",
       "status": "ACTIVE",
       "methods": ["getProductById", "getProductsByCategory", "searchProducts"]
     },
     {
-      "interface": "com.zkinfo.demo.service.OrderService",
-      "url": "dubbo://192.168.1.100:20883/com.zkinfo.demo.service.OrderService",
+      "interface": "service.com.pajk.provider2.OrderService",
+      "url": "dubbo://192.168.1.100:20883/service.com.pajk.provider2.OrderService",
       "status": "ACTIVE",
       "methods": ["getOrderById", "getOrdersByUserId", "createOrder"]
     }
@@ -91,7 +91,7 @@ curl -X GET "http://localhost:9091/api/applications/demo-provider/mcp" \
   "application": "demo-provider",
   "tools": [
     {
-      "name": "com.zkinfo.demo.service.UserService.getUserById",
+      "name": "service.com.pajk.provider2.UserService.getUserById",
       "description": "根据ID获取用户信息",
       "inputSchema": {
         "type": "object",
@@ -119,15 +119,15 @@ curl -X GET "http://localhost:9091/api/interfaces" \
 **响应示例：**
 ```json
 [
-  "com.zkinfo.demo.service.UserService",
-  "com.zkinfo.demo.service.ProductService",
-  "com.zkinfo.demo.service.OrderService"
+  "service.com.pajk.provider2.UserService",
+  "service.com.pajk.provider2.ProductService",
+  "service.com.pajk.provider2.OrderService"
 ]
 ```
 
 #### 获取指定接口的提供者列表
 ```bash
-curl -X GET "http://localhost:9091/api/interfaces/com.zkinfo.demo.service.UserService/providers" \
+curl -X GET "http://localhost:9091/api/interfaces/service.com.pajk.provider2.UserService/providers" \
   -H "Accept: application/json"
 ```
 
@@ -135,8 +135,8 @@ curl -X GET "http://localhost:9091/api/interfaces/com.zkinfo.demo.service.UserSe
 ```json
 [
   {
-    "interface": "com.zkinfo.demo.service.UserService",
-    "url": "dubbo://192.168.1.100:20883/com.zkinfo.demo.service.UserService",
+    "interface": "service.com.pajk.provider2.UserService",
+    "url": "dubbo://192.168.1.100:20883/service.com.pajk.provider2.UserService",
     "application": "demo-provider",
     "version": "1.0.0",
     "group": "demo",
@@ -145,7 +145,7 @@ curl -X GET "http://localhost:9091/api/interfaces/com.zkinfo.demo.service.UserSe
       {
         "name": "getUserById",
         "parameterTypes": ["java.lang.Long"],
-        "returnType": "com.zkinfo.demo.model.User"
+        "returnType": "model.com.pajk.provider2.User"
       },
       {
         "name": "getAllUsers",
@@ -186,7 +186,7 @@ curl -X GET "http://localhost:9091/api/mcp" \
     "application": "demo-provider",
     "tools": [
       {
-        "name": "com.zkinfo.demo.service.UserService.getUserById",
+        "name": "service.com.pajk.provider2.UserService.getUserById",
         "description": "根据ID获取用户信息",
         "inputSchema": {
           "type": "object",
@@ -298,7 +298,7 @@ curl -X POST "http://localhost:9091/mcp/jsonrpc" \
   "result": {
     "tools": [
       {
-        "name": "com.zkinfo.demo.service.UserService.getUserById",
+        "name": "service.com.pajk.provider2.UserService.getUserById",
         "description": "根据ID获取用户信息",
         "inputSchema": {
           "type": "object",
@@ -309,7 +309,7 @@ curl -X POST "http://localhost:9091/mcp/jsonrpc" \
         }
       },
       {
-        "name": "com.zkinfo.demo.service.UserService.getAllUsers",
+        "name": "service.com.pajk.provider2.UserService.getAllUsers",
         "description": "获取所有用户列表",
         "inputSchema": {
           "type": "object",
@@ -330,7 +330,7 @@ curl -X POST "http://localhost:9091/mcp/jsonrpc" \
     "id": "3",
     "method": "tools/call",
     "params": {
-      "name": "com.zkinfo.demo.service.UserService.getUserById",
+      "name": "service.com.pajk.provider2.UserService.getUserById",
       "arguments": {
         "userId": 1
       }
@@ -386,7 +386,7 @@ curl -X GET "http://localhost:9091/mcp/resources" \
       "mimeType": "application/json"
     },
     {
-      "uri": "providers://com.zkinfo.demo.service.UserService",
+      "uri": "providers://service.com.pajk.provider2.UserService",
       "name": "用户服务提供者",
       "description": "用户服务的提供者信息",
       "mimeType": "application/json"
@@ -452,7 +452,7 @@ curl -X POST "http://localhost:9091/mcp/jsonrpc" \
     "id": "user-1",
     "method": "tools/call",
     "params": {
-      "name": "com.zkinfo.demo.service.UserService.getUserById",
+      "name": "service.com.pajk.provider2.UserService.getUserById",
       "arguments": {
         "userId": 1
       }
@@ -469,7 +469,7 @@ curl -X POST "http://localhost:9091/mcp/jsonrpc" \
     "id": "user-2",
     "method": "tools/call",
     "params": {
-      "name": "com.zkinfo.demo.service.UserService.getAllUsers",
+      "name": "service.com.pajk.provider2.UserService.getAllUsers",
       "arguments": {}
     }
   }'
@@ -484,7 +484,7 @@ curl -X POST "http://localhost:9091/mcp/jsonrpc" \
     "id": "user-3",
     "method": "tools/call",
     "params": {
-      "name": "com.zkinfo.demo.service.UserService.createUser",
+      "name": "service.com.pajk.provider2.UserService.createUser",
       "arguments": {
         "user": {
           "username": "newuser",
@@ -510,7 +510,7 @@ curl -X POST "http://localhost:9091/mcp/jsonrpc" \
     "id": "product-1",
     "method": "tools/call",
     "params": {
-      "name": "com.zkinfo.demo.service.ProductService.getProductById",
+      "name": "service.com.pajk.provider2.ProductService.getProductById",
       "arguments": {
         "productId": 1
       }
@@ -527,7 +527,7 @@ curl -X POST "http://localhost:9091/mcp/jsonrpc" \
     "id": "product-2",
     "method": "tools/call",
     "params": {
-      "name": "com.zkinfo.demo.service.ProductService.getProductsByCategory",
+      "name": "service.com.pajk.provider2.ProductService.getProductsByCategory",
       "arguments": {
         "category": "electronics"
       }
@@ -546,7 +546,7 @@ curl -X POST "http://localhost:9091/mcp/jsonrpc" \
     "id": "order-1",
     "method": "tools/call",
     "params": {
-      "name": "com.zkinfo.demo.service.OrderService.getOrderById",
+      "name": "service.com.pajk.provider2.OrderService.getOrderById",
       "arguments": {
         "orderId": "ORD-001"
       }
@@ -563,7 +563,7 @@ curl -X POST "http://localhost:9091/mcp/jsonrpc" \
     "id": "order-2",
     "method": "tools/call",
     "params": {
-      "name": "com.zkinfo.demo.service.OrderService.createOrder",
+      "name": "service.com.pajk.provider2.OrderService.createOrder",
       "arguments": {
         "order": {
           "userId": 1,
@@ -640,7 +640,7 @@ function callTool(toolName, args) {
 }
 
 // 示例调用
-callTool("com.zkinfo.demo.service.UserService.getUserById", {userId: 1});
+callTool("service.com.pajk.provider2.UserService.getUserById", {userId: 1});
 ```
 
 ### 4.2 SSE 流式传输示例
@@ -654,7 +654,7 @@ curl -X POST "http://localhost:9091/mcp/stream" \
     "id": "stream-1",
     "method": "tools/call",
     "params": {
-      "name": "com.zkinfo.demo.service.ProductService.searchProducts",
+      "name": "service.com.pajk.provider2.ProductService.searchProducts",
       "arguments": {
         "keyword": "laptop"
       }
@@ -887,7 +887,7 @@ print("可用工具:", tools)
 
 # 调用用户服务
 user_result = client.call_tool(
-    "com.zkinfo.demo.service.UserService.getUserById",
+    "service.com.pajk.provider2.UserService.getUserById",
     {"userId": 1}
 )
 print("用户信息:", user_result)

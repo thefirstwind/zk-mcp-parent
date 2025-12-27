@@ -170,7 +170,7 @@ curl -X POST http://localhost:9091/api/projects \
 curl -X POST http://localhost:9091/api/projects/1/services \
   -H "Content-Type: application/json" \
   -d '{
-    "serviceInterface": "com.zkinfo.demo.service.UserService",
+    "serviceInterface": "service.com.pajk.provider2.UserService",
     "serviceVersion": "1.0.0",
     "serviceGroup": "demo",
     "enabled": true
@@ -244,7 +244,7 @@ curl http://localhost:9091/api/filters | jq
 curl -X POST http://localhost:9091/api/approvals \
   -H "Content-Type: application/json" \
   -d '{
-    "serviceInterface": "com.zkinfo.demo.service.OrderService",
+    "serviceInterface": "service.com.pajk.provider2.OrderService",
     "serviceVersion": "1.0.0",
     "serviceGroup": "demo",
     "applicantId": 1,
@@ -255,7 +255,7 @@ curl -X POST http://localhost:9091/api/approvals \
 # 预期响应:
 # {
 #   "id": 1,
-#   "serviceInterface": "com.zkinfo.demo.service.OrderService",
+#   "serviceInterface": "service.com.pajk.provider2.OrderService",
 #   "serviceVersion": "1.0.0",
 #   "status": "PENDING",
 #   "message": "审批申请创建成功"
@@ -334,7 +334,7 @@ curl http://localhost:9091/api/projects/1 | jq
 curl -X POST http://localhost:9091/api/projects/1/services \
   -H "Content-Type: application/json" \
   -d '{
-    "serviceInterface": "com.zkinfo.demo.service.UserService",
+    "serviceInterface": "service.com.pajk.provider2.UserService",
     "serviceVersion": "1.0.0",
     "serviceGroup": "demo",
     "priority": 10,
@@ -344,7 +344,7 @@ curl -X POST http://localhost:9091/api/projects/1/services \
 curl -X POST http://localhost:9091/api/projects/1/services \
   -H "Content-Type: application/json" \
   -d '{
-    "serviceInterface": "com.zkinfo.demo.service.OrderService",
+    "serviceInterface": "service.com.pajk.provider2.OrderService",
     "serviceVersion": "1.0.0",
     "serviceGroup": "demo",
     "priority": 5,
@@ -396,19 +396,19 @@ curl -X POST http://localhost:9091/api/virtual-projects \
     "endpointName": "data-analysis",
     "services": [
       {
-        "serviceInterface": "com.zkinfo.demo.service.UserService",
+        "serviceInterface": "service.com.pajk.provider2.UserService",
         "version": "1.0.0",
         "group": "demo",
         "priority": 10
       },
       {
-        "serviceInterface": "com.zkinfo.demo.service.OrderService",
+        "serviceInterface": "service.com.pajk.provider2.OrderService",
         "version": "1.0.0",
         "group": "demo",
         "priority": 10
       },
       {
-        "serviceInterface": "com.zkinfo.demo.service.ProductService",
+        "serviceInterface": "service.com.pajk.provider2.ProductService",
         "version": "1.0.0",
         "group": "demo",
         "priority": 5
@@ -455,13 +455,13 @@ curl -X PUT http://localhost:9091/api/virtual-projects/$VIRTUAL_PROJECT_ID/servi
   -d '{
     "services": [
       {
-        "serviceInterface": "com.zkinfo.demo.service.UserService",
+        "serviceInterface": "service.com.pajk.provider2.UserService",
         "version": "1.0.0",
         "group": "demo",
         "priority": 10
       },
       {
-        "serviceInterface": "com.zkinfo.demo.service.ProductService",
+        "serviceInterface": "service.com.pajk.provider2.ProductService",
         "version": "1.0.0",
         "group": "demo",
         "priority": 10
@@ -601,7 +601,7 @@ curl -X POST "http://localhost:9091/mcp/message?sessionId=$SESSION_ID" \
     "id": "3",
     "method": "tools/call",
     "params": {
-      "name": "com.zkinfo.demo.service.OrderService.getOrderById",
+      "name": "service.com.pajk.provider2.OrderService.getOrderById",
       "arguments": ["ORD001"]
     }
   }'
@@ -930,7 +930,7 @@ echo "项目ID: $PROJECT_ID"
 curl -X POST http://localhost:9091/api/projects/$PROJECT_ID/services \
   -H "Content-Type: application/json" \
   -d '{
-    "serviceInterface": "com.zkinfo.demo.service.UserService",
+    "serviceInterface": "service.com.pajk.provider2.UserService",
     "serviceVersion": "1.0.0",
     "serviceGroup": "demo",
     "enabled": true
@@ -940,7 +940,7 @@ curl -X POST http://localhost:9091/api/projects/$PROJECT_ID/services \
 APPROVAL_ID=$(curl -s -X POST http://localhost:9091/api/approvals \
   -H "Content-Type: application/json" \
   -d '{
-    "serviceInterface": "com.zkinfo.demo.service.UserService",
+    "serviceInterface": "service.com.pajk.provider2.UserService",
     "serviceVersion": "1.0.0",
     "serviceGroup": "demo",
     "projectId": '$PROJECT_ID'
@@ -958,7 +958,7 @@ curl -X PUT http://localhost:9091/api/approvals/$APPROVAL_ID/approve \
 
 # 5. 验证服务被采集
 sleep 5
-curl http://localhost:9091/api/providers | jq '.[] | select(.interfaceName == "com.zkinfo.demo.service.UserService")'
+curl http://localhost:9091/api/providers | jq '.[] | select(.interfaceName == "service.com.pajk.provider2.UserService")'
 
 # 6. 验证服务注册到Nacos
 curl http://localhost:9091/api/registered-services | jq
@@ -970,7 +970,7 @@ VIRTUAL_PROJECT_ID=$(curl -s -X POST http://localhost:9091/api/virtual-projects 
     "name": "端到端测试虚拟项目",
     "endpointName": "e2e-test",
     "services": [{
-      "serviceInterface": "com.zkinfo.demo.service.UserService",
+      "serviceInterface": "service.com.pajk.provider2.UserService",
       "version": "1.0.0",
       "group": "demo"
     }]
@@ -1044,7 +1044,7 @@ for i in {1..10}; do
   curl -X POST http://localhost:9091/api/projects/$i/services \
     -H "Content-Type: application/json" \
     -d '{
-      "serviceInterface": "com.zkinfo.demo.service.UserService",
+      "serviceInterface": "service.com.pajk.provider2.UserService",
       "serviceVersion": "1.0.0",
       "serviceGroup": "demo"
     }'
@@ -1255,7 +1255,7 @@ time curl http://localhost:9091/api/providers | jq length
       "projectName": "用户中心项目",
       "projectType": "REAL",
       "services": [
-        "com.zkinfo.demo.service.UserService:1.0.0:demo"
+        "service.com.pajk.provider2.UserService:1.0.0:demo"
       ]
     },
     {
@@ -1263,7 +1263,7 @@ time curl http://localhost:9091/api/providers | jq length
       "projectName": "订单中心项目",
       "projectType": "REAL",
       "services": [
-        "com.zkinfo.demo.service.OrderService:1.0.0:demo"
+        "service.com.pajk.provider2.OrderService:1.0.0:demo"
       ]
     }
   ]
@@ -1279,17 +1279,17 @@ time curl http://localhost:9091/api/providers | jq length
       "name": "数据分析场景",
       "endpointName": "data-analysis",
       "services": [
-        "com.zkinfo.demo.service.UserService:1.0.0:demo",
-        "com.zkinfo.demo.service.OrderService:1.0.0:demo",
-        "com.zkinfo.demo.service.ProductService:1.0.0:demo"
+        "service.com.pajk.provider2.UserService:1.0.0:demo",
+        "service.com.pajk.provider2.OrderService:1.0.0:demo",
+        "service.com.pajk.provider2.ProductService:1.0.0:demo"
       ]
     },
     {
       "name": "报表生成场景",
       "endpointName": "report-generation",
       "services": [
-        "com.zkinfo.demo.service.OrderService:1.0.0:demo",
-        "com.zkinfo.demo.service.ProductService:1.0.0:demo"
+        "service.com.pajk.provider2.OrderService:1.0.0:demo",
+        "service.com.pajk.provider2.ProductService:1.0.0:demo"
       ]
     }
   ]

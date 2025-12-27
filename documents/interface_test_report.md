@@ -61,7 +61,7 @@
 
 ### 问题1: getPopularProducts方法调用失败 🐛
 - **现象**: 调用ProductService.getPopularProducts时报错 "No such method"
-- **错误信息**: `No such method getPopularProducts in class interface com.zkinfo.demo.service.ProductService`
+- **错误信息**: `No such method getPopularProducts in class interface service.com.pajk.provider2.ProductService`
 - **状态**: ❌ **已确认Bug**
 - **影响**: 热门产品功能不可用
 - **详细报告**: 参见 `BUG_REPORT.md`

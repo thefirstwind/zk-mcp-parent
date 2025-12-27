@@ -50,7 +50,34 @@ public class McpMessageController {
     private final VirtualProjectService virtualProjectService;
     
     /**
-     * 处理 MCP 消息：POST /mcp/message?sessionId=xxx
+     * 处理 MCP 消息：POST /mcp/{serviceName}/message?sessionId=xxx（路径参数方式，参考 mcp-router-v3）
+     */
+    @PostMapping(value = "/{serviceName}/message", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Map<String, Object>> handleMessageWithPath(
+            @PathVariable String serviceName,
+            @RequestParam(required = false) String sessionId,
+            @RequestBody Map<String, Object> request) {
+        
+        log.info("📨 MCP message request (path): serviceName={}, sessionId={}, method={}", 
+                serviceName, sessionId, request.get("method"));
+        
+        // 如果 serviceName 以 virtual- 开头，去掉前缀
+        String endpoint = serviceName;
+        if (serviceName.startsWith("virtual-")) {
+            endpoint = serviceName.substring("virtual-".length());
+            log.debug("🔍 ServiceName '{}' starts with virtual-, using '{}' for endpoint lookup", serviceName, endpoint);
+        } else if (serviceName.startsWith("mcp-")) {
+            // 向后兼容：如果以 mcp- 开头，也去掉前缀
+            endpoint = serviceName.substring("mcp-".length());
+            log.debug("🔍 ServiceName '{}' starts with mcp-, using '{}' for endpoint lookup", serviceName, endpoint);
+        }
+        
+        // 调用统一的处理逻辑
+        return handleMessage(sessionId, endpoint, request, serviceName);
+    }
+    
+    /**
+     * 处理 MCP 消息：POST /mcp/message?sessionId=xxx（查询参数方式）
      */
     @PostMapping(value = "/message", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Map<String, Object>> handleMessage(
@@ -308,9 +335,9 @@ public class McpMessageController {
         String responseJson = objectMapper.writeValueAsString(response);
         
         // 立即发送响应（不等待）
+        // 参考 mcp-router-v3：不设置 event 名称，使用默认 event（符合 MCP 标准）
         try {
             emitter.send(SseEmitter.event()
-                    .name("message")  // 设置 event type 以兼容 WebFluxSseClientTransport
                     .data(responseJson));
             log.info("✅ Initialize response sent via SSE: sessionId={}, id={}, serviceName={}", 
                     sessionId, id, serviceName);
@@ -356,15 +383,12 @@ public class McpMessageController {
             java.util.Optional<EndpointResolver.EndpointInfo> endpointInfoOpt = endpointResolver.resolveEndpoint(actualEndpoint);
             if (endpointInfoOpt.isPresent()) {
                 EndpointResolver.EndpointInfo endpointInfo = endpointInfoOpt.get();
+                log.info("✅ Resolved endpoint '{}' to EndpointInfo: isVirtualProject={}, projectId={}", 
+                        actualEndpoint, endpointInfo.isVirtualProject(), endpointInfo.getProjectId());
                 if (endpointInfo.isVirtualProject()) {
-                    // 虚拟项目：从 VirtualProjectRegistrationService 获取工具
-                    Long projectId = endpointInfo.getProjectId();
-                    if (projectId != null) {
-                        tools = virtualProjectRegistrationService.getVirtualProjectTools(projectId);
-                        log.info("✅ Got {} tools from virtual project (projectId: {})", tools.size(), projectId);
-                    } else {
-                        log.warn("⚠️ Virtual project endpoint found but projectId is null: {}", actualEndpoint);
-                    }
+                    // 虚拟项目：直接通过 endpointName 获取工具（简化逻辑，不依赖 projectId）
+                    tools = virtualProjectRegistrationService.getVirtualProjectToolsByEndpointName(actualEndpoint);
+                    log.info("✅ Got {} tools from virtual project (endpointName: {})", tools.size(), actualEndpoint);
                 } else {
                     // 实际项目：从 ProviderService 获取工具
                     Long projectId = endpointInfo.getProjectId();
@@ -437,7 +461,23 @@ public class McpMessageController {
                     }
                 }
             } else {
-                log.warn("⚠️ Endpoint not resolved: {}", actualEndpoint);
+                log.warn("⚠️ Endpoint not resolved: {}. Available endpoints may need to be checked.", actualEndpoint);
+                // 尝试列出所有可用的虚拟项目 endpoint，帮助调试
+                try {
+                    List<VirtualProjectService.VirtualProjectInfo> allVirtualProjects = virtualProjectService.getAllVirtualProjects();
+                    if (allVirtualProjects != null && !allVirtualProjects.isEmpty()) {
+                        log.info("📋 Available virtual project endpoints:");
+                        for (VirtualProjectService.VirtualProjectInfo vp : allVirtualProjects) {
+                            if (vp.getEndpoint() != null) {
+                                log.info("   - {}", vp.getEndpoint().getEndpointName());
+                            }
+                        }
+                    } else {
+                        log.warn("⚠️ No virtual projects found in the system");
+                    }
+                } catch (Exception e) {
+                    log.debug("Failed to list virtual projects for debugging: {}", e.getMessage());
+                }
             }
         } catch (Exception e) {
             log.warn("Failed to get tools for endpoint: {}", endpoint, e);
@@ -465,9 +505,18 @@ public class McpMessageController {
                 }
             } else if (virtualProjects != null && virtualProjects.size() > 1) {
                 log.warn("⚠️ Multiple virtual projects found ({}), cannot auto-select endpoint", virtualProjects.size());
+                // 列出所有虚拟项目，帮助调试
+                for (VirtualProjectService.VirtualProjectInfo vp : virtualProjects) {
+                    if (vp.getEndpoint() != null) {
+                        log.info("   Available endpoint: {}", vp.getEndpoint().getEndpointName());
+                    }
+                }
+            } else {
+                log.warn("⚠️ No virtual projects found");
             }
         }
         
+        log.info("🔍 Using endpoint for tools/list: {}", actualEndpoint);
         List<Map<String, Object>> tools = getToolsForEndpointInternal(actualEndpoint);
         log.info("✅ Got {} tools for endpoint: {}", tools.size(), actualEndpoint);
         
@@ -595,8 +644,9 @@ public class McpMessageController {
         }
 
         // 执行工具调用（McpExecutorService 会根据 toolName 自动查找对应的服务）
+        // 传入 null 让 executeToolCallSync 使用配置的 Dubbo 超时时间（默认 30 秒）
         McpExecutorService.McpCallResult result = mcpExecutorService.executeToolCallSync(
-                toolName, args, 5000);
+                toolName, args, null);
 
         Map<String, Object> response;
         if (result.isSuccess()) {
@@ -770,8 +820,8 @@ public class McpMessageController {
             return;
         }
         try {
+            // 参考 mcp-router-v3：不设置 event 名称，使用默认 event（符合 MCP 标准）
             emitter.send(SseEmitter.event()
-                    .name("message")  // 设置 event type 以兼容 WebFluxSseClientTransport
                     .data(data));
             log.info("✅ Successfully sent SSE event '{}' for session: {} (data length: {})", 
                     method, sessionId, data != null ? data.length() : 0);
@@ -950,8 +1000,8 @@ public class McpMessageController {
                     args = new Object[0];
                 }
                 
-                // 执行调用
-                McpExecutorService.McpCallResult result = mcpExecutorService.executeToolCallSync(toolName, args, 5000);
+                // 执行调用（传入 null 让 executeToolCallSync 使用配置的 Dubbo 超时时间）
+                McpExecutorService.McpCallResult result = mcpExecutorService.executeToolCallSync(toolName, args, null);
                 
                 if (result.isSuccess()) {
                     Map<String, Object> contentItem = new java.util.LinkedHashMap<>();

@@ -125,7 +125,7 @@ curl -X POST "http://localhost:9091/mcp/message?sessionId=$SESSION_ID" \
     "id": "3",
     "method": "tools/call",
     "params": {
-      "name": "com.zkinfo.demo.service.OrderService.getOrderById",
+      "name": "service.com.pajk.provider2.OrderService.getOrderById",
       "arguments": ["ORD001"]
     }
   }'

@@ -464,7 +464,7 @@ GET /api/mcp/tools
     "application": "demo-provider",
     "tools": [
       {
-        "name": "com.zkinfo.demo.service.UserService.getAllUsers",
+        "name": "service.com.pajk.provider2.UserService.getAllUsers",
         "description": "获取所有用户列表",
         "inputSchema": {
           "type": "object",
@@ -489,7 +489,7 @@ POST /api/mcp/call
 Content-Type: application/json
 
 {
-  "toolName": "com.zkinfo.demo.service.UserService.getAllUsers",
+  "toolName": "service.com.pajk.provider2.UserService.getAllUsers",
   "args": [],
   "timeout": 3000
 }
@@ -515,7 +515,7 @@ Content-Type: application/json
 curl -X POST "http://localhost:9091/api/mcp/call" \
   -H "Content-Type: application/json" \
   -d '{
-    "toolName": "com.zkinfo.demo.service.UserService.getAllUsers",
+    "toolName": "service.com.pajk.provider2.UserService.getAllUsers",
     "args": [],
     "timeout": 3000
   }' | jq '.'
@@ -544,7 +544,7 @@ Content-Type: application/json
   "result": {
     "tools": [
       {
-        "name": "com.zkinfo.demo.service.UserService.getAllUsers",
+        "name": "service.com.pajk.provider2.UserService.getAllUsers",
         "description": "获取所有用户列表",
         "inputSchema": {
           "type": "object",
@@ -564,7 +564,7 @@ POST /api/mcp/call/stream
 Content-Type: application/json
 
 {
-  "toolName": "com.zkinfo.demo.service.UserService.getAllUsers",
+  "toolName": "service.com.pajk.provider2.UserService.getAllUsers",
   "args": [],
   "timeout": 3000
 }
@@ -662,7 +662,7 @@ GET /api/chat/tools
 {
   "tools": [
     {
-      "name": "com.zkinfo.demo.service.UserService.getAllUsers",
+      "name": "service.com.pajk.provider2.UserService.getAllUsers",
       "description": "获取所有用户列表"
     }
   ]
@@ -923,7 +923,7 @@ tail -f mcp-ai-client/logs/mcp-ai-client.log
 curl -X POST "http://localhost:9091/api/mcp/call" \
   -H "Content-Type: application/json" \
   -d '{
-    "toolName": "com.zkinfo.demo.service.UserService.getAllUsers",
+    "toolName": "service.com.pajk.provider2.UserService.getAllUsers",
     "args": [],
     "timeout": 3000
   }' | jq '.'

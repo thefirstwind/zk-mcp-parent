@@ -34,6 +34,9 @@ public class VirtualProjectRegistrationService {
     private final DubboServiceDbService dubboServiceDbService; // 用于从 zk_dubbo_* 表查询
     
     @Autowired
+    private VirtualProjectService virtualProjectService; // 使用字段注入避免循环依赖
+    
+    @Autowired
     private McpToolSchemaGenerator mcpToolSchemaGenerator;
     
     @Autowired(required = false)
@@ -41,6 +44,9 @@ public class VirtualProjectRegistrationService {
     
     @Autowired(required = false)
     private com.pajk.mcpmetainfo.persistence.mapper.DubboServiceMethodMapper dubboServiceMethodMapper;
+    
+    @Autowired(required = false)
+    private javax.sql.DataSource dataSource; // 用于直接查询数据库
     
     @Value("${server.port:9091}")
     private int serverPort;
@@ -151,16 +157,23 @@ public class VirtualProjectRegistrationService {
     private List<com.pajk.mcpmetainfo.core.model.ProviderInfo> aggregateProviders(List<ProjectService> projectServices) {
         Map<String, com.pajk.mcpmetainfo.core.model.ProviderInfo> uniqueProviders = new LinkedHashMap<>();
         
-        log.info("Starting to aggregate providers from {} project services", projectServices.size());
+        log.info("🔍 Starting to aggregate providers from {} project services", projectServices.size());
         
         for (ProjectService projectService : projectServices) {
             if (!projectService.getEnabled()) {
-                log.debug("Skipping disabled service: {}:{}:{}", 
+                log.warn("⚠️ Skipping disabled service: {}:{}:{}", 
                         projectService.getServiceInterface(),
                         projectService.getServiceVersion(),
                         projectService.getServiceGroup());
                 continue;
             }
+            
+            log.info("📋 Processing service: {}:{}:{} (serviceId={}, enabled={})", 
+                    projectService.getServiceInterface(),
+                    projectService.getServiceVersion(),
+                    projectService.getServiceGroup(),
+                    projectService.getServiceId(),
+                    projectService.getEnabled());
             
             List<com.pajk.mcpmetainfo.core.model.ProviderInfo> providers;
             
@@ -306,28 +319,134 @@ public class VirtualProjectRegistrationService {
     public List<Map<String, Object>> getVirtualProjectTools(Long virtualProjectId) {
         // 注意：虚拟项目存储在ProjectManagementService中（通过addProjectService时同步）
         // 但Project对象可能不在projectCache中，需要从projectServiceCache中获取服务列表
+        log.info("🔍 Getting tools for virtual project: projectId={}", virtualProjectId);
+        
         List<ProjectService> projectServices = projectManagementService.getProjectServices(virtualProjectId);
         if (projectServices == null || projectServices.isEmpty()) {
-            log.warn("Virtual project {} has no services", virtualProjectId);
+            log.warn("⚠️ Virtual project {} has no services", virtualProjectId);
             return Collections.emptyList();
         }
         
-        log.info("Getting tools for virtual project {} with {} services", virtualProjectId, projectServices.size());
+        log.info("📋 Virtual project {} has {} services:", virtualProjectId, projectServices.size());
+        for (ProjectService ps : projectServices) {
+            log.info("   - Service: {}:{}:{} (serviceId={}, enabled={})", 
+                    ps.getServiceInterface(), ps.getServiceVersion(), ps.getServiceGroup(),
+                    ps.getServiceId(), ps.getEnabled());
+        }
         
         List<com.pajk.mcpmetainfo.core.model.ProviderInfo> providers = aggregateProviders(projectServices);
-        log.info("Aggregated {} providers for virtual project {} (from {} services)", 
+        log.info("✅ Aggregated {} providers for virtual project {} (from {} services)", 
                 providers.size(), virtualProjectId, projectServices.size());
         
         if (providers.isEmpty()) {
-            log.warn("No providers found for virtual project {}", virtualProjectId);
+            log.warn("⚠️ No providers found for virtual project {} (this may indicate: 1) services not in whitelist, 2) no online providers, 3) serviceId mismatch)", virtualProjectId);
             return Collections.emptyList();
         }
         
         // 生成工具列表（复用NacosMcpRegistrationService的逻辑）
         List<Map<String, Object>> tools = generateToolsFromProviders(providers);
-        log.info("Generated {} tools for virtual project {}", tools.size(), virtualProjectId);
+        log.info("✅ Generated {} tools for virtual project {}", tools.size(), virtualProjectId);
         
         return tools;
+    }
+    
+    /**
+     * 通过 endpointName 获取虚拟项目的工具列表（简化版本，不依赖 projectId）
+     */
+    public List<Map<String, Object>> getVirtualProjectToolsByEndpointName(String endpointName) {
+        if (endpointName == null || endpointName.isEmpty()) {
+            log.warn("Endpoint name is null or empty");
+            return Collections.emptyList();
+        }
+        
+        // 去掉 virtual- 前缀（如果存在）
+        String actualEndpoint = endpointName;
+        if (endpointName.startsWith("virtual-")) {
+            actualEndpoint = endpointName.substring("virtual-".length());
+        }
+        
+        log.info("Getting tools for virtual project by endpointName: {}", actualEndpoint);
+        
+        // 1. 尝试从 VirtualProjectService 获取虚拟项目信息
+        VirtualProjectService.VirtualProjectInfo virtualProject = 
+                virtualProjectService.getVirtualProjectByEndpointName(actualEndpoint);
+        if (virtualProject != null && virtualProject.getProject() != null) {
+            Long projectId = virtualProject.getProject().getId();
+            log.info("Found virtual project by endpointName: projectId={}, endpointName={}", projectId, actualEndpoint);
+            return getVirtualProjectTools(projectId);
+        }
+        
+        // 2. 如果内存中没有，尝试从所有虚拟项目中查找匹配的 endpoint
+        List<VirtualProjectService.VirtualProjectInfo> allVirtualProjects = virtualProjectService.getAllVirtualProjects();
+        if (allVirtualProjects != null) {
+            for (VirtualProjectService.VirtualProjectInfo vp : allVirtualProjects) {
+                if (vp.getEndpoint() != null && actualEndpoint.equals(vp.getEndpoint().getEndpointName())) {
+                    if (vp.getProject() != null) {
+                        Long projectId = vp.getProject().getId();
+                        log.info("Found virtual project from all projects: projectId={}, endpointName={}", 
+                                projectId, actualEndpoint);
+                        return getVirtualProjectTools(projectId);
+                    }
+                }
+            }
+        }
+        
+        // 3. 如果内存中都没有，尝试通过 ProjectManagementService 查询所有项目，然后匹配 endpoint
+        List<Project> allProjects = projectManagementService.getAllProjects();
+        if (allProjects != null) {
+            for (Project project : allProjects) {
+                if (project.getProjectType() == Project.ProjectType.VIRTUAL) {
+                    // 检查该项目的 endpoint 是否匹配
+                    VirtualProjectEndpoint endpoint = virtualProjectService.getEndpointByProjectId(project.getId());
+                    if (endpoint != null && actualEndpoint.equals(endpoint.getEndpointName())) {
+                        log.info("Found virtual project from ProjectManagementService: projectId={}, endpointName={}", 
+                                project.getId(), actualEndpoint);
+                        return getVirtualProjectTools(project.getId());
+                    }
+                }
+            }
+        }
+        
+        // 4. 如果内存中都没有，尝试从数据库直接查询 virtual_project_id
+        if (dataSource != null) {
+            try {
+                Long projectId = queryVirtualProjectIdFromDatabase(actualEndpoint);
+                if (projectId != null) {
+                    log.info("Found virtual project from database: projectId={}, endpointName={}", 
+                            projectId, actualEndpoint);
+                    return getVirtualProjectTools(projectId);
+                }
+            } catch (Exception e) {
+                log.warn("Failed to query virtual project from database: endpointName={}, error: {}", 
+                        actualEndpoint, e.getMessage());
+            }
+        }
+        
+        log.warn("Virtual project not found by endpointName: {} (memory cache may be empty after restart)", actualEndpoint);
+        return Collections.emptyList();
+    }
+    
+    /**
+     * 从数据库查询虚拟项目的 projectId（通过 endpointName）
+     */
+    private Long queryVirtualProjectIdFromDatabase(String endpointName) {
+        if (dataSource == null) {
+            return null;
+        }
+        
+        String sql = "SELECT virtual_project_id FROM zk_virtual_project_endpoint WHERE endpoint_name = ? AND status = 'ACTIVE' LIMIT 1";
+        try (java.sql.Connection conn = dataSource.getConnection();
+             java.sql.PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, endpointName);
+            try (java.sql.ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getLong("virtual_project_id");
+                }
+            }
+        } catch (java.sql.SQLException e) {
+            log.error("Failed to query virtual project from database: endpointName={}", endpointName, e);
+        }
+        return null;
     }
     
     /**

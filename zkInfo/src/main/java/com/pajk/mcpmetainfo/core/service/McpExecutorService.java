@@ -12,10 +12,8 @@ import org.apache.dubbo.config.RegistryConfig;
 import org.apache.dubbo.rpc.service.GenericService;
 import org.apache.dubbo.common.URL;
 import org.apache.dubbo.common.extension.ExtensionLoader;
-import org.apache.dubbo.metadata.report.MetadataReport;
-import org.apache.dubbo.metadata.report.MetadataReportFactory;
-import org.apache.dubbo.metadata.definition.model.FullServiceDefinition;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
@@ -87,6 +85,17 @@ public class McpExecutorService {
     @Autowired(required = false)
     private com.pajk.mcpmetainfo.core.service.ZooKeeperService zooKeeperService;
     
+    // Dubbo 超时配置（从配置文件读取，默认 30 秒）
+    @Value("${dubbo.consumer.timeout:30000}")
+    private int dubboTimeout;
+    
+    // Dubbo QOS 配置（从配置文件读取）
+    @Value("${dubbo.application.qos-enable:false}")
+    private boolean qosEnable;
+    
+    @Value("${dubbo.application.qos-port:-1}")
+    private int qosPort;
+    
     // Dubbo 配置
     private ApplicationConfig applicationConfig;
     private RegistryConfig registryConfig;
@@ -99,7 +108,8 @@ public class McpExecutorService {
     private final Map<String, String> metadataCache = new ConcurrentHashMap<>();
     
     // MetadataReport 缓存（使用 Dubbo SDK）
-    private MetadataReport metadataReport;
+    // Dubbo 2.5 不支持 MetadataReport，注释掉
+    // private MetadataReport metadataReport;
     private final Object metadataReportLock = new Object();
     
     // ObjectMapper 用于解析 JSON
@@ -111,11 +121,32 @@ public class McpExecutorService {
         applicationConfig = new ApplicationConfig();
         applicationConfig.setName("zkinfo-mcp-client");
         
+        // 禁用 QOS 服务器（从配置文件读取）
+        try {
+            // 尝试使用反射设置 qos-enable 和 qos-port
+            java.lang.reflect.Method setQosEnableMethod = applicationConfig.getClass().getMethod("setQosEnable", boolean.class);
+            setQosEnableMethod.invoke(applicationConfig, qosEnable);
+            log.info("✅ 设置 QOS enable: {}", qosEnable);
+        } catch (Exception e) {
+            log.debug("无法通过反射设置 qos-enable，将通过 parameters 设置: {}", e.getMessage());
+        }
+        
+        try {
+            java.lang.reflect.Method setQosPortMethod = applicationConfig.getClass().getMethod("setQosPort", int.class);
+            setQosPortMethod.invoke(applicationConfig, qosPort);
+            log.info("✅ 设置 QOS port: {}", qosPort);
+        } catch (Exception e) {
+            log.debug("无法通过反射设置 qos-port，将通过 parameters 设置: {}", e.getMessage());
+        }
+        
         // 设置全局序列化方式为 hessian2（确保与提供者兼容）
         Map<String, String> appParameters = new HashMap<>();
         appParameters.put("serialization", "hessian2");
         // 移除 prefer.serialization 参数，避免使用 fastjson2
         appParameters.put("prefer.serialization", "hessian2");
+        // 通过 parameters 设置 qos 相关参数（作为备选方案）
+        appParameters.put("qos.enable", String.valueOf(qosEnable));
+        appParameters.put("qos.port", String.valueOf(qosPort));
         applicationConfig.setParameters(appParameters);
         
         registryConfig = new RegistryConfig();
@@ -138,7 +169,25 @@ public class McpExecutorService {
         }
         
         registryConfig.setAddress(zkAddress);
-        log.info("✅ 从 application.yml 读取 ZooKeeper 地址: {}", zkAddress);
+        // 禁用 Consumer 注册到 ZooKeeper（只订阅，不注册，避免连接冲突）
+        registryConfig.setRegister(false);
+        // 增加 ZooKeeper 连接超时时间（默认 30 秒可能不够）
+        registryConfig.setTimeout(60000); // 60 秒
+        
+        // 通过 parameters 设置 ZooKeeper 连接参数，提高连接稳定性
+        Map<String, String> registryParams = new HashMap<>();
+        // 会话超时时间（从配置读取，默认 60 秒）
+        registryParams.put("session.timeout", String.valueOf(zooKeeperConfig.getSessionTimeout()));
+        // 连接超时时间（从配置读取，默认 30 秒）
+        registryParams.put("connect.timeout", String.valueOf(zooKeeperConfig.getConnectionTimeout()));
+        // 禁用 Consumer 注册（双重保险）
+        registryParams.put("register", "false");
+        // 设置客户端类型为 curator（Dubbo 3.x 支持）
+        registryParams.put("client", "curator");
+        registryConfig.setParameters(registryParams);
+        
+        log.info("✅ 从 application.yml 读取 ZooKeeper 地址: {}, register=false, timeout=60000ms, sessionTimeout={}ms, connectionTimeout={}ms", 
+                zkAddress, zooKeeperConfig.getSessionTimeout(), zooKeeperConfig.getConnectionTimeout());
         
         // 创建 ProtocolConfig，强制使用 hessian2 序列化
         protocolConfig = new ProtocolConfig();
@@ -171,18 +220,40 @@ public class McpExecutorService {
      * @return 调用结果
      */
     public CompletableFuture<McpCallResult> executeToolCall(String toolName, Object[] args, Integer timeout) {
+        // 从 toolName 解析接口名和方法名（用于生成友好的错误信息）
+        String interfaceName = null;
+        String methodName = null;
+        try {
+            String[] parts = toolName.split("\\.");
+            if (parts.length >= 2) {
+                methodName = parts[parts.length - 1];
+                interfaceName = toolName.substring(0, toolName.lastIndexOf("." + methodName));
+            }
+        } catch (Exception e) {
+            log.debug("无法从 toolName 解析接口名和方法名: {}", toolName);
+        }
+        
+        final String finalInterfaceName = interfaceName;
+        final String finalMethodName = methodName;
+        
         return CompletableFuture.supplyAsync(() -> {
+            // 在 lambda 内部使用 final 变量，如果需要重新解析则使用局部变量
+            String localInterfaceName = finalInterfaceName;
+            String localMethodName = finalMethodName;
+            
             try {
-                // 解析工具名称
-                String[] parts = toolName.split("\\.");
-                if (parts.length < 2) {
-                    throw new IllegalArgumentException("无效的工具名称格式: " + toolName);
+                // 使用已解析的接口名和方法名
+                if (localInterfaceName == null || localMethodName == null) {
+                    // 如果解析失败，重新解析
+                    String[] parts = toolName.split("\\.");
+                    if (parts.length < 2) {
+                        throw new IllegalArgumentException("无效的工具名称格式: " + toolName);
+                    }
+                    localMethodName = parts[parts.length - 1];
+                    localInterfaceName = toolName.substring(0, toolName.lastIndexOf("." + localMethodName));
                 }
                 
-                String methodName = parts[parts.length - 1];
-                String interfaceName = toolName.substring(0, toolName.lastIndexOf("." + methodName));
-                
-                log.info("执行 MCP 调用: {} -> {}({})", interfaceName, methodName, args != null ? args.length : 0);
+                log.info("执行 MCP 调用: {} -> {}({})", localInterfaceName, localMethodName, args != null ? args.length : 0);
                 if (args != null) {
                     for (int i = 0; i < args.length; i++) {
                         log.debug("参数[{}]: 类型={}, 值={}", i, args[i] != null ? args[i].getClass().getName() : "null", args[i]);
@@ -190,13 +261,13 @@ public class McpExecutorService {
                 }
                 
                 // 获取服务提供者信息
-                ProviderInfo provider = getAvailableProvider(interfaceName);
+                ProviderInfo provider = getAvailableProvider(localInterfaceName);
                 if (provider == null) {
-                    throw new RuntimeException("未找到可用的服务提供者: " + interfaceName);
+                    throw new RuntimeException("未找到可用的服务提供者: " + localInterfaceName);
                 }
                 
                 // 获取或创建服务引用
-                GenericService genericService = getOrCreateServiceReference(interfaceName, provider);
+                GenericService genericService = getOrCreateServiceReference(localInterfaceName, provider);
                 
                 // 检测 Dubbo 版本
                 String dubboVersion = detectDubboVersion(provider);
@@ -213,7 +284,7 @@ public class McpExecutorService {
                 
                 // 先获取参数类型（用于后续的参数转换和调用）
                 // 注意：这里传入原始args，因为我们需要知道原始参数的类型
-                String[] parameterTypes = getParameterTypes(interfaceName, methodName, args, dubboVersion);
+                String[] parameterTypes = getParameterTypes(localInterfaceName, localMethodName, args, dubboVersion);
                 
                 // 确保参数类型和参数值都存在且匹配
                 if (parameterTypes != null && parameterTypes.length > 0) {
@@ -243,7 +314,7 @@ public class McpExecutorService {
                 // 对于 Dubbo 2.7 泛化调用：
                 // - parameterTypes: 完整的类名，如 ["com.zkinfo.demo.model.User"]
                 // - convertedArgs: 可以是 Map 对象，Dubbo 会自动转换为对应的 POJO
-                Object[] convertedArgs = convertParameters(args, interfaceName, methodName, dubboVersion, parameterTypes);
+                Object[] convertedArgs = convertParameters(args, localInterfaceName, localMethodName, dubboVersion, parameterTypes);
                 
                 // 验证转换后的参数
                 if (convertedArgs == null || convertedArgs.length == 0) {
@@ -283,8 +354,8 @@ public class McpExecutorService {
                 // ========== 泛化调用前输出调用参数 ==========
                 log.info("═══════════════════════════════════════════════════════════");
                 log.info("🚀 准备执行泛化调用");
-                log.info("   接口: {}", interfaceName);
-                log.info("   方法: {}", methodName);
+                log.info("   接口: {}", localInterfaceName);
+                log.info("   方法: {}", localMethodName);
                 log.info("   Dubbo版本: {}", dubboVersion);
                 log.info("   参数数量: {}", convertedArgs != null ? convertedArgs.length : 0);
                 
@@ -373,8 +444,8 @@ public class McpExecutorService {
                 if ("3.x".equals(dubboVersion)) {
                     // Dubbo3: 支持 POJO 模式，parameterTypes 可以为 null
                     log.info("📞 执行 Dubbo3 泛化调用: {}.{}({} 个参数)", 
-                            interfaceName, methodName, convertedArgs != null ? convertedArgs.length : 0);
-                    result = genericService.$invoke(methodName, null, convertedArgs);
+                            localInterfaceName, localMethodName, convertedArgs != null ? convertedArgs.length : 0);
+                    result = genericService.$invoke(localMethodName, null, convertedArgs);
                 } else {
                     // Dubbo2: 必须指定 parameterTypes
                     // 关键：parameterTypes 必须是完整的类名，args 可以是 Map 对象（对于 POJO 类型）
@@ -383,7 +454,7 @@ public class McpExecutorService {
                         // 确保类型数组和参数数组长度一致
                         if (parameterTypes.length == convertedArgs.length) {
                             log.info("📞 执行 Dubbo2 泛化调用: {}.{}({})", 
-                                    interfaceName, methodName, String.join(", ", parameterTypes));
+                                    localInterfaceName, localMethodName, String.join(", ", parameterTypes));
                             log.info("   参数值: {} 个参数", convertedArgs.length);
                             for (int i = 0; i < convertedArgs.length; i++) {
                                 log.info("      args[{}]: type={}, valueType={}", i, 
@@ -391,7 +462,7 @@ public class McpExecutorService {
                                         convertedArgs[i] != null ? convertedArgs[i].getClass().getName() : "null");
                             }
                             // 调用 Dubbo 泛化接口：参数类型和参数值必须一一对应
-                            result = genericService.$invoke(methodName, parameterTypes, convertedArgs);
+                            result = genericService.$invoke(localMethodName, parameterTypes, convertedArgs);
                         } else {
                             log.error("❌ 参数类型数组长度 ({}) 与参数数组长度 ({}) 不匹配，无法调用", 
                                     parameterTypes.length, convertedArgs.length);
@@ -403,17 +474,17 @@ public class McpExecutorService {
                         // 如果无法获取参数类型，但参数值存在，尝试让 Dubbo 自动推断
                         log.warn("⚠️ 无法获取参数类型，但参数值存在，尝试让 Dubbo 自动推断");
                         log.info("📞 执行 Dubbo2 泛化调用: {}.{}() (类型自动推断)", 
-                                interfaceName, methodName);
-                        result = genericService.$invoke(methodName, null, convertedArgs);
+                                localInterfaceName, localMethodName);
+                        result = genericService.$invoke(localMethodName, null, convertedArgs);
                     } else {
                         // 无参数方法
                         log.info("📞 执行 Dubbo2 泛化调用: {}.{}() (无参数)", 
-                                interfaceName, methodName);
-                        result = genericService.$invoke(methodName, new String[0], new Object[0]);
+                                localInterfaceName, localMethodName);
+                        result = genericService.$invoke(localMethodName, new String[0], new Object[0]);
                     }
                 }
                 
-                log.info("✅ 泛化调用执行完成: {}.{}", interfaceName, methodName);
+                log.info("✅ 泛化调用执行完成: {}.{}", localInterfaceName, localMethodName);
                 
                 return McpCallResult.success(result);
                 
@@ -423,7 +494,23 @@ public class McpExecutorService {
                 String errorMessage = "Dubbo 框架初始化失败: " + 
                         (cause != null ? cause.getMessage() : e.getMessage());
                 return McpCallResult.failure(errorMessage, e);
+            } catch (IllegalArgumentException e) {
+                // 检查是否是参数类型不匹配错误
+                String friendlyMessage = parseArgumentTypeMismatchError(e, finalInterfaceName, finalMethodName);
+                if (friendlyMessage != null) {
+                    log.error("❌ MCP 调用执行失败 (参数类型不匹配): {} - {}", toolName, friendlyMessage);
+                    return McpCallResult.failure(friendlyMessage, e);
+                }
+                // 其他 IllegalArgumentException，使用原始错误信息
+                log.error("❌ MCP 调用执行失败 (IllegalArgumentException): {}", toolName, e);
+                return McpCallResult.failure("参数错误: " + e.getMessage(), e);
             } catch (Exception e) {
+                // 检查异常链中是否有 IllegalArgumentException（参数类型不匹配）
+                String friendlyMessage = findArgumentTypeMismatchInCauseChain(e, finalInterfaceName, finalMethodName);
+                if (friendlyMessage != null) {
+                    log.error("❌ MCP 调用执行失败 (参数类型不匹配): {} - {}", toolName, friendlyMessage);
+                    return McpCallResult.failure(friendlyMessage, e);
+                }
                 log.error("MCP 调用执行失败: {}", toolName, e);
                 return McpCallResult.failure(e.getMessage(), e);
             }
@@ -434,14 +521,27 @@ public class McpExecutorService {
      * 同步执行 MCP 工具调用
      */
     public McpCallResult executeToolCallSync(String toolName, Object[] args, Integer timeout) {
+        // 从 toolName 解析接口名和方法名（用于生成友好的错误信息）
+        String interfaceName = null;
+        String methodName = null;
+        try {
+            String[] parts = toolName.split("\\.");
+            if (parts.length >= 2) {
+                methodName = parts[parts.length - 1];
+                interfaceName = toolName.substring(0, toolName.lastIndexOf("." + methodName));
+            }
+        } catch (Exception e) {
+            log.debug("无法从 toolName 解析接口名和方法名: {}", toolName);
+        }
+        
         try {
             CompletableFuture<McpCallResult> future = executeToolCall(toolName, args, timeout);
             
-            if (timeout != null && timeout > 0) {
-                return future.get(timeout, TimeUnit.MILLISECONDS);
-            } else {
-                return future.get(3000, TimeUnit.MILLISECONDS); // 默认3秒超时
-            }
+            // 使用传入的超时时间，如果没有则使用配置的 Dubbo 超时时间（默认 30 秒）
+            int syncTimeout = (timeout != null && timeout > 0) ? timeout : dubboTimeout;
+            // 同步等待的超时时间应该比 Dubbo 调用超时时间稍长，避免提前超时
+            syncTimeout = syncTimeout + 5000; // 增加 5 秒缓冲时间
+            return future.get(syncTimeout, TimeUnit.MILLISECONDS);
             
         } catch (java.util.concurrent.TimeoutException e) {
             log.error("MCP 同步调用超时: {}", toolName, e);
@@ -453,6 +553,12 @@ public class McpExecutorService {
                 return McpCallResult.failure("Dubbo 框架初始化失败: " + 
                         (cause.getCause() != null ? cause.getCause().getMessage() : cause.getMessage()), cause);
             }
+            // 检查是否是参数类型不匹配错误
+            String friendlyMessage = findArgumentTypeMismatchInCauseChain(e, interfaceName, methodName);
+            if (friendlyMessage != null) {
+                log.error("❌ MCP 同步调用失败 (参数类型不匹配): {} - {}", toolName, friendlyMessage);
+                return McpCallResult.failure(friendlyMessage, e);
+            }
             log.error("MCP 同步调用执行失败: {}", toolName, e);
             return McpCallResult.failure("调用执行失败: " + 
                     (cause != null ? cause.getMessage() : e.getMessage()), e);
@@ -461,7 +567,22 @@ public class McpExecutorService {
             Throwable cause = e.getCause();
             return McpCallResult.failure("Dubbo 框架初始化失败: " + 
                     (cause != null ? cause.getMessage() : e.getMessage()), e);
+        } catch (IllegalArgumentException e) {
+            // 检查是否是参数类型不匹配错误
+            String friendlyMessage = parseArgumentTypeMismatchError(e, interfaceName, methodName);
+            if (friendlyMessage != null) {
+                log.error("❌ MCP 同步调用失败 (参数类型不匹配): {} - {}", toolName, friendlyMessage);
+                return McpCallResult.failure(friendlyMessage, e);
+            }
+            log.error("❌ MCP 同步调用失败 (IllegalArgumentException): {}", toolName, e);
+            return McpCallResult.failure("参数错误: " + e.getMessage(), e);
         } catch (Exception e) {
+            // 检查异常链中是否有参数类型不匹配错误
+            String friendlyMessage = findArgumentTypeMismatchInCauseChain(e, interfaceName, methodName);
+            if (friendlyMessage != null) {
+                log.error("❌ MCP 同步调用失败 (参数类型不匹配): {} - {}", toolName, friendlyMessage);
+                return McpCallResult.failure(friendlyMessage, e);
+            }
             log.error("MCP 同步调用执行失败: {}", toolName, e);
             return McpCallResult.failure("调用超时或执行失败: " + e.getMessage(), e);
         }
@@ -489,6 +610,10 @@ public class McpExecutorService {
                 if (dubboVersion.startsWith("2.6")) {
                     return "2.6.x";
                 }
+                // 如果版本号以 2.5 开头，返回 "2.5.x"
+                if (dubboVersion.startsWith("2.5")) {
+                    return "2.5.x";
+                }
                 // 如果版本号以 2 开头，返回 "2.x"
                 if (dubboVersion.startsWith("2")) {
                     return "2.x";
@@ -505,6 +630,47 @@ public class McpExecutorService {
         
         // 默认: Dubbo2（无法确定具体版本，假设是 2.x）
         return "2.x";
+    }
+    
+    /**
+     * 判断 Dubbo 版本是否支持 group（2.6+ 才支持）
+     * 
+     * @param dubboVersion 版本字符串
+     * @return true 如果版本 >= 2.6，false 否则（2.5 及更早版本不支持 group）
+     */
+    private boolean isGroupSupported(String dubboVersion) {
+        if (dubboVersion == null || dubboVersion.isEmpty()) {
+            return false; // 未知版本，保守策略：不支持 group
+        }
+        // 3.x 支持 group
+        if (dubboVersion.startsWith("3")) {
+            return true;
+        }
+        // 2.7.x 支持 group
+        if (dubboVersion.startsWith("2.7")) {
+            return true;
+        }
+        // 2.6.x 支持 group
+        if (dubboVersion.startsWith("2.6")) {
+            return true;
+        }
+        // 2.5.x 及更早版本不支持 group
+        if (dubboVersion.startsWith("2.5") || dubboVersion.startsWith("2.4") || 
+            dubboVersion.startsWith("2.3") || dubboVersion.startsWith("2.2") ||
+            dubboVersion.startsWith("2.1") || dubboVersion.startsWith("2.0")) {
+            return false;
+        }
+        // 对于 "2.x" 这种不确定的版本，保守策略：假设是 2.5，不支持 group
+        // 这样可以确保 demo-provider2（Dubbo 2.5）使用直接 URL 方式
+        if ("2.x".equals(dubboVersion)) {
+            return false;
+        }
+        // 其他 2.x 版本，默认假设支持（保守策略）
+        if (dubboVersion.startsWith("2")) {
+            return true;
+        }
+        // 未知版本，默认不支持（保守策略）
+        return false;
     }
     
     /**
@@ -547,7 +713,8 @@ public class McpExecutorService {
      * 1. Map方式：参数类型是POJO类型，参数值是Map（不转换为POJO，直接使用Map）
      * 2. JSON方式：参数类型是POJO类型，参数值是Map（从JSON解析而来，直接使用Map）
      * 
-     * 关键：对于泛化调用，如果参数是Map且目标类型是POJO，应该直接使用Map，不要转换为POJO对象
+     * 关键：对于泛化调用，如果参数是Map且目标类型是POJO，应该直接使用Map，不要转换为POJO对象。
+     * 如果 Map 中的值类型与 POJO 字段类型不匹配，Dubbo 会报错，但错误信息是明确的。
      */
     private Object[] convertParameters(Object[] args, String interfaceName, String methodName, String dubboVersion, String[] parameterTypes) {
         if (args == null || args.length == 0) {
@@ -629,20 +796,37 @@ public class McpExecutorService {
      * 优先从 ZooKeeper metadata 获取，如果成功则直接返回，不再尝试其他方式
      */
     private String[] getParameterTypes(String interfaceName, String methodName, Object[] args, String dubboVersion) {
+        long startTime = System.currentTimeMillis();
         log.info("🔍 开始获取参数类型: interface={}, method={}, args.length={}, dubboVersion={}", 
                 interfaceName, methodName, args != null ? args.length : 0, dubboVersion);
         
-        // 判断 Dubbo 版本是否支持 metadata（2.7+ 才支持）
-        boolean metadataSupported = isMetadataSupported(dubboVersion);
-        log.debug("   Dubbo 版本 {} {} metadata 支持", dubboVersion, metadataSupported ? "支持" : "不支持");
-        
-        // 根据版本支持情况决定优先级
-        if (metadataSupported) {
-            // Dubbo 2.7+ 版本：优先从 metadata 获取，失败则从数据库读取
-            return getParameterTypesWithMetadataFirst(interfaceName, methodName, args);
-        } else {
-            // Dubbo 2.7 以下版本：优先从数据库读取，失败则尝试 metadata（以防万一）
-            return getParameterTypesWithDatabaseFirst(interfaceName, methodName, args);
+        try {
+            // 判断 Dubbo 版本是否支持 metadata（2.7+ 才支持）
+            boolean metadataSupported = isMetadataSupported(dubboVersion);
+            log.debug("   Dubbo 版本 {} {} metadata 支持", dubboVersion, metadataSupported ? "支持" : "不支持");
+            
+            String[] result;
+            // 根据版本支持情况决定优先级
+            if (metadataSupported) {
+                // Dubbo 2.7+ 版本：优先从 metadata 获取，失败则从数据库读取
+                result = getParameterTypesWithMetadataFirst(interfaceName, methodName, args);
+            } else {
+                // Dubbo 2.7 以下版本：优先从数据库读取，失败则尝试 metadata（以防万一）
+                result = getParameterTypesWithDatabaseFirst(interfaceName, methodName, args);
+            }
+            
+            long elapsed = System.currentTimeMillis() - startTime;
+            if (result != null && result.length > 0) {
+                log.info("✅ 获取参数类型完成 (耗时 {}ms): {}", elapsed, String.join(", ", result));
+            } else {
+                log.warn("⚠️ 获取参数类型完成 (耗时 {}ms): 未获取到参数类型，将使用推断逻辑", elapsed);
+            }
+            return result;
+        } catch (Exception e) {
+            long elapsed = System.currentTimeMillis() - startTime;
+            log.error("❌ 获取参数类型失败 (耗时 {}ms): {}", elapsed, e.getMessage(), e);
+            // 发生异常时，返回 null 触发推断逻辑
+            return null;
         }
     }
     
@@ -679,7 +863,7 @@ public class McpExecutorService {
         
         // 3. 如果都无法获取，使用推断逻辑
         log.warn("⚠️ 无法从 metadata 或数据库获取参数类型，使用推断逻辑");
-        String[] inferredTypes = inferParameterTypes(args);
+        String[] inferredTypes = inferParameterTypes(interfaceName, methodName, args);
         if (inferredTypes != null && inferredTypes.length > 0) {
             log.info("✅ 使用推断逻辑获取参数类型: {}", String.join(", ", inferredTypes));
         }
@@ -714,7 +898,7 @@ public class McpExecutorService {
         
         // 3. 如果都无法获取，使用推断逻辑
         log.warn("⚠️ 无法从数据库或 metadata 获取参数类型，使用推断逻辑");
-        String[] inferredTypes = inferParameterTypes(args);
+        String[] inferredTypes = inferParameterTypes(interfaceName, methodName, args);
         if (inferredTypes != null && inferredTypes.length > 0) {
             log.info("✅ 使用推断逻辑获取参数类型: {}", String.join(", ", inferredTypes));
         }
@@ -756,7 +940,12 @@ public class McpExecutorService {
                 } else {
                     log.warn("⚠️ 数据库返回的参数数量 ({}) 与实际参数数量 ({}) 不匹配", 
                             paramCount, args != null ? args.length : 0);
-                    // 即使数量不匹配，也返回类型数组（让调用方决定如何处理）
+                    // 如果数据库返回 0 个参数但实际有参数，返回 null 让调用方使用推断逻辑
+                    if (paramCount == 0 && args != null && args.length > 0) {
+                        log.warn("⚠️ 数据库显示无参数但实际有 {} 个参数，将使用推断逻辑", args.length);
+                        return null; // 返回 null 触发推断逻辑
+                    }
+                    // 如果数据库有参数但数量不匹配，返回数据库中的类型（让调用方决定如何处理）
                     if (paramCount > 0) {
                         String[] types = new String[paramCount];
                         for (int i = 0; i < paramCount; i++) {
@@ -808,12 +997,13 @@ public class McpExecutorService {
             }
             
             // 方式2: 回退到使用 Dubbo SDK 的 MetadataReport
-            log.debug("   ZooKeeper 直接读取失败，尝试使用 Dubbo SDK MetadataReport");
-            String[] typesFromSDK = getParameterTypesFromMetadataReport(interfaceName, methodName, version, group, application, args);
-            if (typesFromSDK != null) {
-                log.info("✅ 通过 Dubbo SDK MetadataReport 获取到参数类型: {}", String.join(", ", typesFromSDK));
-                return typesFromSDK;
-            }
+            // Dubbo 2.5 不支持 MetadataReport，跳过此方式
+            // log.debug("   ZooKeeper 直接读取失败，尝试使用 Dubbo SDK MetadataReport");
+            // String[] typesFromSDK = getParameterTypesFromMetadataReport(interfaceName, methodName, version, group, application, args);
+            // if (typesFromSDK != null) {
+            //     log.info("✅ 通过 Dubbo SDK MetadataReport 获取到参数类型: {}", String.join(", ", typesFromSDK));
+            //     return typesFromSDK;
+            // }
             
             log.warn("⚠️ 所有 metadata 获取方式都失败: interface={}, method={}", interfaceName, methodName);
             return null;
@@ -827,123 +1017,23 @@ public class McpExecutorService {
     
     /**
      * 使用 Dubbo SDK 的 MetadataReport 获取参数类型（官方推荐方式）
+     * Dubbo 2.5 不支持 MetadataReport，此方法已禁用
      */
-    private String[] getParameterTypesFromMetadataReport(String interfaceName, String methodName, 
-                                                         String version, String group, String application, 
-                                                         Object[] args) {
-        try {
-            // 获取或创建 MetadataReport 实例
-            MetadataReport report = getOrCreateMetadataReport();
-            if (report == null) {
-                log.debug("   MetadataReport 不可用，跳过 SDK 方式");
-                return null;
-            }
-            
-            // 构建 serviceKey（根据 Dubbo 2.7 的规范）
-            // serviceKey 格式：{interface}:{version}:{group}
-            // 注意：如果 version 是默认值 "1.0.0"，通常可以省略
-            String serviceKey = interfaceName;
-            if (version != null && !version.isEmpty() && !version.equals("1.0.0")) {
-                serviceKey += ":" + version;
-            }
-            if (group != null && !group.isEmpty()) {
-                serviceKey += ":" + group;
-            }
-            
-            log.debug("   使用 MetadataReport 获取 metadata: serviceKey={}, application={}", serviceKey, application);
-            
-            // 尝试使用 getServiceDefinition（Dubbo 2.7+ 推荐方式）
-            // 注意：此方法可能在某些版本中不存在，需要捕获异常
-            try {
-                // 使用反射调用，因为方法可能不存在
-                java.lang.reflect.Method getServiceDefinitionMethod = null;
-                try {
-                    getServiceDefinitionMethod = report.getClass().getMethod("getServiceDefinition", String.class, String.class);
-                } catch (NoSuchMethodException e) {
-                    log.debug("   getServiceDefinition 方法不存在，跳过 SDK 方式");
-                }
-                
-                if (getServiceDefinitionMethod != null) {
-                    String metadataJson = (String) getServiceDefinitionMethod.invoke(report, serviceKey, application);
-                    if (metadataJson != null && !metadataJson.isEmpty()) {
-                        log.debug("   ✅ 通过 getServiceDefinition 获取到 metadata，长度: {}", metadataJson.length());
-                        return parseParameterTypesFromMetadataJson(metadataJson, methodName, args);
-                    }
-                }
-            } catch (Exception e) {
-                log.debug("   getServiceDefinition 调用失败: {}", e.getMessage());
-            }
-            
-            // 注意：Dubbo 2.7 的 MetadataReport 接口可能不包含 getProviderMetadata(URL) 和 getExportedURLs(String) 方法
-            // 如果 getServiceDefinition 失败，将回退到直接读取 ZooKeeper 的方式
-            
-        } catch (Exception e) {
-            log.warn("⚠️ 使用 Dubbo SDK MetadataReport 获取参数类型失败: {}", e.getMessage());
-        }
-        
-        return null;
-    }
+    // private String[] getParameterTypesFromMetadataReport(String interfaceName, String methodName, 
+    //                                                      String version, String group, String application, 
+    //                                                      Object[] args) {
+    //     // Dubbo 2.5 不支持 MetadataReport
+    //     return null;
+    // }
     
     /**
      * 获取或创建 MetadataReport 实例
+     * Dubbo 2.5 不支持 MetadataReport，此方法已禁用
      */
-    private MetadataReport getOrCreateMetadataReport() {
-        if (metadataReport != null) {
-            return metadataReport;
-        }
-        
-        synchronized (metadataReportLock) {
-            if (metadataReport != null) {
-                return metadataReport;
-            }
-            
-            try {
-                if (zooKeeperConfig == null) {
-                    log.debug("   ZooKeeperConfig 未注入，无法创建 MetadataReport");
-                    return null;
-                }
-                
-                String zkAddress = zooKeeperConfig.getConnectString();
-                if (zkAddress == null || zkAddress.isEmpty()) {
-                    log.debug("   ZooKeeper 地址未配置，无法创建 MetadataReport");
-                    return null;
-                }
-                
-                // 构建 metadata report URL
-                // 格式：zookeeper://127.0.0.1:2181?timeout=10000
-                String metadataReportUrl = "zookeeper://" + zkAddress;
-                if (zooKeeperConfig.getConnectionTimeout() > 0) {
-                    metadataReportUrl += "?timeout=" + zooKeeperConfig.getConnectionTimeout();
-                }
-                
-                log.debug("   创建 MetadataReport: {}", metadataReportUrl);
-                
-                // 使用 ExtensionLoader 获取 MetadataReportFactory
-                MetadataReportFactory factory = ExtensionLoader.getExtensionLoader(MetadataReportFactory.class)
-                        .getDefaultExtension();
-                
-                if (factory == null) {
-                    log.warn("⚠️ 无法获取 MetadataReportFactory，可能需要添加 dubbo-metadata-report-zookeeper 依赖");
-                    return null;
-                }
-                
-                URL url = URL.valueOf(metadataReportUrl);
-                metadataReport = factory.getMetadataReport(url);
-                
-                if (metadataReport != null) {
-                    log.info("✅ 成功创建 MetadataReport");
-                } else {
-                    log.warn("⚠️ MetadataReportFactory 返回 null");
-                }
-                
-                return metadataReport;
-                
-            } catch (Exception e) {
-                log.warn("⚠️ 创建 MetadataReport 失败: {}", e.getMessage());
-                return null;
-            }
-        }
-    }
+    // private MetadataReport getOrCreateMetadataReport() {
+    //     // Dubbo 2.5 不支持 MetadataReport
+    //     return null;
+    // }
     
     /**
      * 直接读取 ZooKeeper 获取参数类型（兼容方式）
@@ -1173,10 +1263,12 @@ public class McpExecutorService {
     /**
      * 推断参数类型（原有逻辑，作为 fallback）
      * 
+     * @param interfaceName 接口名（用于推断 POJO 类型）
+     * @param methodName 方法名（用于推断 POJO 类型，如 createUser -> User）
      * @param args 参数数组
      * @return 参数类型字符串数组
      */
-    private String[] inferParameterTypes(Object[] args) {
+    private String[] inferParameterTypes(String interfaceName, String methodName, Object[] args) {
         if (args == null || args.length == 0) {
             return new String[0];
         }
@@ -1216,11 +1308,17 @@ public class McpExecutorService {
                 } else if (clazz == String.class) {
                     types[i] = "java.lang.String";
                 } else if (clazz == LinkedHashMap.class || clazz == HashMap.class) {
-                    // 处理Map类型：泛化调用中，Map应该推断为POJO类型，但参数值保持为Map（不转换）
-                    // 注意：这里不再硬编码推断，而是依赖 getParameterTypes 方法从 metadata 获取
-                    // 如果无法从 metadata 获取，则使用 java.util.Map 作为 fallback
-                    types[i] = "java.util.Map";
-                    log.debug("⚠️ Map 类型参数，无法从 metadata 获取具体类型，使用 java.util.Map 作为 fallback");
+                    // 处理Map类型：尝试从方法名推断POJO类型
+                    // 例如：createUser -> com.pajk.provider2.model.User
+                    String pojoType = inferPOJOTypeFromMethodName(interfaceName, methodName, i);
+                    if (pojoType != null) {
+                        types[i] = pojoType;
+                        log.info("✅ 从方法名推断 Map 参数类型: {} -> {}", methodName, pojoType);
+                    } else {
+                        // 如果无法推断，使用 java.util.Map 作为 fallback
+                        types[i] = "java.util.Map";
+                        log.warn("⚠️ Map 类型参数，无法从方法名推断 POJO 类型，使用 java.util.Map 作为 fallback");
+                    }
                 } else {
                     // 其他类型使用完整类名
                     types[i] = clazz.getName();
@@ -1229,6 +1327,85 @@ public class McpExecutorService {
         }
         
         return types;
+    }
+    
+    /**
+     * 从方法名推断 POJO 类型
+     * 例如：createUser -> com.pajk.provider2.model.User
+     * 
+     * @param interfaceName 接口名
+     * @param methodName 方法名
+     * @param paramIndex 参数索引
+     * @return POJO 类型全限定名，如果无法推断则返回 null
+     */
+    private String inferPOJOTypeFromMethodName(String interfaceName, String methodName, int paramIndex) {
+        if (methodName == null || methodName.isEmpty()) {
+            return null;
+        }
+        
+        // 常见的方法名前缀
+        String[] prefixes = {"create", "update", "save", "add", "set", "put"};
+        String entityName = null;
+        
+        // 尝试从方法名提取实体名
+        for (String prefix : prefixes) {
+            if (methodName.startsWith(prefix) && methodName.length() > prefix.length()) {
+                String suffix = methodName.substring(prefix.length());
+                if (!suffix.isEmpty()) {
+                    entityName = suffix;
+                    break;
+                }
+            }
+        }
+        
+        // 如果无法从前缀提取，尝试从接口名提取
+        if (entityName == null && interfaceName != null && interfaceName.contains(".")) {
+            String simpleInterfaceName = interfaceName.substring(interfaceName.lastIndexOf(".") + 1);
+            // 例如：UserService -> User
+            if (simpleInterfaceName.endsWith("Service")) {
+                entityName = simpleInterfaceName.substring(0, simpleInterfaceName.length() - "Service".length());
+            }
+        }
+        
+        if (entityName == null || entityName.isEmpty()) {
+            return null;
+        }
+        
+        // 构建 POJO 类型全限定名
+        // 尝试多种可能的包路径
+        String[] possiblePackages = {
+            "com.pajk.provider2.model",
+            "com.pajk.provider2.entity",
+            "com.pajk.provider2.domain",
+            "com.zkinfo.demo.model",
+            "com.zkinfo.demo.entity",
+            "com.zkinfo.demo.domain"
+        };
+        
+        // 如果接口名包含包路径，尝试从接口包路径推断
+        if (interfaceName.contains(".")) {
+            String interfacePackage = interfaceName.substring(0, interfaceName.lastIndexOf("."));
+            // 尝试将 service 替换为 model/entity/domain
+            String[] replacements = {"model", "entity", "domain"};
+            for (String replacement : replacements) {
+                String possiblePackage = interfacePackage.replace(".service", "." + replacement);
+                if (!possiblePackage.equals(interfacePackage)) {
+                    String possibleType = possiblePackage + "." + entityName;
+                    log.debug("尝试推断类型: {}", possibleType);
+                    // 这里不验证类是否存在，因为泛化调用不需要类在 classpath 中
+                    return possibleType;
+                }
+            }
+        }
+        
+        // 尝试常见的包路径
+        for (String pkg : possiblePackages) {
+            String possibleType = pkg + "." + entityName;
+            log.debug("尝试推断类型: {}", possibleType);
+            return possibleType;
+        }
+        
+        return null;
     }
     
     /**
@@ -1422,23 +1599,83 @@ public class McpExecutorService {
     }
     
     /**
+     * 预订阅服务（启动时使用）
+     * 创建服务引用并触发订阅，如果超时则只记录警告，不抛出异常
+     * 
+     * @param interfaceName 接口名称
+     * @param provider Provider 信息
+     * @return 是否成功创建引用
+     */
+    public boolean preSubscribeService(String interfaceName, ProviderInfo provider) {
+        try {
+            // 调用 getOrCreateServiceReference 会创建 ReferenceConfig 并触发订阅
+            // 如果超时，getOrCreateServiceReference 会抛出异常，我们捕获它并返回 false
+            GenericService service = getOrCreateServiceReference(interfaceName, provider);
+            if (service != null) {
+                log.info("✅ 预订阅成功: {}", interfaceName);
+                return true;
+            } else {
+                log.warn("⚠️ 预订阅返回 null: {}", interfaceName);
+                return false;
+            }
+        } catch (RuntimeException e) {
+            // 如果是超时异常，只记录警告，不抛出异常（避免阻塞启动）
+            if (e.getMessage() != null && e.getMessage().contains("超时")) {
+                log.warn("⚠️ 预订阅服务超时（将在首次调用时自动订阅）: {}, error: {}", 
+                        interfaceName, e.getMessage());
+            } else {
+                log.warn("⚠️ 预订阅服务失败（将在首次调用时自动订阅）: {}, error: {}", 
+                        interfaceName, e.getMessage());
+            }
+            return false;
+        } catch (Exception e) {
+            log.warn("⚠️ 预订阅服务异常（将在首次调用时自动订阅）: {}, error: {}", 
+                    interfaceName, e.getMessage());
+            return false;
+        }
+    }
+    
+    /**
      * 获取或创建服务引用
      */
-    private GenericService getOrCreateServiceReference(String interfaceName, ProviderInfo provider) {
-        String cacheKey = interfaceName + ":" + provider.getGroup() + ":" + provider.getVersion();
+    GenericService getOrCreateServiceReference(String interfaceName, ProviderInfo provider) {
+        // 检测 Dubbo 版本，判断是否支持 group（在方法开始处定义，供后续使用）
+        // 对于不支持 group 的版本（如 2.5），cacheKey 不应该包含 group
+        final String dubboVersion = detectDubboVersion(provider);
+        final boolean groupSupported = isGroupSupported(dubboVersion);
         
-        // 强制清除缓存，确保使用最新配置
-        ReferenceConfig<GenericService> existingRef = referenceCache.remove(cacheKey);
+        // 构建 cacheKey：如果版本不支持 group，则不包含 group
+        String cacheKey;
+        if (groupSupported && provider.getGroup() != null && !provider.getGroup().isEmpty()) {
+            cacheKey = interfaceName + ":" + provider.getGroup() + ":" + provider.getVersion();
+        } else {
+            cacheKey = interfaceName + ":" + provider.getVersion();
+            log.debug("⚠️ Dubbo 版本 {} 不支持 group，cacheKey 不包含 group: {}", dubboVersion, cacheKey);
+        }
+        
+        // 先尝试从缓存获取，如果存在且已初始化，直接使用
+        ReferenceConfig<GenericService> existingRef = referenceCache.get(cacheKey);
         if (existingRef != null) {
             try {
-                existingRef.destroy();
-                log.info("清除旧的 ReferenceConfig 缓存: {}", cacheKey);
+                // 尝试获取服务实例，如果成功说明已初始化
+                GenericService existingService = existingRef.get();
+                if (existingService != null) {
+                    log.info("✅ 复用已存在的 ReferenceConfig: {}", cacheKey);
+                    return existingService;
+                }
             } catch (Exception e) {
-                log.warn("销毁旧的 ReferenceConfig 失败: {}", e.getMessage());
+                // 如果获取失败，说明引用可能已失效，需要重新创建
+                log.warn("⚠️ 缓存的 ReferenceConfig 已失效，将重新创建: {}, error: {}", cacheKey, e.getMessage());
+                referenceCache.remove(cacheKey);
+                try {
+                    existingRef.destroy();
+                } catch (Exception destroyEx) {
+                    log.warn("销毁失效的 ReferenceConfig 失败: {}", destroyEx.getMessage());
+                }
             }
         }
         
-        // 重新创建 ReferenceConfig，确保配置正确
+        // 创建新的 ReferenceConfig（只有在缓存不存在或已失效时才创建）
         ReferenceConfig<GenericService> reference = referenceCache.computeIfAbsent(cacheKey, key -> {
             try {
                 ReferenceConfig<GenericService> ref = new ReferenceConfig<>();
@@ -1451,8 +1688,31 @@ public class McpExecutorService {
                 
                 // 设置 ApplicationConfig（虽然已废弃，但某些版本仍需要）
                 ref.setApplication(applicationConfig);
-                ref.setRegistry(registryConfig);
                 ref.setInterface(interfaceName);
+                
+                // 对于 Dubbo 2.5 Provider，使用直接 URL 方式连接，完全绕过订阅机制
+                if (!groupSupported) {
+                    // Dubbo 2.5 使用直接 URL 方式，不通过注册中心订阅，避免创建 routers 路径的问题
+                    // 注意：provider.getAddress() 返回的是 "IP:Port" 格式，所以使用 getIp() 和 getPort() 分别获取
+                    String ip = provider.getIp();
+                    Integer port = provider.getPort();
+                    if (ip == null || port == null) {
+                        throw new IllegalArgumentException("Provider 地址或端口为空: address=" + provider.getAddress());
+                    }
+                    String directUrl = String.format("dubbo://%s:%d/%s?version=%s&generic=true&serialization=hessian2&timeout=%d&check=false&retries=0",
+                            ip,
+                            port,
+                            interfaceName,
+                            provider.getVersion() != null ? provider.getVersion() : "1.0.0",
+                            dubboTimeout);
+                    ref.setUrl(directUrl);
+                    // 重要：不设置 Registry，避免触发订阅机制
+                    log.info("🔧 使用直接 URL 方式连接 Dubbo 2.5 Provider（绕过订阅机制）: {}", directUrl);
+                } else {
+                    // Dubbo 2.7+ 使用 ZooKeeper 注册中心（通过 SDK 方式连接）
+                    ref.setRegistry(registryConfig);
+                    log.info("🔧 检测到 Dubbo 2.7+ Provider，使用 ZooKeeper SDK 方式连接");
+                }
                 
                 // 设置 ProtocolConfig，强制使用 hessian2 序列化
                 if (protocolConfig != null) {
@@ -1490,7 +1750,7 @@ public class McpExecutorService {
                 parameters.put("generic", "true");  // 确保 generic 参数正确设置（双重保险）
                 // 设置 prefer.serialization 为 hessian2，避免使用 fastjson2（序列化类型 23）
                 parameters.put("prefer.serialization", "hessian2");
-                // 禁用 fastjson2 序列化
+                // 禁用 fastjson2 序列化（Dubbo 2.6.7 可能不支持，但加上也无妨）
                 parameters.put("serialization.fastjson2", "false");
                 // 禁用其他序列化方式
                 parameters.put("serialization.before", "false");
@@ -1512,7 +1772,6 @@ public class McpExecutorService {
                 // 通过 ConsumerConfig 设置（如果存在）
                 try {
                     org.apache.dubbo.config.ConsumerConfig consumerConfig = new org.apache.dubbo.config.ConsumerConfig();
-                    consumerConfig.setSerialization("hessian2");
                     consumerConfig.setGeneric("true");
                     ref.setConsumer(consumerConfig);
                     log.debug("✅ 通过 ConsumerConfig 设置 serialization=hessian2");
@@ -1524,24 +1783,77 @@ public class McpExecutorService {
                 if (provider.getVersion() != null) {
                     ref.setVersion(provider.getVersion());
                 }
-                if (provider.getGroup() != null) {
+                
+                // 使用外部定义的 dubboVersion 和 groupSupported（避免重复定义）
+                // Dubbo 2.5 及更早版本不支持 group，设置 group 会导致找不到 Provider
+                if (groupSupported && provider.getGroup() != null && !provider.getGroup().isEmpty()) {
                     ref.setGroup(provider.getGroup());
+                    log.debug("✅ 设置 group: {} (Dubbo 版本: {})", provider.getGroup(), dubboVersion);
+                } else {
+                    if (!groupSupported) {
+                        log.debug("⚠️ Dubbo 版本 {} 不支持 group，显式清除 group 设置", dubboVersion);
+                        // 对于不支持 group 的版本，显式设置为 null 或空字符串，确保不会使用 group
+                        try {
+                            ref.setGroup(null);
+                            // 同时从 parameters 中移除 group（如果存在）
+                            Map<String, String> currentParams = ref.getParameters();
+                            if (currentParams != null && currentParams.containsKey("group")) {
+                                currentParams.remove("group");
+                                ref.setParameters(currentParams);
+                                log.debug("✅ 从 parameters 中移除 group 参数");
+                            }
+                        } catch (Exception e) {
+                            log.debug("⚠️ 无法清除 group 设置: {}", e.getMessage());
+                        }
+                    } else {
+                        log.debug("⚠️ Provider 的 group 为空，不设置 group");
+                    }
                 }
                 
-                // 设置超时时间
-                ref.setTimeout(3000);
+                // 设置超时时间（从配置文件读取，默认 30 秒）
+                ref.setTimeout(dubboTimeout);
+                log.info("✅ 设置 Dubbo 调用超时时间: {} ms", dubboTimeout);
                 
                 // 设置检查服务是否可用（避免启动时检查失败）
                 ref.setCheck(false);
                 
+                // 对于使用注册中心的情况（Dubbo 2.7+），禁用 Consumer 注册到 ZooKeeper
+                // 对于直接 URL 方式（Dubbo 2.5），不需要这些配置
+                if (groupSupported) {
+                    // 通过 parameters 设置 register=false
+                    Map<String, String> refParams = ref.getParameters();
+                    if (refParams == null) {
+                        refParams = new HashMap<>();
+                    }
+                    refParams.put("register", "false");
+                    // 禁用 Dubbo 3.x 的 routers 和 configurators 路径创建（避免订阅时创建路径失败）
+                    // 只订阅 providers，不订阅 routers 和 configurators
+                    refParams.put("category", "providers");
+                    // 禁用动态配置
+                    refParams.put("dynamic", "false");
+                    ref.setParameters(refParams);
+                    log.info("✅ 禁用 Consumer 注册到 ZooKeeper（只订阅 providers，不创建 routers/configurators）");
+                } else {
+                    log.info("✅ 使用直接 URL 方式，无需注册中心配置");
+                }
+                
                 // 设置重试次数
                 ref.setRetries(0);
                 
-                // 设置负载均衡策略
-                ref.setLoadbalance("roundrobin");
+                // 设置负载均衡策略（仅对使用注册中心的情况有效）
+                if (groupSupported) {
+                    ref.setLoadbalance("roundrobin");
+                }
                 
-                log.info("创建服务引用: {} (group: {}, version: {})", 
-                        interfaceName, provider.getGroup(), provider.getVersion());
+                // 记录连接方式
+                if (!groupSupported) {
+                    log.info("✅ 使用直接 URL 方式连接 Provider（Dubbo 版本: {}，绕过订阅机制）", dubboVersion);
+                } else {
+                    log.info("✅ 使用 ZooKeeper SDK 方式连接 Provider（Dubbo 版本: {}）", dubboVersion);
+                }
+                
+                log.info("创建服务引用: {} (group: {}, version: {}, dubboVersion: {}, groupSupported: {})", 
+                        interfaceName, provider.getGroup(), provider.getVersion(), dubboVersion, groupSupported);
                 
                 // 不在这里调用 get()，让调用者负责获取服务实例
                 // 这样可以避免在配置不正确时提前失败
@@ -1581,32 +1893,137 @@ public class McpExecutorService {
             
             // 调用 get() 可能会触发 Dubbo 框架的静态初始化
             // 如果发生 ExceptionInInitializerError，说明 Dubbo 框架初始化失败
-            GenericService service = reference.get();
+            log.info("🔍 准备获取 GenericService 实例: interface={}, cacheKey={}", interfaceName, cacheKey);
+            long getStartTime = System.currentTimeMillis();
             
-            // 验证 generic 是否真正生效
+            // 使用 CompletableFuture 和超时保护，避免 reference.get() 阻塞
+            // 设置超时时间为 30 秒（ZooKeeper 连接不稳定时需要更长时间）
+            // 使用自定义线程池，避免阻塞 ForkJoinPool.commonPool
+            int getTimeoutSeconds = 30;
+            GenericService service;
+            CompletableFuture<GenericService> future = null;
+            java.util.concurrent.ExecutorService executor = null;
+            try {
+                // 创建单线程执行器，专门用于执行 reference.get()
+                executor = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                    Thread t = new Thread(r, "Dubbo-Reference-Get-" + interfaceName);
+                    t.setDaemon(true);
+                    return t;
+                });
+                
+                future = CompletableFuture.supplyAsync(() -> {
+                    try {
+                        log.debug("   在独立线程中执行 reference.get(): interface={}", interfaceName);
+                        // 检查线程中断状态，如果已中断则清除中断标志并重试
+                        if (Thread.currentThread().isInterrupted()) {
+                            log.warn("   线程已中断，清除中断标志并继续执行");
+                            Thread.interrupted(); // 清除中断标志
+                        }
+                        return reference.get();
+                    } catch (Exception e) {
+                        // 检查是否是 InterruptedException 或其包装异常
+                        Throwable cause = e;
+                        boolean isInterrupted = false;
+                        
+                        // 检查异常链中是否有 InterruptedException
+                        while (cause != null) {
+                            if (cause instanceof InterruptedException) {
+                                isInterrupted = true;
+                                break;
+                            }
+                            // 检查是否是 IllegalStateException 包装的 InterruptedException
+                            if (cause instanceof IllegalStateException && cause.getCause() instanceof InterruptedException) {
+                                isInterrupted = true;
+                                break;
+                            }
+                            cause = cause.getCause();
+                        }
+                        
+                        if (isInterrupted) {
+                            log.warn("   reference.get() 底层操作被中断，清除中断标志并重试: interface={}", interfaceName);
+                            try {
+                                // 清除中断标志并重试
+                                Thread.interrupted();
+                                return reference.get();
+                            } catch (Exception retryException) {
+                                // 如果重试仍然失败，包装为 RuntimeException
+                                throw new RuntimeException("获取 GenericService 失败（重试后）: " + retryException.getMessage(), retryException);
+                            }
+                        }
+                        // 其他异常直接包装为 RuntimeException
+                        throw new RuntimeException("获取 GenericService 失败: " + e.getMessage(), e);
+                    }
+                }, executor);
+                
+                service = future.get(getTimeoutSeconds, TimeUnit.SECONDS);
+                long getElapsed = System.currentTimeMillis() - getStartTime;
+                log.info("✅ 成功获取 GenericService 实例 (耗时 {}ms): interface={}", getElapsed, interfaceName);
+            } catch (java.util.concurrent.TimeoutException e) {
+                long getElapsed = System.currentTimeMillis() - getStartTime;
+                log.error("❌ 获取 GenericService 实例超时 (耗时 {}ms，超时时间 {}s): interface={}", 
+                        getElapsed, getTimeoutSeconds, interfaceName);
+                log.error("   可能原因：1) ZooKeeper 连接不稳定 2) Provider 未正确注册 3) Dubbo 版本不兼容");
+                log.error("   建议：检查 ZooKeeper 连接状态和 Provider 注册情况");
+                
+                // 取消 future，避免继续占用资源
+                if (future != null) {
+                    future.cancel(true);
+                }
+                
+                // 不要立即移除缓存，保留 ReferenceConfig 以便后台重试
+                // Dubbo 有自动重试机制，订阅会在后台继续重试
+                log.warn("⚠️ 保留 ReferenceConfig 在缓存中，等待 Dubbo 后台重试订阅");
+                
+                throw new RuntimeException("获取 GenericService 实例超时（" + getTimeoutSeconds + "秒）: " + 
+                        "interface=" + interfaceName + "，可能原因：ZooKeeper 连接不稳定或 Provider 未正确注册。订阅将在后台继续重试。", e);
+            } catch (Exception e) {
+                long getElapsed = System.currentTimeMillis() - getStartTime;
+                log.error("❌ 获取 GenericService 实例失败 (耗时 {}ms): interface={}, error={}", 
+                        getElapsed, interfaceName, e.getMessage(), e);
+                // 取消 future，避免继续占用资源
+                if (future != null) {
+                    future.cancel(true);
+                }
+                throw e;
+            } finally {
+                // 关闭执行器
+                if (executor != null) {
+                    executor.shutdown();
+                    try {
+                        if (!executor.awaitTermination(1, TimeUnit.SECONDS)) {
+                            executor.shutdownNow();
+                        }
+                    } catch (InterruptedException e) {
+                        executor.shutdownNow();
+                        Thread.currentThread().interrupt();
+                    }
+                }
+            }
+            
+            // 验证 URL 中的配置（包括 generic 和 group）
             try {
                 java.lang.reflect.Method getUrlMethod = reference.getClass().getMethod("getUrl");
                 Object url = getUrlMethod.invoke(reference);
                 if (url != null) {
                     String urlStr = url.toString();
                     log.info("✅ ReferenceConfig URL: {}", urlStr);
+                    
                     // 检查 URL 中是否包含 generic=true
                     if (urlStr.contains("generic=false")) {
                         log.error("❌ URL 中仍然显示 generic=false，配置可能未生效！");
                     } else if (urlStr.contains("generic=true")) {
                         log.info("✅ URL 中确认 generic=true，配置已生效");
                     }
-                }
-            } catch (Exception e) {
-                log.debug("无法获取 URL: {}", e.getMessage());
-            }
-            
-            // 验证 URL 中的配置
-            try {
-                java.lang.reflect.Method getUrlMethod = reference.getClass().getMethod("getUrl");
-                Object url = getUrlMethod.invoke(reference);
-                if (url != null) {
-                    log.info("✅ ReferenceConfig URL: {}", url.toString());
+                    
+                    // 检查 URL 中是否包含 group 参数（对于不支持 group 的版本，不应该有 group）
+                    // 使用外部定义的 dubboVersion 和 groupSupported（避免重复定义）
+                    if (!groupSupported && urlStr.contains("group=")) {
+                        log.warn("⚠️ Dubbo 版本 {} 不支持 group，但 URL 中仍然包含 group 参数: {}", dubboVersion, urlStr);
+                    } else if (groupSupported && urlStr.contains("group=")) {
+                        log.debug("✅ URL 中包含 group 参数（版本支持）");
+                    } else if (!groupSupported && !urlStr.contains("group=")) {
+                        log.info("✅ URL 中不包含 group 参数（版本不支持，符合预期）");
+                    }
                 }
             } catch (Exception e) {
                 log.debug("无法获取 URL: {}", e.getMessage());
@@ -1628,6 +2045,142 @@ public class McpExecutorService {
             referenceCache.remove(cacheKey);
             throw new RuntimeException("获取服务引用失败: " + e.getMessage(), e);
         }
+    }
+    
+    /**
+     * 解析参数类型不匹配错误，生成友好的错误信息
+     * 
+     * Dubbo 的错误信息格式通常是：
+     * "Failed to set pojo User property phone value 1388883(class java.lang.Integer), cause: argument type mismatch"
+     * 
+     * @param e 异常对象
+     * @param interfaceName 接口名称（可选，用于生成更详细的错误信息）
+     * @param methodName 方法名称（可选，用于生成更详细的错误信息）
+     * @return 友好的错误信息，如果不是参数类型不匹配错误则返回 null
+     */
+    private String parseArgumentTypeMismatchError(Throwable e, String interfaceName, String methodName) {
+        if (e == null) {
+            return null;
+        }
+        
+        String message = e.getMessage();
+        if (message == null) {
+            return null;
+        }
+        
+        // 检查是否包含参数类型不匹配的关键词
+        if (!message.contains("argument type mismatch") && 
+            !message.contains("Failed to set pojo") &&
+            !message.contains("property") && 
+            !message.contains("value")) {
+            return null;
+        }
+        
+        // 解析错误信息
+        // 格式：Failed to set pojo <ClassName> property <fieldName> value <value>(class <actualType>), cause: argument type mismatch
+        try {
+            String pojoClassName = null;
+            String fieldName = null;
+            String actualValue = null;
+            String actualType = null;
+            
+            // 提取 POJO 类名：在 "pojo" 和 "property" 之间
+            int pojoIndex = message.indexOf("pojo ");
+            int propertyIndex = message.indexOf(" property ");
+            if (pojoIndex >= 0 && propertyIndex > pojoIndex) {
+                pojoClassName = message.substring(pojoIndex + 5, propertyIndex).trim();
+            }
+            
+            // 提取字段名：在 "property" 和 "value" 之间
+            int valueIndex = message.indexOf(" value ");
+            if (propertyIndex >= 0 && valueIndex > propertyIndex) {
+                fieldName = message.substring(propertyIndex + 10, valueIndex).trim();
+            }
+            
+            // 提取实际值和类型：在 "value" 和 "class" 之间，以及 "class" 之后
+            int classIndex = message.indexOf("(class ");
+            int causeIndex = message.indexOf("), cause:");
+            if (valueIndex >= 0 && classIndex > valueIndex) {
+                actualValue = message.substring(valueIndex + 7, classIndex).trim();
+            }
+            if (classIndex >= 0 && causeIndex > classIndex) {
+                actualType = message.substring(classIndex + 7, causeIndex).trim();
+            }
+            
+            // 如果成功解析，生成友好的错误信息
+            if (pojoClassName != null && fieldName != null && actualType != null) {
+                StringBuilder friendlyMsg = new StringBuilder();
+                friendlyMsg.append("参数类型不匹配：");
+                
+                if (interfaceName != null && methodName != null) {
+                    friendlyMsg.append(String.format("调用 %s.%s 时，", interfaceName, methodName));
+                }
+                
+                friendlyMsg.append(String.format("POJO 类 '%s' 的字段 '%s' 期望的类型与传入的类型不匹配。", 
+                        pojoClassName, fieldName));
+                
+                if (actualValue != null && !actualValue.isEmpty()) {
+                    friendlyMsg.append(String.format(" 传入的值: %s", actualValue));
+                }
+                
+                friendlyMsg.append(String.format(" 传入的类型: %s", getSimpleTypeName(actualType)));
+                
+                friendlyMsg.append(" 请检查传入的 Map 中该字段的类型是否正确。");
+                
+                // 添加常见类型转换建议
+                if (actualType.contains("Integer") || actualType.contains("Long") || actualType.contains("Number")) {
+                    friendlyMsg.append(" 提示：如果字段期望 String 类型，请将数值转换为字符串（例如：\"123\" 而不是 123）。");
+                } else if (actualType.contains("String")) {
+                    friendlyMsg.append(" 提示：如果字段期望数值类型，请确保字符串可以转换为对应的数值类型。");
+                }
+                
+                return friendlyMsg.toString();
+            }
+        } catch (Exception parseEx) {
+            log.debug("解析参数类型不匹配错误失败: {}", parseEx.getMessage());
+        }
+        
+        // 如果无法解析，返回包含原始错误信息的友好提示
+        return "参数类型不匹配：" + message + "。请检查传入的参数类型是否正确。";
+    }
+    
+    /**
+     * 在异常链中查找参数类型不匹配错误
+     * 
+     * @param e 异常对象
+     * @param interfaceName 接口名称（可选）
+     * @param methodName 方法名称（可选）
+     * @return 友好的错误信息，如果未找到则返回 null
+     */
+    private String findArgumentTypeMismatchInCauseChain(Throwable e, String interfaceName, String methodName) {
+        Throwable current = e;
+        int depth = 0;
+        while (current != null && depth < 10) { // 最多遍历 10 层异常链
+            String friendlyMsg = parseArgumentTypeMismatchError(current, interfaceName, methodName);
+            if (friendlyMsg != null) {
+                return friendlyMsg;
+            }
+            current = current.getCause();
+            depth++;
+        }
+        return null;
+    }
+    
+    /**
+     * 获取类型的简单名称（去掉包名）
+     * 
+     * @param fullTypeName 完整类型名，如 "java.lang.Integer"
+     * @return 简单类型名，如 "Integer"
+     */
+    private String getSimpleTypeName(String fullTypeName) {
+        if (fullTypeName == null || fullTypeName.isEmpty()) {
+            return fullTypeName;
+        }
+        int lastDot = fullTypeName.lastIndexOf('.');
+        if (lastDot >= 0 && lastDot < fullTypeName.length() - 1) {
+            return fullTypeName.substring(lastDot + 1);
+        }
+        return fullTypeName;
     }
     
     /**

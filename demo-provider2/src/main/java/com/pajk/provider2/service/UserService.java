@@ -1,6 +1,6 @@
-package com.zkinfo.demo.service;
+package com.pajk.provider2.service;
 
-import com.zkinfo.demo.model.User;
+import com.pajk.provider2.model.User;
 import java.util.List;
 
 /**
@@ -42,8 +42,4 @@ public interface UserService {
      */
     boolean deleteUser(Long userId);
 }
-
-
-
-
 

@@ -51,9 +51,9 @@
    - 包含完整的参数类型信息
 
 2. **从方法名推断**（较准确）
-   - `createUser` → `com.zkinfo.demo.model.User`
-   - `createOrder` → `com.zkinfo.demo.model.Order`
-   - `createProduct` → `com.zkinfo.demo.model.Product`
+   - `createUser` → `model.com.pajk.provider2.User`
+   - `createOrder` → `model.com.pajk.provider2.Order`
+   - `createProduct` → `model.com.pajk.provider2.Product`
 
 3. **从 Map 键推断**（fallback）
    - 包含 `username` + `email` → `User`
@@ -78,7 +78,7 @@
 ```
 
 **处理流程**:
-1. 识别 `order` 为 `com.zkinfo.demo.model.Order` 类型
+1. 识别 `order` 为 `model.com.pajk.provider2.Order` 类型
 2. 识别 `orderItems` 为 `List<Order.OrderItem>` 类型
 3. 转换每个 `orderItems` 元素为 `Order.OrderItem` 对象
 4. 使用 Jackson ObjectMapper 转换为 `Order` 对象
@@ -88,7 +88,7 @@
 #### Dubbo2
 ```java
 // 需要明确指定参数类型
-String[] parameterTypes = {"com.zkinfo.demo.model.Order"};
+String[] parameterTypes = {"model.com.pajk.provider2.Order"};
 Object[] args = {convertedOrder};
 genericService.$invoke("createOrder", parameterTypes, args);
 ```
@@ -116,7 +116,7 @@ genericService.$invoke("createOrder", null, args);
 {
   "method": "tools/call",
   "params": {
-    "name": "com.zkinfo.demo.service.UserService.createUser",
+    "name": "service.com.pajk.provider2.UserService.createUser",
     "arguments": {
       "user": {
         "username": "testuser",
@@ -129,7 +129,7 @@ genericService.$invoke("createOrder", null, args);
 ```
 
 **处理结果**:
-- `user` Map → `com.zkinfo.demo.model.User` 对象
+- `user` Map → `model.com.pajk.provider2.User` 对象
 - 调用 `UserService.createUser(User user)`
 
 ### 示例 2: 创建 Order（嵌套对象）
@@ -139,7 +139,7 @@ genericService.$invoke("createOrder", null, args);
 {
   "method": "tools/call",
   "params": {
-    "name": "com.zkinfo.demo.service.OrderService.createOrder",
+    "name": "service.com.pajk.provider2.OrderService.createOrder",
     "arguments": {
       "order": {
         "userId": 1001,
@@ -156,7 +156,7 @@ genericService.$invoke("createOrder", null, args);
 ```
 
 **处理结果**:
-- `order` Map → `com.zkinfo.demo.model.Order` 对象
+- `order` Map → `model.com.pajk.provider2.Order` 对象
 - `orderItems` List<Map> → `List<Order.OrderItem>`
 - 调用 `OrderService.createOrder(Order order)`
 

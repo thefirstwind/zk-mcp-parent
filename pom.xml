@@ -24,6 +24,7 @@
     <modules>
         <module>zkInfo</module>
         <module>demo-provider</module>
+        <module>demo-provider2</module>
         <module>mcp-ai-client</module>
     </modules>
 

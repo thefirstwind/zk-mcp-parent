@@ -1,4 +1,4 @@
-package com.zkinfo.demo.model;
+package com.pajk.provider2.model;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -82,8 +82,4 @@ public class Product implements Serializable {
      */
     private LocalDateTime updateTime;
 }
-
-
-
-
 

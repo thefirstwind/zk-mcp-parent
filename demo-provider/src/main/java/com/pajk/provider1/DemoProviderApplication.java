@@ -1,4 +1,4 @@
-package com.zkinfo.demo;
+package com.pajk.provider1;
 
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.spring.context.annotation.EnableDubbo;
@@ -18,9 +18,9 @@ public class DemoProviderApplication {
             SpringApplication.run(DemoProviderApplication.class, args);
             log.info("Demo Provider Application started successfully!");
             log.info("Services registered to ZooKeeper:");
-            log.info("- UserService (com.zkinfo.demo.service.UserService)");
-            log.info("- OrderService (com.zkinfo.demo.service.OrderService)");
-            log.info("- ProductService (com.zkinfo.demo.service.ProductService)");
+            log.info("- UserService (com.pajk.provider1.service.UserService)");
+            log.info("- OrderService (com.pajk.provider1.service.OrderService)");
+            log.info("- ProductService (com.pajk.provider1.service.ProductService)");
         } catch (Exception e) {
             log.error("Failed to start Demo Provider Application", e);
             System.exit(1);

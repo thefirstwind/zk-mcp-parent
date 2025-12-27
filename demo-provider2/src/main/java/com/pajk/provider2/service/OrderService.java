@@ -1,6 +1,6 @@
-package com.zkinfo.demo.service;
+package com.pajk.provider2.service;
 
-import com.zkinfo.demo.model.Order;
+import com.pajk.provider2.model.Order;
 import java.util.List;
 
 /**
@@ -52,8 +52,4 @@ public interface OrderService {
     Double calculateOrderTotal(String orderId);
 
 }
-
-
-
-
 

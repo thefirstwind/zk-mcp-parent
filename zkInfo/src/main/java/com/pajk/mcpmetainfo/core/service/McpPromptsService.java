@@ -1,10 +1,10 @@
 package com.pajk.mcpmetainfo.core.service;
 
 import com.pajk.mcpmetainfo.core.mcp.McpProtocol;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import javax.annotation.PostConstruct;
 import reactor.core.publisher.Mono;
 
 import java.util.*;

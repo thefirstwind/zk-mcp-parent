@@ -223,7 +223,7 @@ curl -X POST http://localhost:9091/api/virtual-projects \
     "projectName": "Test Virtual Project",
     "services": [
       {
-        "serviceInterface": "com.zkinfo.demo.service.UserService",
+        "serviceInterface": "service.com.pajk.provider2.UserService",
         "version": "1.0.0",
         "group": "demo"
       }

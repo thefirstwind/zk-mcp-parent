@@ -1,0 +1,42 @@
+server:
+  port: 8084
+
+spring:
+  application:
+    name: demo-provider2
+
+# Dubbo 2.5 配置
+dubbo:
+  application:
+    name: demo-provider2
+    version: 1.0.0
+  registry:
+    address: zookeeper://localhost:2181
+    timeout: 10000
+  protocol:
+    name: dubbo
+    port: 20884  # 使用不同的端口避免与 demo-provider 冲突
+    serialization: hessian2  # 强制使用 hessian2 序列化
+  provider:
+    timeout: 3000
+    retries: 0
+    loadbalance: roundrobin
+    serialization: hessian2  # Provider 端强制使用 hessian2 序列化
+  consumer:
+    timeout: 3000
+    retries: 0
+  # Dubbo 2.5 使用 scan 配置来扫描服务
+  scan:
+    base-packages: com.pajk.provider2.service.impl
+
+# 日志配置
+logging:
+  level:
+    com.pajk.provider2: DEBUG
+    com.alibaba.dubbo: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36}:%line - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36}:%line - %msg%n"
+  file:
+    name: logs/demo-provider2.log
+

@@ -1,7 +1,7 @@
-package com.zkinfo.demo.service.impl;
+package com.pajk.provider1.service.impl;
 
-import com.zkinfo.demo.model.User;
-import com.zkinfo.demo.service.UserService;
+import com.pajk.provider1.model.User;
+import com.pajk.provider1.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboService;
 

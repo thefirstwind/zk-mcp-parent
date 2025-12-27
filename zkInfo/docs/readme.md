@@ -25,3 +25,35 @@ curl -X DELETE "http://127.0.0.1:8848/nacos/v3/client/ns/instance?serviceName=vi
 
 virtual-test-virtual-node-1766659982
 curl -X DELETE "http://127.0.0.1:8848/nacos/v3/client/ns/instance?serviceName=virtual-test-virtual-node-1766663870&ip=127.0.0.1&port=9091&groupName=mcp-server&ephemeral=false"
+
+
+
+curl -X DELETE "http://127.0.0.1:8848/nacos/v3/client/ns/instance?serviceName=virtual-test-virtual-node-1766676537&ip=127.0.0.1&port=9091&groupName=mcp-server&ephemeral=false"
+
+curl -X DELETE "http://127.0.0.1:8848/nacos/v3/client/ns/instance?serviceName=virtual-test-virtual-node-1766676560&ip=127.0.0.1&port=9091&groupName=mcp-server&ephemeral=false"
+
+curl -X DELETE "http://127.0.0.1:8848/nacos/v3/client/ns/instance?serviceName=virtual-test-virtual-node-1766676585&ip=127.0.0.1&port=9091&groupName=mcp-server&ephemeral=false"
+
+curl -X DELETE "http://127.0.0.1:8848/nacos/v3/client/ns/instance?serviceName=virtual-test-virtual-node-1766676613&ip=127.0.0.1&port=9091&groupName=mcp-server&ephemeral=false"
+
+curl -X DELETE "http://127.0.0.1:8848/nacos/v3/client/ns/instance?serviceName=virtual-test-virtual-node-1766676651&ip=127.0.0.1&port=9091&groupName=mcp-server&ephemeral=false"
+
+curl -X DELETE "http://127.0.0.1:8848/nacos/v3/client/ns/instance?serviceName=virtual-test-virtual-node-1766676723&ip=127.0.0.1&port=9091&groupName=mcp-server&ephemeral=false"
+
+curl -X DELETE "http://127.0.0.1:8848/nacos/v3/client/ns/instance?serviceName=virtual-test-virtual-node-1766677009&ip=127.0.0.1&port=9091&groupName=mcp-server&ephemeral=false"
+
+curl -X DELETE "http://127.0.0.1:8848/nacos/v3/client/ns/instance?serviceName=virtual-test-virtual-node-1766677741&ip=127.0.0.1&port=9091&groupName=mcp-server&ephemeral=false"
+
+curl -X DELETE "http://127.0.0.1:8848/nacos/v3/client/ns/instance?serviceName=virtual-test-virtual-node-1766680544&ip=127.0.0.1&port=9091&groupName=mcp-server&ephemeral=false"
+
+curl -X DELETE "http://127.0.0.1:8848/nacos/v3/client/ns/instance?serviceName=virtual-test-virtual-node-1766680553&ip=127.0.0.1&port=9091&groupName=mcp-server&ephemeral=false"
+
+curl -X DELETE "http://127.0.0.1:8848/nacos/v3/client/ns/instance?serviceName=virtual-test-virtual-node-1766680644&ip=127.0.0.1&port=9091&groupName=mcp-server&ephemeral=false"
+
+curl -X DELETE "http://127.0.0.1:8848/nacos/v3/client/ns/instance?serviceName=virtual-test-virtual-node-1766680708&ip=127.0.0.1&port=9091&groupName=mcp-server&ephemeral=false"
+
+curl -X DELETE "http://127.0.0.1:8848/nacos/v3/client/ns/instance?serviceName=virtual-test-virtual-node-1766680770&ip=127.0.0.1&port=9091&groupName=mcp-server&ephemeral=false"
+
+curl -X DELETE "http://127.0.0.1:8848/nacos/v3/client/ns/instance?serviceName=virtual-test-virtual-node-1766681135&ip=127.0.0.1&port=9091&groupName=mcp-server&ephemeral=false"
+
+curl -X DELETE "http://127.0.0.1:8848/nacos/v3/client/ns/instance?serviceName=virtual-test-virtual-node-1766711712&ip=127.0.0.1&port=9091&groupName=mcp-server&ephemeral=false"

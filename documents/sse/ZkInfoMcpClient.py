@@ -193,14 +193,14 @@ def main():
         
         # 2. 获取指定工具信息
         print("\n=== 获取工具信息 ===")
-        tool_info = client.get_tool_info("com.zkinfo.demo.service.UserService.getUserById")
+        tool_info = client.get_tool_info("service.com.pajk.provider2.UserService.getUserById")
         if tool_info:
             print(f"工具描述: {tool_info.get('description')}")
         
         # 3. 调用用户服务 - 获取用户信息
         print("\n=== 获取用户信息 ===")
         user_result = client.call_tool(
-            "com.zkinfo.demo.service.UserService.getUserById",
+            "service.com.pajk.provider2.UserService.getUserById",
             args=[1]
         )
         if user_result.get('success'):
@@ -212,7 +212,7 @@ def main():
         # 4. 调用产品服务 - 搜索产品
         print("\n=== 搜索产品 ===")
         product_result = client.call_tool(
-            "com.zkinfo.demo.service.ProductService.searchProducts",
+            "service.com.pajk.provider2.ProductService.searchProducts",
             args=["iPhone"]
         )
         if product_result.get('success'):
@@ -226,7 +226,7 @@ def main():
         # 5. 异步调用 - 创建订单
         print("\n=== 异步创建订单 ===")
         async_result = client.call_tool_async(
-            "com.zkinfo.demo.service.OrderService.createOrder",
+            "service.com.pajk.provider2.OrderService.createOrder",
             args=[{
                 "userId": 1,
                 "productId": 123,

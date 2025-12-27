@@ -299,7 +299,7 @@ AI 执行:
 ### 🐛 Bug #1: getPopularProducts 调用失败
 
 **问题描述**: ProductService.getPopularProducts 方法在运行时调用失败  
-**错误信息**: `No such method getPopularProducts in class interface com.zkinfo.demo.service.ProductService`  
+**错误信息**: `No such method getPopularProducts in class interface service.com.pajk.provider2.ProductService`  
 **影响范围**: 热门产品查询功能不可用  
 **状态**: 🔍 调查中  
 **优先级**: 中等  

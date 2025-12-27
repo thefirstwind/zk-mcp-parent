@@ -86,7 +86,7 @@ curl -s "http://localhost:8848/nacos/v1/ns/instance/list?serviceName=$SERVICE_NA
 ```bash
 # 从 zkInfo API 获取所有 providers
 curl -s "http://localhost:9091/api/providers" \
-  | jq -r '.[] | select(.interfaceName == "com.zkinfo.demo.service.OrderService") | {
+  | jq -r '.[] | select(.interfaceName == "service.com.pajk.provider2.OrderService") | {
     interfaceName,
     version,
     group,
@@ -101,7 +101,7 @@ curl -s "http://localhost:9091/api/providers" \
 curl -X POST "http://localhost:9091/api/mcp/call" \
   -H "Content-Type: application/json" \
   -d '{
-    "toolName": "com.zkinfo.demo.service.OrderService.getOrderById",
+    "toolName": "service.com.pajk.provider2.OrderService.getOrderById",
     "args": ["ORD001"],
     "timeout": 5000
   }' | jq '.'
@@ -173,7 +173,7 @@ MCP 到 Dubbo 链路验证脚本
 
 [4/6] 获取实际的接口信息...
 ✅ 找到接口信息:
-    接口名: com.zkinfo.demo.service.ProductService
+    接口名: service.com.pajk.provider2.ProductService
     版本: 1.0.0
 
 [5/6] 直接调用 Dubbo 服务验证链路...
@@ -221,7 +221,7 @@ curl -s "http://localhost:8848/nacos/v1/ns/instance/list?serviceName=mcp-{endpoi
 curl -X POST "http://localhost:9091/api/mcp/call" \
   -H "Content-Type: application/json" \
   -d '{
-    "toolName": "com.zkinfo.demo.service.OrderService.getOrderById",
+    "toolName": "service.com.pajk.provider2.OrderService.getOrderById",
     "args": ["ORD001"],
     "timeout": 5000
   }' | jq '.success'
@@ -230,7 +230,7 @@ curl -X POST "http://localhost:9091/api/mcp/call" \
 curl -X POST "http://localhost:9091/api/mcp/call" \
   -H "Content-Type: application/json" \
   -d '{
-    "toolName": "com.zkinfo.demo.service.UserService.getUserById",
+    "toolName": "service.com.pajk.provider2.UserService.getUserById",
     "args": [1],
     "timeout": 5000
   }' | jq '.success'
@@ -239,7 +239,7 @@ curl -X POST "http://localhost:9091/api/mcp/call" \
 curl -X POST "http://localhost:9091/api/mcp/call" \
   -H "Content-Type: application/json" \
   -d '{
-    "toolName": "com.zkinfo.demo.service.ProductService.getProductById",
+    "toolName": "service.com.pajk.provider2.ProductService.getProductById",
     "args": [1],
     "timeout": 5000
   }' | jq '.success'
@@ -257,7 +257,7 @@ curl -X POST "http://localhost:9091/api/mcp/call" \
 ```bash
 # 检查 Provider 是否在 Zookeeper 中
 curl -s "http://localhost:9091/api/providers" \
-  | jq '.[] | select(.interfaceName == "com.zkinfo.demo.service.OrderService")'
+  | jq '.[] | select(.interfaceName == "service.com.pajk.provider2.OrderService")'
 
 # 检查 demo-provider 是否运行
 curl -s "http://localhost:8083/actuator/health"
@@ -279,7 +279,7 @@ curl -s "http://localhost:8083/actuator/health"
 ```bash
 # 检查 Provider 的 application 字段
 curl -s "http://localhost:9091/api/providers" \
-  | jq '.[] | select(.interfaceName == "com.zkinfo.demo.service.OrderService") | .application'
+  | jq '.[] | select(.interfaceName == "service.com.pajk.provider2.OrderService") | .application'
 
 # 检查注册日志
 tail -100 zk-mcp-parent/zkInfo/logs/zkinfo.log | grep "Setting application"

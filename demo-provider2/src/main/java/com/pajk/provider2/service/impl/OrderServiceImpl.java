@@ -1,9 +1,9 @@
-package com.zkinfo.demo.service.impl;
+package com.pajk.provider2.service.impl;
 
-import com.zkinfo.demo.model.Order;
-import com.zkinfo.demo.service.OrderService;
+import com.pajk.provider2.model.Order;
+import com.pajk.provider2.service.OrderService;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.dubbo.config.annotation.DubboService;
+import com.alibaba.dubbo.config.annotation.Service;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -14,10 +14,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
- * 订单服务实现类
+ * 订单服务实现类 (Dubbo 2.5)
+ * 注意：Dubbo 2.5 不支持 group 参数
  */
 @Slf4j
-@DubboService(version = "1.0.0", group = "demo")
+@Service(version = "1.0.0", interfaceClass = OrderService.class)
 public class OrderServiceImpl implements OrderService {
     
     private final Map<String, Order> orderStorage = new ConcurrentHashMap<>();
@@ -146,10 +147,5 @@ public class OrderServiceImpl implements OrderService {
         log.info("Order total calculated: {} = {}", orderId, total);
         return total;
     }
-
-}   
-
-
-
-
+}
 

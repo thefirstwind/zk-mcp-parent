@@ -323,11 +323,20 @@ public class SseController {
         }
         
         // 构建消息端点 URL（从请求头动态构建，参考 mcp-router-v3）
+        // 如果有 serviceName，使用 /mcp/{serviceName}/message 格式；否则使用 /mcp/message 格式
         String baseUrl = buildBaseUrlFromRequest();
-        String messageEndpoint = String.format("%s/mcp/message?sessionId=%s", baseUrl, sessionId);
+        String messageEndpoint;
+        if (mcpServiceName != null && !mcpServiceName.isEmpty()) {
+            // 路径参数方式：/mcp/{serviceName}/message?sessionId={sessionId}
+            messageEndpoint = String.format("%s/mcp/%s/message?sessionId=%s", baseUrl, mcpServiceName, sessionId);
+        } else {
+            // 查询参数方式：/mcp/message?sessionId={sessionId}
+            messageEndpoint = String.format("%s/mcp/message?sessionId=%s", baseUrl, sessionId);
+        }
+        log.info("📡 Generated message endpoint: serviceName={}, messageEndpoint={}", mcpServiceName, messageEndpoint);
         
         try {
-            // 发送 endpoint 事件
+            // 发送 endpoint 事件（客户端收到后会通过 POST /mcp/message 发送 initialize 和 tools/list 请求）
             emitter.send(SseEmitter.event()
                     .name("endpoint")
                     .data(messageEndpoint));
@@ -452,20 +461,7 @@ public class SseController {
      * 支持 context-path 和域名配置（生产环境）
      */
     private String buildBaseUrlFromRequest() {
-        // 获取 context-path 配置
-        String contextPath = environment.getProperty("server.servlet.context-path", "");
-        // 确保 context-path 以 / 开头，但不以 / 结尾（除非是根路径）
-        if (contextPath != null && !contextPath.isEmpty() && !contextPath.equals("/")) {
-            if (!contextPath.startsWith("/")) {
-                contextPath = "/" + contextPath;
-            }
-            // 移除末尾的 /（除非是根路径）
-            if (contextPath.endsWith("/") && contextPath.length() > 1) {
-                contextPath = contextPath.substring(0, contextPath.length() - 1);
-            }
-        } else {
-            contextPath = "";
-        }
+        String contextPath = "";
         
         try {
             org.springframework.web.context.request.RequestAttributes requestAttributes = 
@@ -474,6 +470,31 @@ public class SseController {
                 org.springframework.web.context.request.ServletRequestAttributes servletRequestAttributes = 
                         (org.springframework.web.context.request.ServletRequestAttributes) requestAttributes;
                 jakarta.servlet.http.HttpServletRequest request = servletRequestAttributes.getRequest();
+                
+                // 优先从 HttpServletRequest 获取 context-path（最准确）
+                String requestContextPath = request.getContextPath();
+                if (requestContextPath != null && !requestContextPath.isEmpty() && !requestContextPath.equals("/")) {
+                    contextPath = requestContextPath;
+                    // 确保 context-path 不以 / 结尾（除非是根路径）
+                    if (contextPath.endsWith("/") && contextPath.length() > 1) {
+                        contextPath = contextPath.substring(0, contextPath.length() - 1);
+                    }
+                } else {
+                    // 如果从请求中获取不到，则从配置文件读取
+                    contextPath = environment.getProperty("server.servlet.context-path", "");
+                    // 确保 context-path 以 / 开头，但不以 / 结尾（除非是根路径）
+                    if (contextPath != null && !contextPath.isEmpty() && !contextPath.equals("/")) {
+                        if (!contextPath.startsWith("/")) {
+                            contextPath = "/" + contextPath;
+                        }
+                        // 移除末尾的 /（除非是根路径）
+                        if (contextPath.endsWith("/") && contextPath.length() > 1) {
+                            contextPath = contextPath.substring(0, contextPath.length() - 1);
+                        }
+                    } else {
+                        contextPath = "";
+                    }
+                }
                 
                 // 优先读取代理相关头（不区分大小写）
                 String forwardedProto = request.getHeader("X-Forwarded-Proto");

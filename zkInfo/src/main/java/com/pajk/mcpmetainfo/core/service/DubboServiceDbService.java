@@ -794,14 +794,32 @@ public class DubboServiceDbService {
             }
             
             // 3. 对每个节点，查询对应的 Provider 信息
+            // 优先返回在线节点，如果没有在线节点，则返回所有节点（包括离线节点）
+            // 这样可以避免因心跳未及时更新导致节点被误判为离线而无法调用
+            List<ProviderInfo> onlineProviders = new java.util.ArrayList<>();
+            List<ProviderInfo> allProviders = new java.util.ArrayList<>();
+            
             for (DubboServiceNodeEntity node : nodes) {
                 ProviderInfo providerInfo = convertToProviderInfo(service, node);
-                if (providerInfo != null && providerInfo.isOnline()) {
-                    providers.add(providerInfo);
+                if (providerInfo != null) {
+                    allProviders.add(providerInfo);
+                    if (providerInfo.isOnline()) {
+                        onlineProviders.add(providerInfo);
+                    }
                 }
             }
             
-            log.debug("从 zk_dubbo_* 表查询到 {} 个在线 Provider (serviceId={})", providers.size(), serviceId);
+            // 如果有在线节点，返回在线节点；否则返回所有节点
+            if (!onlineProviders.isEmpty()) {
+                log.debug("从 zk_dubbo_* 表查询到 {} 个在线 Provider (serviceId={})", onlineProviders.size(), serviceId);
+                return onlineProviders;
+            } else if (!allProviders.isEmpty()) {
+                log.warn("⚠️ 服务 serviceId={} 没有在线节点，返回所有节点（共 {} 个），可能因心跳未及时更新", 
+                        serviceId, allProviders.size());
+                return allProviders;
+            }
+            
+            log.debug("从 zk_dubbo_* 表查询到 0 个 Provider (serviceId={})", serviceId);
             return providers;
             
         } catch (Exception e) {
@@ -935,7 +953,8 @@ public class DubboServiceDbService {
             providerInfo.setRegisterTime(node.getRegistrationTime() != null ? node.getRegistrationTime() : node.getCreatedAt());
             providerInfo.setRegistrationTime(node.getRegistrationTime());
             providerInfo.setLastHeartbeat(node.getLastHeartbeatTime());
-            providerInfo.setOnline(node.getIsOnline() != null ? node.getIsOnline() : true);
+            // 暂时写死为在线状态（无论数据库中的 is_online 字段值如何）
+            providerInfo.setOnline(true);
             providerInfo.setHealthy(node.getIsHealthy() != null ? node.getIsHealthy() : true);
             
             // 从 zk_dubbo_service_method 查询方法信息

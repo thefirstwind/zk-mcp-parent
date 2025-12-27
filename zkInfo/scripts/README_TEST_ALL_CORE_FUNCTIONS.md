@@ -60,6 +60,7 @@ curl -s -X POST "${ZKINFO_URL}/api/dubbo-services/{serviceId}/sync-nodes"
 
 #### 3.1 创建实际项目
 ```bash
+export ZKINFO_URL=http://127.0.0.1:9091
 curl -s -X POST "${ZKINFO_URL}/api/projects" \
   -H "Content-Type: application/json" \
   -d '{
@@ -105,7 +106,7 @@ curl -s -X POST "${ZKINFO_URL}/api/virtual-projects" \
   -d '{
     "endpointName": "test-virtual-endpoint",
     "projectName": "Test Virtual Project",
-    "projectCode": "test-virtual-001",
+    "projectCode": "test-virtual-002",
     "description": "Test virtual project",
     "services": [
       {
@@ -117,6 +118,11 @@ curl -s -X POST "${ZKINFO_URL}/api/virtual-projects" \
     ],
     "autoRegister": true
   }'
+
+
+
+
+
 ```
 
 #### 4.2 查询虚拟项目详情

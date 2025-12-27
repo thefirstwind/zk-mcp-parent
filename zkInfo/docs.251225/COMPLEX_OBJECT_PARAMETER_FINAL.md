@@ -95,12 +95,12 @@ McpExecutorService.executeToolCallSync()
 
 1. **从数据库获取**（最准确）
    - 从 `DubboServiceMethodEntity` 和 `DubboMethodParameterEntity` 获取
-   - 包含完整的参数类型信息（如 `com.zkinfo.demo.model.User`）
+   - 包含完整的参数类型信息（如 `model.com.pajk.provider2.User`）
 
 2. **从方法名推断**（较准确）
-   - `createUser` → `com.zkinfo.demo.model.User`
-   - `createOrder` → `com.zkinfo.demo.model.Order`
-   - `createProduct` → `com.zkinfo.demo.model.Product`
+   - `createUser` → `model.com.pajk.provider2.User`
+   - `createOrder` → `model.com.pajk.provider2.Order`
+   - `createProduct` → `model.com.pajk.provider2.Product`
 
 3. **从 Map 键推断**（fallback）
    - 包含 `username` + `email` → `User`
@@ -118,7 +118,7 @@ McpExecutorService.executeToolCallSync()
 {
   "method": "tools/call",
   "params": {
-    "name": "com.zkinfo.demo.service.UserService.createUser",
+    "name": "service.com.pajk.provider2.UserService.createUser",
     "arguments": {
       "user": {
         "username": "testuser",
@@ -132,7 +132,7 @@ McpExecutorService.executeToolCallSync()
 
 **处理流程**:
 1. `MethodSignatureResolver` 从数据库获取方法签名：`createUser(User user)`
-2. `ParameterConverter` 将 Map 转换为 `com.zkinfo.demo.model.User` 对象
+2. `ParameterConverter` 将 Map 转换为 `model.com.pajk.provider2.User` 对象
 3. `McpExecutorService` 调用 Dubbo 服务
 
 ### 示例 2: 创建 Order（嵌套对象）
@@ -142,7 +142,7 @@ McpExecutorService.executeToolCallSync()
 {
   "method": "tools/call",
   "params": {
-    "name": "com.zkinfo.demo.service.OrderService.createOrder",
+    "name": "service.com.pajk.provider2.OrderService.createOrder",
     "arguments": {
       "order": {
         "userId": 1001,
@@ -159,7 +159,7 @@ McpExecutorService.executeToolCallSync()
 ```
 
 **处理流程**:
-1. 识别 `order` 为 `com.zkinfo.demo.model.Order` 类型
+1. 识别 `order` 为 `model.com.pajk.provider2.Order` 类型
 2. 识别 `orderItems` 为 `List<Order.OrderItem>` 类型
 3. 转换每个 `orderItems` 元素
 4. 使用 Jackson 转换为 `Order` 对象

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:dubbo="http://code.alibabatech.com/schema/dubbo"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+                           http://www.springframework.org/schema/beans/spring-beans.xsd
+                           http://code.alibabatech.com/schema/dubbo
+                           http://code.alibabatech.com/schema/dubbo/dubbo.xsd">
+
+    <!-- 应用名 -->
+    <dubbo:application name="demo-provider2" />
+
+    <!-- 注册中心地址 -->
+    <dubbo:registry address="zookeeper://localhost:2181" timeout="10000" />
+
+    <!-- 协议配置 -->
+    <dubbo:protocol name="dubbo" port="20884" serialization="hessian2" />
+
+    <!-- Provider 配置 -->
+    <dubbo:provider timeout="3000" retries="0" loadbalance="roundrobin" serialization="hessian2" />
+
+    <!-- 服务实现 Bean -->
+    <bean id="userServiceImpl" class="com.pajk.provider2.service.impl.UserServiceImpl" />
+    <bean id="orderServiceImpl" class="com.pajk.provider2.service.impl.OrderServiceImpl" />
+    <bean id="productServiceImpl" class="com.pajk.provider2.service.impl.ProductServiceImpl" />
+
+    <!-- 服务提供者 -->
+    <dubbo:service interface="com.pajk.provider2.service.UserService" ref="userServiceImpl" version="1.0.0" />
+    <dubbo:service interface="com.pajk.provider2.service.OrderService" ref="orderServiceImpl" version="1.0.0" />
+    <dubbo:service interface="com.pajk.provider2.service.ProductService" ref="productServiceImpl" version="1.0.0" />
+
+</beans>
+

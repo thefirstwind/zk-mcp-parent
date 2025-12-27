@@ -20,9 +20,9 @@
 ### 3. MCP 到 Dubbo 调用链路验证 ✅
 
 **测试结果**:
-- ✅ `com.zkinfo.demo.service.OrderService.getOrderById` → 调用成功
-- ✅ `com.zkinfo.demo.service.UserService.getUserById` → 调用成功
-- ✅ `com.zkinfo.demo.service.ProductService.getProductById` → 调用成功
+- ✅ `service.com.pajk.provider2.OrderService.getOrderById` → 调用成功
+- ✅ `service.com.pajk.provider2.UserService.getUserById` → 调用成功
+- ✅ `service.com.pajk.provider2.ProductService.getProductById` → 调用成功
 
 **调用链路**:
 ```
@@ -62,7 +62,7 @@ curl -s "http://localhost:8848/nacos/v1/ns/instance/list?serviceName=zk-mcp-com-
 curl -X POST "http://localhost:9091/api/mcp/call" \
   -H "Content-Type: application/json" \
   -d '{
-    "toolName": "com.zkinfo.demo.service.OrderService.getOrderById",
+    "toolName": "service.com.pajk.provider2.OrderService.getOrderById",
     "args": ["ORD001"],
     "timeout": 5000
   }' | jq '.success'

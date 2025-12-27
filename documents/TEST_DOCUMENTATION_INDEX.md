@@ -179,9 +179,9 @@ tail -f mcp-router-v3/logs/mcp-router-v3.log
 参考 `TEST_GUIDE.md` 第12节
 
 ### 测试服务数据
-- UserService: `com.zkinfo.demo.service.UserService:1.0.0:demo`
-- OrderService: `com.zkinfo.demo.service.OrderService:1.0.0:demo`
-- ProductService: `com.zkinfo.demo.service.ProductService:1.0.0:demo`
+- UserService: `service.com.pajk.provider2.UserService:1.0.0:demo`
+- OrderService: `service.com.pajk.provider2.OrderService:1.0.0:demo`
+- ProductService: `service.com.pajk.provider2.ProductService:1.0.0:demo`
 
 ---
 
