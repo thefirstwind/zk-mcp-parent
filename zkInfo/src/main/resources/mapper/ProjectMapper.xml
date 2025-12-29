@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pajk.mcpmetainfo.persistence.mapper.ProjectMapper">
+    
+    <resultMap id="ProjectResultMap" type="com.pajk.mcpmetainfo.persistence.entity.ProjectEntity">
+        <id property="id" column="id"/>
+        <result property="projectCode" column="project_code"/>
+        <result property="projectName" column="project_name"/>
+        <result property="projectType" column="project_type" 
+                typeHandler="org.apache.ibatis.type.EnumTypeHandler"
+                javaType="com.pajk.mcpmetainfo.core.model.Project$ProjectType"/>
+        <result property="description" column="description"/>
+        <result property="ownerId" column="owner_id"/>
+        <result property="ownerName" column="owner_name"/>
+        <result property="status" column="status" 
+                typeHandler="org.apache.ibatis.type.EnumTypeHandler"
+                javaType="com.pajk.mcpmetainfo.core.model.Project$ProjectStatus"/>
+        <result property="createdAt" column="gmt_created"/>
+        <result property="updatedAt" column="gmt_modified"/>
+    </resultMap>
+    
+    <sql id="projectColumns">
+        id, project_code, project_name, project_type, description, owner_id, owner_name, status, gmt_created, gmt_modified
+    </sql>
+    
+    <!-- 插入项目信息 -->
+    <insert id="insert" parameterType="com.pajk.mcpmetainfo.persistence.entity.ProjectEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO zk_project (
+            id, project_code, project_name, project_type, description, owner_id, owner_name, status, gmt_created, gmt_modified
+        ) VALUES (
+            #{id}, #{projectCode}, #{projectName}, #{projectType}, #{description}, #{ownerId}, #{ownerName}, #{status}, #{createdAt}, #{updatedAt}
+        )
+        ON DUPLICATE KEY UPDATE
+            project_name = VALUES(project_name),
+            description = VALUES(description),
+            owner_id = VALUES(owner_id),
+            owner_name = VALUES(owner_name),
+            status = VALUES(status),
+            gmt_modified = VALUES(gmt_modified)
+    </insert>
+    
+    <!-- 更新项目信息 -->
+    <update id="update" parameterType="com.pajk.mcpmetainfo.persistence.entity.ProjectEntity">
+        UPDATE zk_project
+        SET project_name = #{projectName},
+            description = #{description},
+            owner_id = #{ownerId},
+            owner_name = #{ownerName},
+            status = #{status},
+            gmt_modified = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+    
+    <!-- 根据ID删除项目 -->
+    <delete id="deleteById">
+        DELETE FROM zk_project WHERE id = #{id}
+    </delete>
+    
+    <!-- 根据ID查询项目 -->
+    <select id="findById" resultMap="ProjectResultMap">
+        SELECT <include refid="projectColumns"/>
+        FROM zk_project
+        WHERE id = #{id}
+    </select>
+    
+    <!-- 根据项目代码查询项目 -->
+    <select id="findByProjectCode" resultMap="ProjectResultMap">
+        SELECT <include refid="projectColumns"/>
+        FROM zk_project
+        WHERE project_code = #{projectCode}
+    </select>
+    
+    <!-- 查询所有项目 -->
+    <select id="findAll" resultMap="ProjectResultMap">
+        SELECT <include refid="projectColumns"/>
+        FROM zk_project
+        ORDER BY gmt_created DESC
+    </select>
+    
+    <!-- 根据项目类型查询项目 -->
+    <select id="findByProjectType" resultMap="ProjectResultMap">
+        SELECT <include refid="projectColumns"/>
+        FROM zk_project
+        WHERE project_type = #{projectType}
+        ORDER BY gmt_created DESC
+    </select>
+    
+    <!-- 根据状态查询项目 -->
+    <select id="findByStatus" resultMap="ProjectResultMap">
+        SELECT <include refid="projectColumns"/>
+        FROM zk_project
+        WHERE status = #{status}
+        ORDER BY gmt_created DESC
+    </select>
+    
+</mapper>
+

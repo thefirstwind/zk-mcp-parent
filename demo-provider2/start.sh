@@ -11,3 +11,4 @@ JAVA_OPTS="--add-opens java.base/java.lang=ALL-UNNAMED \
 
 mvn spring-boot:run -Dspring-boot.run.jvmArguments="$JAVA_OPTS"
 
+

@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pajk.mcpmetainfo.persistence.mapper.VirtualProjectEndpointMapper">
+    
+    <resultMap id="VirtualProjectEndpointResultMap" type="com.pajk.mcpmetainfo.persistence.entity.VirtualProjectEndpointEntity">
+        <id property="id" column="id"/>
+        <result property="virtualProjectId" column="virtual_project_id"/>
+        <result property="endpointName" column="endpoint_name"/>
+        <result property="endpointPath" column="endpoint_path"/>
+        <result property="mcpServiceName" column="mcp_service_name"/>
+        <result property="description" column="description"/>
+        <result property="status" column="status" 
+                typeHandler="org.apache.ibatis.type.EnumTypeHandler"
+                javaType="com.pajk.mcpmetainfo.core.model.VirtualProjectEndpoint$EndpointStatus"/>
+        <result property="createdAt" column="gmt_created"/>
+        <result property="updatedAt" column="gmt_modified"/>
+    </resultMap>
+    
+    <sql id="endpointColumns">
+        id, virtual_project_id, endpoint_name, endpoint_path, mcp_service_name, description, status, gmt_created, gmt_modified
+    </sql>
+    
+    <!-- 插入虚拟项目端点信息 -->
+    <insert id="insert" parameterType="com.pajk.mcpmetainfo.persistence.entity.VirtualProjectEndpointEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO zk_virtual_project_endpoint (
+            virtual_project_id, endpoint_name, endpoint_path, mcp_service_name, description, status, gmt_created, gmt_modified
+        ) VALUES (
+            #{virtualProjectId}, #{endpointName}, #{endpointPath}, #{mcpServiceName}, #{description}, #{status}, #{createdAt}, #{updatedAt}
+        )
+        ON DUPLICATE KEY UPDATE
+            endpoint_path = VALUES(endpoint_path),
+            mcp_service_name = VALUES(mcp_service_name),
+            description = VALUES(description),
+            status = VALUES(status),
+            gmt_modified = VALUES(gmt_modified)
+    </insert>
+    
+    <!-- 更新虚拟项目端点信息 -->
+    <update id="update" parameterType="com.pajk.mcpmetainfo.persistence.entity.VirtualProjectEndpointEntity">
+        UPDATE zk_virtual_project_endpoint
+        SET endpoint_path = #{endpointPath},
+            mcp_service_name = #{mcpServiceName},
+            description = #{description},
+            status = #{status},
+            gmt_modified = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+    
+    <!-- 根据ID删除虚拟项目端点 -->
+    <delete id="deleteById">
+        DELETE FROM zk_virtual_project_endpoint WHERE id = #{id}
+    </delete>
+    
+    <!-- 根据ID查询虚拟项目端点 -->
+    <select id="findById" resultMap="VirtualProjectEndpointResultMap">
+        SELECT <include refid="endpointColumns"/>
+        FROM zk_virtual_project_endpoint
+        WHERE id = #{id}
+    </select>
+    
+    <!-- 根据端点名称查询虚拟项目端点 -->
+    <select id="findByEndpointName" resultMap="VirtualProjectEndpointResultMap">
+        SELECT <include refid="endpointColumns"/>
+        FROM zk_virtual_project_endpoint
+        WHERE endpoint_name = #{endpointName}
+    </select>
+    
+    <!-- 根据虚拟项目ID查询虚拟项目端点 -->
+    <select id="findByVirtualProjectId" resultMap="VirtualProjectEndpointResultMap">
+        SELECT <include refid="endpointColumns"/>
+        FROM zk_virtual_project_endpoint
+        WHERE virtual_project_id = #{virtualProjectId}
+    </select>
+    
+    <!-- 查询所有虚拟项目端点 -->
+    <select id="findAll" resultMap="VirtualProjectEndpointResultMap">
+        SELECT <include refid="endpointColumns"/>
+        FROM zk_virtual_project_endpoint
+        ORDER BY gmt_created DESC
+    </select>
+    
+    <!-- 根据状态查询虚拟项目端点 -->
+    <select id="findByStatus" resultMap="VirtualProjectEndpointResultMap">
+        SELECT <include refid="endpointColumns"/>
+        FROM zk_virtual_project_endpoint
+        WHERE status = #{status}
+        ORDER BY gmt_created DESC
+    </select>
+    
+</mapper>
+

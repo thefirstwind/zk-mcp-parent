@@ -20,3 +20,4 @@ CREATE TABLE IF NOT EXISTS `zk_interface_whitelist` (
 -- VALUES ('com.zkinfo.demo', 'Demo项目接口白名单', 1, 'system');
 
 
+

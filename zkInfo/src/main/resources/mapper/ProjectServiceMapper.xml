@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pajk.mcpmetainfo.persistence.mapper.ProjectServiceMapper">
+
+    <resultMap id="ProjectServiceResultMap" type="com.pajk.mcpmetainfo.persistence.entity.ProjectServiceEntity">
+        <id property="id" column="id"/>
+        <result property="projectId" column="project_id"/>
+        <result property="serviceInterface" column="service_interface"/>
+        <result property="serviceVersion" column="service_version"/>
+        <result property="serviceGroup" column="service_group"/>
+        <result property="priority" column="priority"/>
+        <result property="enabled" column="enabled"/>
+        <result property="addedAt" column="added_at"/>
+        <result property="addedBy" column="added_by"/>
+    </resultMap>
+
+    <sql id="projectServiceColumns">
+        id, project_id, service_interface, service_version, service_group, priority, enabled, added_at, added_by
+    </sql>
+
+    <insert id="insert" parameterType="com.pajk.mcpmetainfo.persistence.entity.ProjectServiceEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO zk_project_service (
+            project_id, service_interface, service_version, service_group, priority, enabled, added_at, added_by
+        ) VALUES (
+            #{projectId}, #{serviceInterface}, #{serviceVersion}, #{serviceGroup}, #{priority}, #{enabled}, #{addedAt}, #{addedBy}
+        )
+    </insert>
+
+    <update id="update" parameterType="com.pajk.mcpmetainfo.persistence.entity.ProjectServiceEntity">
+        UPDATE zk_project_service
+        SET
+            service_group = #{serviceGroup},
+            priority = #{priority},
+            enabled = #{enabled},
+            added_at = #{addedAt},
+            added_by = #{addedBy}
+        WHERE id = #{id}
+    </update>
+
+    <select id="findById" parameterType="java.lang.Long" resultMap="ProjectServiceResultMap">
+        SELECT
+        <include refid="projectServiceColumns"/>
+        FROM zk_project_service
+        WHERE id = #{id}
+    </select>
+
+    <select id="findByProjectId" parameterType="java.lang.Long" resultMap="ProjectServiceResultMap">
+        SELECT
+        <include refid="projectServiceColumns"/>
+        FROM zk_project_service
+        WHERE project_id = #{projectId}
+        ORDER BY priority DESC, added_at ASC
+    </select>
+
+    <select id="findAll" resultMap="ProjectServiceResultMap">
+        SELECT
+        <include refid="projectServiceColumns"/>
+        FROM zk_project_service
+        ORDER BY project_id, priority DESC, added_at ASC
+    </select>
+
+    <delete id="deleteById" parameterType="java.lang.Long">
+        DELETE FROM zk_project_service
+        WHERE id = #{id}
+    </delete>
+
+    <delete id="deleteByProjectId" parameterType="java.lang.Long">
+        DELETE FROM zk_project_service
+        WHERE project_id = #{projectId}
+    </delete>
+
+</mapper>
+

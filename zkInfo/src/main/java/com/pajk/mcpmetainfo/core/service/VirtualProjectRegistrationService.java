@@ -46,7 +46,7 @@ public class VirtualProjectRegistrationService {
     private com.pajk.mcpmetainfo.persistence.mapper.DubboServiceMethodMapper dubboServiceMethodMapper;
     
     @Autowired(required = false)
-    private javax.sql.DataSource dataSource; // 用于直接查询数据库
+    private com.pajk.mcpmetainfo.persistence.mapper.VirtualProjectEndpointMapper virtualProjectEndpointMapper;
     
     @Value("${server.port:9091}")
     private int serverPort;
@@ -198,10 +198,31 @@ public class VirtualProjectRegistrationService {
                 List<com.pajk.mcpmetainfo.core.model.ProviderInfo> allProviders = dubboServiceDbService.getAllProvidersFromDubboTables();
                 log.debug("Total providers available from zk_dubbo_* tables: {}", allProviders.size());
                 
+                // 记录匹配前的统计信息
+                String targetInterface = projectService.getServiceInterface();
+                long interfaceMatchCount = allProviders.stream()
+                    .filter(p -> p.getInterfaceName() != null && p.getInterfaceName().equals(targetInterface))
+                    .count();
+                log.info("📊 Matching statistics for {}: totalProviders={}, interfaceMatch={}", 
+                        targetInterface, allProviders.size(), interfaceMatchCount);
+                
+                // 如果接口名匹配的Provider数量为0，记录所有可用的接口名（用于调试）
+                if (interfaceMatchCount == 0 && !allProviders.isEmpty()) {
+                    Set<String> availableInterfaces = allProviders.stream()
+                        .map(com.pajk.mcpmetainfo.core.model.ProviderInfo::getInterfaceName)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toSet());
+                    log.warn("⚠️ No providers found with interface '{}'. Available interfaces: {}", 
+                            targetInterface, availableInterfaces);
+                }
+                
                 providers = allProviders.stream()
                     .filter(p -> {
-                        boolean interfaceMatch = p.getInterfaceName().equals(projectService.getServiceInterface());
+                        // 接口名匹配
+                        boolean interfaceMatch = Objects.equals(p.getInterfaceName(), projectService.getServiceInterface());
                         if (!interfaceMatch) {
+                            log.debug("Interface mismatch: expected={}, actual={}", 
+                                    projectService.getServiceInterface(), p.getInterfaceName());
                             return false;
                         }
                         
@@ -242,11 +263,15 @@ public class VirtualProjectRegistrationService {
                             return false;
                         }
                         
+                        // 在线状态检查
                         boolean online = p.isOnline();
                         if (!online) {
                             log.debug("Provider is offline: {}:{}:{}", p.getInterfaceName(), p.getVersion(), p.getGroup());
                             return false;
                         }
+                        
+                        log.debug("✅ Provider matched: {}:{}:{} at {}:{}", 
+                                p.getInterfaceName(), p.getVersion(), p.getGroup(), p.getAddress(), p.getPort());
                         return true;
                     })
                     .collect(Collectors.toList());
@@ -408,7 +433,7 @@ public class VirtualProjectRegistrationService {
         }
         
         // 4. 如果内存中都没有，尝试从数据库直接查询 virtual_project_id
-        if (dataSource != null) {
+        if (virtualProjectEndpointMapper != null) {
             try {
                 Long projectId = queryVirtualProjectIdFromDatabase(actualEndpoint);
                 if (projectId != null) {
@@ -428,22 +453,20 @@ public class VirtualProjectRegistrationService {
     
     /**
      * 从数据库查询虚拟项目的 projectId（通过 endpointName）
+     * 使用 MyBatis Mapper 查询，只返回状态为 ACTIVE 的 endpoint
      */
     private Long queryVirtualProjectIdFromDatabase(String endpointName) {
-        if (dataSource == null) {
+        if (virtualProjectEndpointMapper == null) {
             return null;
         }
         
-        String sql = "SELECT virtual_project_id FROM zk_virtual_project_endpoint WHERE endpoint_name = ? AND status = 'ACTIVE' LIMIT 1";
-        try (java.sql.Connection conn = dataSource.getConnection();
-             java.sql.PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setString(1, endpointName);
-            try (java.sql.ResultSet rs = stmt.executeQuery()) {
-                if (rs.next()) {
-                    return rs.getLong("virtual_project_id");
-                }
+        try {
+            com.pajk.mcpmetainfo.persistence.entity.VirtualProjectEndpointEntity entity = 
+                    virtualProjectEndpointMapper.findByEndpointName(endpointName);
+            if (entity != null && entity.getStatus() == com.pajk.mcpmetainfo.core.model.VirtualProjectEndpoint.EndpointStatus.ACTIVE) {
+                return entity.getVirtualProjectId();
             }
-        } catch (java.sql.SQLException e) {
+        } catch (Exception e) {
             log.error("Failed to query virtual project from database: endpointName={}", endpointName, e);
         }
         return null;

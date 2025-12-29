@@ -43,3 +43,4 @@ WHERE registration_time IS NULL;
 
 -- 注意：建议先注释掉 DROP TABLE 语句，等确认数据迁移成功后再执行
 
+

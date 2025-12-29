@@ -101,24 +101,26 @@ curl -s "${ZKINFO_URL}/api/projects/{projectId}/services"
 
 #### 4.1 创建虚拟项目
 ```bash
+export ZKINFO_URL=http://127.0.0.1:9091
 curl -s -X POST "${ZKINFO_URL}/api/virtual-projects" \
   -H "Content-Type: application/json" \
   -d '{
-    "endpointName": "test-virtual-endpoint",
-    "projectName": "Test Virtual Project",
-    "projectCode": "test-virtual-002",
+    "endpointName": "test-virtual-endpoint251229",
     "description": "Test virtual project",
     "services": [
       {
-        "serviceInterface": "com.example.Service",
+        "serviceInterface": "com.pajk.provider2.service.OrderService",
         "version": "1.0.0",
-        "group": "demo",
+        "priority": 0
+      },
+      {
+        "serviceInterface": "com.pajk.provider2.service.ProductService",
+        "version": "1.0.0",
         "priority": 0
       }
     ],
     "autoRegister": true
   }'
-
 
 
 
