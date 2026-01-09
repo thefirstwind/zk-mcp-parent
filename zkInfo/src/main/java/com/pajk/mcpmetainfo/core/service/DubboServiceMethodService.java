@@ -13,6 +13,7 @@ import org.apache.curator.framework.CuratorFramework;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
@@ -220,6 +221,32 @@ public class DubboServiceMethodService {
      */
     public DubboServiceMethodEntity findMethodById(Long methodId) {
         return dubboServiceMethodMapper.findById(methodId);
+    }
+
+    /**
+     * 更新方法描述（人工维护）
+     *
+     * 注意：同步入库（ON DUPLICATE KEY UPDATE）不会覆盖人工描述（除非同步传入非空描述）。
+     *
+     * @param methodId 方法ID
+     * @param methodDescription 方法描述（允许为空，表示清空）
+     */
+    @Transactional
+    public void updateMethodDescription(Long methodId, String methodDescription) {
+        if (methodId == null) {
+            throw new IllegalArgumentException("methodId不能为空");
+        }
+        // 允许传空串/空白，用于清空描述；统一 trim 但保留用户输入的换行
+        String desc = methodDescription;
+        if (desc != null && !StringUtils.hasText(desc)) {
+            desc = "";
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        int updated = dubboServiceMethodMapper.updateDescription(methodId, desc, now);
+        if (updated <= 0) {
+            throw new IllegalArgumentException("未找到方法，methodId=" + methodId);
+        }
     }
     
     /**

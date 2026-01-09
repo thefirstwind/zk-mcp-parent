@@ -4,6 +4,7 @@ import com.pajk.mcpmetainfo.persistence.entity.DubboServiceMethodEntity;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Mapper
@@ -12,6 +13,10 @@ public interface DubboServiceMethodMapper {
     void insert(DubboServiceMethodEntity method);
     
     void update(DubboServiceMethodEntity method);
+
+    int updateDescription(@Param("id") Long id,
+                          @Param("methodDescription") String methodDescription,
+                          @Param("updatedAt") LocalDateTime updatedAt);
     
     void deleteById(@Param("id") Long id);
     

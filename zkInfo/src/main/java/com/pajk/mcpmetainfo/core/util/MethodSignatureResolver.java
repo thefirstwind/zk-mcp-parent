@@ -45,6 +45,7 @@ public class MethodSignatureResolver {
         private String interfaceName;
         private String methodName;
         private String returnType;
+        private String methodDescription;
         private List<ParameterInfo> parameters;
         
         public MethodSignature() {
@@ -68,6 +69,7 @@ public class MethodSignatureResolver {
         private String type;
         private int order;
         private String description;
+        private String schemaJson;
         
         public ParameterInfo(String name, String type, int order) {
             this.name = name;
@@ -144,6 +146,7 @@ public class MethodSignatureResolver {
             
             // 4. 构建 MethodSignature
             MethodSignature signature = new MethodSignature(interfaceName, methodName, method.getReturnType());
+            signature.setMethodDescription(method.getMethodDescription());
             
             if (parameters != null && !parameters.isEmpty()) {
                 // 按 parameterOrder 排序
@@ -156,6 +159,7 @@ public class MethodSignatureResolver {
                             param.getParameterOrder()
                     );
                     paramInfo.setDescription(param.getParameterDescription());
+                    paramInfo.setSchemaJson(param.getParameterSchemaJson());
                     signature.getParameters().add(paramInfo);
                 }
             }

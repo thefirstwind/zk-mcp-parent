@@ -5,6 +5,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dubbo服务管理</title>
     <style>
+        :root {
+            --bg: #f6f8fc;
+            --card: #ffffff;
+            --text: #0f172a;
+            --muted: #64748b;
+            --border: rgba(15, 23, 42, 0.10);
+            --shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+            --shadow-soft: 0 6px 18px rgba(15, 23, 42, 0.06);
+
+            --primary: #4f46e5;
+            --primary-2: #7c3aed;
+            --primary-hover: #4338ca;
+            --success: #16a34a;
+            --danger: #dc2626;
+            --warning: #f59e0b;
+            --info: #0891b2;
+
+            --radius: 14px;
+            --radius-sm: 10px;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -12,65 +33,91 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: #f5f7fa;
-            color: #333;
-            line-height: 1.6;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: radial-gradient(900px 400px at 10% 0%, rgba(79, 70, 229, 0.15), transparent 60%),
+            radial-gradient(900px 400px at 90% 10%, rgba(124, 58, 237, 0.12), transparent 55%),
+            var(--bg);
+            color: var(--text);
+            line-height: 1.55;
         }
 
         .container {
             max-width: 1400px;
             margin: 0 auto;
-            padding: 20px;
+            padding: 22px 18px 28px;
         }
 
         .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            position: relative;
+            overflow: hidden;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-2) 100%);
             color: white;
-            padding: 30px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 26px 26px;
+            border-radius: var(--radius);
+            margin-bottom: 16px;
+            box-shadow: var(--shadow);
+        }
+
+        .header:before {
+            content: "";
+            position: absolute;
+            inset: -30% -20%;
+            background: radial-gradient(circle at 20% 30%, rgba(255, 255, 255, 0.35), transparent 55%),
+            radial-gradient(circle at 80% 40%, rgba(255, 255, 255, 0.25), transparent 55%);
+            filter: blur(20px);
+            opacity: 0.9;
+            pointer-events: none;
         }
 
         .header h1 {
-            font-size: 28px;
-            margin-bottom: 10px;
+            position: relative;
+            font-size: 22px;
+            letter-spacing: 0.2px;
         }
 
         .tabs {
-            display: flex;
-            background: white;
-            border-radius: 10px;
-            padding: 10px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            display: inline-flex;
+            gap: 6px;
+            padding: 6px;
+            background: rgba(255, 255, 255, 0.75);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            backdrop-filter: blur(10px);
+            box-shadow: var(--shadow-soft);
+            margin-bottom: 14px;
         }
 
         .tab {
-            padding: 10px 20px;
+            padding: 9px 14px;
             cursor: pointer;
-            border-radius: 5px;
-            margin-right: 10px;
-            transition: all 0.3s;
-            font-weight: 500;
+            border-radius: 999px;
+            transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+            font-weight: 600;
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.92);
+            background: rgba(15, 23, 42, 0.12);
+            user-select: none;
         }
 
         .tab:hover {
-            background: #f0f0f0;
+            transform: translateY(-1px);
+            background: rgba(15, 23, 42, 0.18);
         }
 
         .tab.active {
-            background: #667eea;
+            background: linear-gradient(135deg, var(--primary), var(--primary-2));
             color: white;
+            box-shadow: 0 8px 18px rgba(79, 70, 229, 0.25);
         }
 
         .content-panel {
             display: none;
-            background: white;
-            border-radius: 10px;
-            padding: 20px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            background: rgba(255, 255, 255, 0.78);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 18px;
+            box-shadow: var(--shadow-soft);
+            backdrop-filter: blur(10px);
         }
 
         .content-panel.active {
@@ -81,7 +128,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
+            margin-bottom: 14px;
             flex-wrap: wrap;
             gap: 10px;
         }
@@ -90,137 +137,195 @@
             display: flex;
             gap: 10px;
             align-items: center;
+            color: var(--muted);
+            font-weight: 600;
+            font-size: 13px;
         }
 
-        input[type="text"], input[type="number"], textarea, select {
-            padding: 8px 12px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
+        input[type="text"],
+        input[type="number"],
+        textarea,
+        select {
+            padding: 9px 12px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
             font-size: 14px;
+            background: rgba(255, 255, 255, 0.92);
+            color: var(--text);
+            outline: none;
+            transition: box-shadow 0.15s ease, border-color 0.15s ease;
+        }
+
+        input[type="text"]:focus,
+        input[type="number"]:focus,
+        textarea:focus,
+        select:focus {
+            border-color: rgba(79, 70, 229, 0.55);
+            box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.15);
         }
 
         .btn {
-            padding: 8px 16px;
-            border: none;
-            border-radius: 5px;
+            padding: 9px 14px;
+            border: 1px solid transparent;
+            border-radius: 10px;
             cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.3s;
+            font-size: 13px;
+            font-weight: 700;
+            transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+            box-shadow: 0 10px 18px rgba(15, 23, 42, 0.08);
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 14px 22px rgba(15, 23, 42, 0.12);
+        }
+
+        .btn:active {
+            transform: translateY(0px);
         }
 
         .btn-primary {
-            background: #667eea;
+            background: linear-gradient(135deg, var(--primary), var(--primary-2));
             color: white;
         }
 
         .btn-primary:hover {
-            background: #5568d3;
+            background: linear-gradient(135deg, var(--primary-hover), var(--primary-2));
         }
 
         .btn-success {
-            background: #28a745;
+            background: linear-gradient(135deg, var(--success), #22c55e);
             color: white;
-        }
-
-        .btn-success:hover {
-            background: #218838;
         }
 
         .btn-danger {
-            background: #dc3545;
+            background: linear-gradient(135deg, var(--danger), #ef4444);
             color: white;
-        }
-
-        .btn-danger:hover {
-            background: #c82333;
         }
 
         .btn-warning {
-            background: #ffc107;
-            color: #333;
-        }
-
-        .btn-warning:hover {
-            background: #e0a800;
+            background: linear-gradient(135deg, var(--warning), #fbbf24);
+            color: #111827;
         }
 
         .btn-secondary {
-            background: #6c757d;
-            color: white;
+            background: rgba(15, 23, 42, 0.08);
+            border-color: rgba(15, 23, 42, 0.12);
+            color: var(--text);
         }
 
         .btn-secondary:hover {
-            background: #5a6268;
+            background: rgba(15, 23, 42, 0.12);
         }
 
         .btn-info {
-            background: #17a2b8;
+            background: linear-gradient(135deg, var(--info), #06b6d4);
             color: white;
         }
 
-        .btn-info:hover {
-            background: #138496;
-        }
-
         .btn:disabled {
-            opacity: 0.6;
+            opacity: 0.55;
             cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
         }
 
         table {
             width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
+            border-collapse: separate;
+            border-spacing: 0;
+            margin-top: 14px;
+            overflow: hidden;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.9);
         }
 
-        th, td {
-            padding: 12px;
+        th,
+        td {
+            padding: 12px 12px;
             text-align: left;
-            border-bottom: 1px solid #ddd;
+            border-bottom: 1px solid var(--border);
+            vertical-align: middle;
         }
 
         th {
-            background: #f8f9fa;
-            font-weight: 600;
-            color: #495057;
+            position: sticky;
+            top: 0;
+            background: rgba(248, 250, 252, 0.98);
+            font-weight: 800;
+            color: rgba(15, 23, 42, 0.85);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
-        tr:hover {
-            background: #f8f9fa;
+        tbody tr:nth-child(even) {
+            background: rgba(15, 23, 42, 0.02);
+        }
+
+        tbody tr:hover {
+            background: rgba(79, 70, 229, 0.06);
         }
 
         .status-badge {
-            display: inline-block;
-            padding: 4px 8px;
-            border-radius: 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 999px;
             font-size: 12px;
-            font-weight: 500;
+            font-weight: 800;
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.7);
+        }
+
+        .status-badge:before {
+            content: "";
+            width: 7px;
+            height: 7px;
+            border-radius: 999px;
+            background: #94a3b8;
         }
 
         .status-INIT {
-            background: #e9ecef;
-            color: #495057;
+            color: #475569;
+        }
+
+        .status-INIT:before {
+            background: #94a3b8;
         }
 
         .status-PENDING {
-            background: #fff3cd;
-            color: #856404;
+            color: #92400e;
+        }
+
+        .status-PENDING:before {
+            background: #f59e0b;
         }
 
         .status-APPROVED {
-            background: #d4edda;
-            color: #155724;
+            color: #166534;
+        }
+
+        .status-APPROVED:before {
+            background: #22c55e;
         }
 
         .status-REJECTED {
-            background: #f8d7da;
-            color: #721c24;
+            color: #991b1b;
+        }
+
+        .status-REJECTED:before {
+            background: #ef4444;
         }
 
         .status-OFFLINE {
-            background: #6c757d;
-            color: white;
+            color: #334155;
+        }
+
+        .status-OFFLINE:before {
+            background: #64748b;
         }
 
         .pagination {
@@ -228,7 +333,11 @@
             justify-content: center;
             align-items: center;
             gap: 10px;
-            margin-top: 20px;
+            margin-top: 14px;
+            color: var(--muted);
+            font-weight: 700;
+            font-size: 13px;
+            flex-wrap: wrap;
         }
 
         .modal {
@@ -239,7 +348,8 @@
             top: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.5);
+            background: rgba(15, 23, 42, 0.55);
+            backdrop-filter: blur(6px);
             overflow: auto;
         }
 
@@ -250,36 +360,90 @@
         }
 
         .modal-content {
-            background: white;
-            border-radius: 10px;
-            padding: 30px;
-            max-width: 600px;
-            width: 90%;
-            max-height: 80vh;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            background: rgba(255, 255, 255, 0.92);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 22px;
+            max-width: 760px;
+            width: min(920px, 94vw);
+            max-height: 82vh;
             overflow-y: auto;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            box-shadow: var(--shadow);
+        }
+
+        /* Service detail modal needs more width for long hints/text */
+        #service-detail-modal .modal-content {
+            max-width: 1200px;
+            width: min(1440px, 96vw);
+            max-height: 86vh;
+        }
+
+        /* Parameter editor modal: wider for template + preview */
+        #parameter-modal .modal-content {
+            max-width: 1320px;
+            width: min(1560px, 97vw);
+            max-height: 86vh;
+        }
+
+        .modal-close {
+            position: sticky;
+            top: 12px;
+            align-self: flex-end;
+            width: 34px;
+            height: 34px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.85);
+            color: rgba(15, 23, 42, 0.75);
+            font-size: 20px;
+            font-weight: 900;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 10px 18px rgba(15, 23, 42, 0.10);
+            transition: transform 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+            z-index: 10;
+        }
+
+        .modal-close:hover {
+            transform: translateY(-1px);
+            background: rgba(79, 70, 229, 0.08);
+            box-shadow: 0 14px 22px rgba(15, 23, 42, 0.14);
+        }
+
+        .modal-close:active {
+            transform: translateY(0px);
         }
 
         .modal-header {
-            font-size: 20px;
-            font-weight: 600;
-            margin-bottom: 20px;
+            font-size: 16px;
+            font-weight: 900;
+            margin-bottom: 14px;
             padding-bottom: 10px;
-            border-bottom: 2px solid #f0f0f0;
+            border-bottom: 1px solid var(--border);
+            color: rgba(15, 23, 42, 0.88);
+            padding-right: 44px; /* leave room for top-right close button */
         }
 
         .form-group {
-            margin-bottom: 20px;
+            margin-bottom: 16px;
         }
 
         .form-group label {
             display: block;
-            margin-bottom: 5px;
-            font-weight: 500;
-            color: #495057;
+            margin-bottom: 6px;
+            font-weight: 800;
+            color: rgba(15, 23, 42, 0.72);
+            font-size: 13px;
         }
 
-        .form-group input, .form-group textarea, .form-group select {
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
             width: 100%;
         }
 
@@ -287,99 +451,329 @@
             display: flex;
             justify-content: flex-end;
             gap: 10px;
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 2px solid #f0f0f0;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+        }
+
+        /* --- Template editor (method/parameter descriptions) --- */
+        .mode-switch {
+            display: inline-flex;
+            gap: 6px;
+            padding: 6px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            background: rgba(15, 23, 42, 0.04);
+            margin: 10px 0 14px;
+        }
+
+        .mode-switch button {
+            border: 0;
+            background: transparent;
+            cursor: pointer;
+            padding: 7px 12px;
+            border-radius: 999px;
+            font-weight: 800;
+            color: rgba(15, 23, 42, 0.72);
+            font-size: 12px;
+        }
+
+        .mode-switch button.active {
+            color: white;
+            background: linear-gradient(135deg, var(--primary), var(--primary-2));
+            box-shadow: 0 10px 18px rgba(15, 23, 42, 0.08);
+        }
+
+        .template-layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+        }
+
+        .template-card {
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.88);
+        }
+
+        .template-card-title {
+            font-weight: 900;
+            font-size: 13px;
+            margin-bottom: 8px;
+            color: rgba(15, 23, 42, 0.82);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .hint {
+            font-size: 12px;
+            color: rgba(100, 116, 139, 0.92);
+            font-weight: 700;
+            margin-top: 6px;
+            line-height: 1.45;
+        }
+
+        .pill {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 900;
+            border: 1px solid var(--border);
+            background: rgba(79, 70, 229, 0.08);
+            color: rgba(79, 70, 229, 0.95);
+        }
+
+        .pill.warn {
+            background: rgba(245, 158, 11, 0.12);
+            color: rgba(146, 64, 14, 0.92);
+        }
+
+        .inline-error {
+            margin-top: 10px;
+            padding: 10px 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(239, 68, 68, 0.22);
+            background: rgba(239, 68, 68, 0.07);
+            color: rgba(153, 27, 27, 0.95);
+            font-size: 12px;
+            font-weight: 800;
+            display: none;
+            white-space: pre-wrap;
+        }
+
+        .preview-box {
+            width: 100%;
+            min-height: 360px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 10px 12px;
+            background: rgba(248, 250, 252, 0.9);
+            color: rgba(15, 23, 42, 0.78);
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+
+        .template-fields details {
+            border: 1px dashed rgba(15, 23, 42, 0.14);
+            border-radius: 12px;
+            padding: 10px 10px;
+            background: rgba(15, 23, 42, 0.02);
+            margin-bottom: 10px;
+        }
+
+        .template-fields summary {
+            cursor: pointer;
+            font-weight: 900;
+            font-size: 13px;
+            color: rgba(15, 23, 42, 0.82);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            user-select: none;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .field-row {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 6px;
+            margin-top: 10px;
+        }
+
+        .field-row label {
+            font-size: 12px;
+            font-weight: 900;
+            color: rgba(15, 23, 42, 0.72);
+        }
+
+        .mini-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.9);
+        }
+
+        .mini-table th,
+        .mini-table td {
+            padding: 8px 8px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: top;
+            font-size: 12px;
+        }
+
+        .mini-table th {
+            font-size: 11px;
+            font-weight: 900;
+            color: rgba(15, 23, 42, 0.72);
+            background: rgba(248, 250, 252, 0.98);
+        }
+
+        .mini-table input[type="text"],
+        .mini-table textarea,
+        .mini-table select {
+            width: 100%;
+            padding: 7px 10px;
+            border-radius: 10px;
+            font-size: 12px;
+        }
+
+        .mini-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        @media (max-width: 1100px) {
+            .template-layout {
+                grid-template-columns: 1fr;
+            }
         }
 
         .alert {
-            padding: 12px 20px;
-            border-radius: 5px;
-            margin-bottom: 20px;
+            padding: 12px 14px;
+            border-radius: 12px;
+            margin-bottom: 14px;
+            border: 1px solid var(--border);
+            font-weight: 700;
         }
 
         .alert-success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
+            background: rgba(34, 197, 94, 0.12);
+            color: #166534;
         }
 
         .alert-error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
+            background: rgba(239, 68, 68, 0.10);
+            color: #991b1b;
         }
 
         .alert-info {
-            background: #d1ecf1;
-            color: #0c5460;
-            border: 1px solid #bee5eb;
+            background: rgba(6, 182, 212, 0.10);
+            color: #155e75;
         }
 
         .loading {
             text-align: center;
-            padding: 40px;
-            color: #6c757d;
+            padding: 34px;
+            color: var(--muted);
+            font-weight: 800;
         }
 
         .empty-state {
             text-align: center;
-            padding: 60px 20px;
-            color: #6c757d;
-        }
-
-        .empty-state svg {
-            width: 100px;
-            height: 100px;
-            margin-bottom: 20px;
-            opacity: 0.5;
+            padding: 54px 18px;
+            color: var(--muted);
+            font-weight: 800;
         }
 
         .method-parameters {
-            margin-top: 20px;
+            margin-top: 14px;
         }
 
-        .parameter-item {
+        .method-card {
+            margin-bottom: 14px;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            background: rgba(255, 255, 255, 0.78);
+        }
+
+        .method-header-row {
             display: flex;
-            align-items: center;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            margin-bottom: 10px;
-            background: #f8f9fa;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 10px;
+            margin-bottom: 8px;
         }
 
-        .parameter-item > div {
-            flex: 1;
-            margin-right: 10px;
+        .method-title {
+            font-weight: 900;
+            color: var(--primary);
+            font-size: 14px;
+        }
+
+        .method-desc {
+            margin: 6px 0 10px;
+            color: rgba(15, 23, 42, 0.65);
+            font-size: 13px;
+            white-space: pre-wrap;
+        }
+
+        .method-desc-empty {
+            margin: 6px 0 10px;
+            color: rgba(100, 116, 139, 0.92);
+            font-size: 12px;
+            font-weight: 800;
         }
 
         .detail-view {
-            padding: 20px;
+            padding: 8px 6px;
         }
 
         .detail-row {
-            display: flex;
+            display: grid;
+            grid-template-columns: 140px 1fr;
+            gap: 8px 12px;
             padding: 10px 0;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid rgba(15, 23, 42, 0.07);
         }
 
         .detail-label {
-            font-weight: 600;
-            width: 150px;
-            color: #495057;
+            font-weight: 900;
+            color: rgba(15, 23, 42, 0.78);
         }
 
         .detail-value {
-            flex: 1;
-            color: #6c757d;
+            color: rgba(15, 23, 42, 0.62);
+            overflow-wrap: anywhere;
+        }
+
+        .btn-expand {
+            width: 28px;
+            height: 28px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.85);
+            box-shadow: 0 10px 18px rgba(15, 23, 42, 0.08);
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .btn-expand:hover {
+            background: rgba(79, 70, 229, 0.08);
+        }
+
+        @media (max-width: 860px) {
+            .container {
+                padding: 18px 12px 22px;
+            }
+            .detail-row {
+                grid-template-columns: 110px 1fr;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🔧 Dubbo服务管理</h1>
+            <h1>Dubbo 服务管理</h1>
         </div>
 
         <div class="tabs">
@@ -446,6 +840,7 @@
     <!-- 服务详情模态框 -->
     <div id="service-detail-modal" class="modal">
         <div class="modal-content">
+            <button class="modal-close" type="button" aria-label="关闭" onclick="closeModal('service-detail-modal')">×</button>
             <div class="modal-header">服务详情</div>
             <div id="service-detail-content"></div>
             <div class="modal-footer">
@@ -457,6 +852,7 @@
     <!-- 审批模态框 -->
     <div id="approval-modal" class="modal">
         <div class="modal-content">
+            <button class="modal-close" type="button" aria-label="关闭" onclick="closeModal('approval-modal')">×</button>
             <div class="modal-header">审批服务</div>
             <form id="approval-form">
                 <input type="hidden" id="approval-service-id">
@@ -473,29 +869,379 @@
         </div>
     </div>
 
+    <!-- 方法描述编辑模态框 -->
+    <div id="method-desc-modal" class="modal">
+        <div class="modal-content">
+            <button class="modal-close" type="button" aria-label="关闭" onclick="closeModal('method-desc-modal')">×</button>
+            <div class="modal-header" id="method-desc-modal-title">方法描述</div>
+            <form id="method-desc-form">
+                <input type="hidden" id="method-desc-method-id">
+                <div class="mode-switch" role="tablist" aria-label="方法描述编辑模式">
+                    <button type="button" id="md-mode-template" class="active" aria-selected="true">模板填写</button>
+                    <button type="button" id="md-mode-raw" aria-selected="false">原始文本</button>
+                </div>
+
+                <div id="md-template-root">
+                    <div class="template-layout">
+                        <div class="template-card template-fields">
+                            <div class="template-card-title">
+                                <span>按模板填写（更准确、更易被 agent 理解）</span>
+                                <span class="pill">强校验</span>
+                            </div>
+
+                            <details open>
+                                <summary>【一句话】 <span class="pill warn">必填</span></summary>
+                                <div class="field-row">
+                                    <label for="md-one-line">一句话说明（动词开头，≤25字，做什么/为谁/产出什么）</label>
+                                    <input type="text" id="md-one-line" maxlength="60" placeholder="例如：查询用户订单列表，支持按状态与时间范围筛选">
+                                </div>
+                            </details>
+
+                            <details open>
+                                <summary>【用途/何时调用】 <span class="pill warn">必填(至少一项)</span></summary>
+                                <div class="grid-2">
+                                    <div class="field-row">
+                                        <label for="md-trigger">触发场景</label>
+                                        <textarea id="md-trigger" rows="3" placeholder="例如：用户在订单页下拉刷新；客服后台查询订单..."></textarea>
+                                    </div>
+                                    <div class="field-row">
+                                        <label for="md-goal">典型目标</label>
+                                        <textarea id="md-goal" rows="3" placeholder="例如：查询/创建/更新/校验/发起审批..."></textarea>
+                                    </div>
+                                </div>
+                                <div class="field-row">
+                                    <label for="md-not-applicable">不适用/替代方案</label>
+                                    <textarea id="md-not-applicable" rows="2" placeholder="例如：不用于导出全量数据；导出请使用 xxxExport()"></textarea>
+                                </div>
+                            </details>
+
+                            <details>
+                                <summary>【输入契约（方法级）】</summary>
+                                <div class="grid-2">
+                                    <div class="field-row">
+                                        <label for="md-input-key">关键输入</label>
+                                        <textarea id="md-input-key" rows="3" placeholder="例如：userId 决定数据范围；status 与 timeRange 联动..."></textarea>
+                                    </div>
+                                    <div class="field-row">
+                                        <label for="md-input-rules">取值规则（互斥/至少一个/依赖）</label>
+                                        <textarea id="md-input-rules" rows="3" placeholder="例如：status 与 includeDeleted 互斥；startTime 与 endTime 必须同时提供..."></textarea>
+                                    </div>
+                                </div>
+                                <div class="field-row">
+                                    <label for="md-default-behavior">默认行为（省略/为空时）</label>
+                                    <textarea id="md-default-behavior" rows="2" placeholder="例如：未传 status 默认 ALL；未传 pageSize 默认 20..."></textarea>
+                                </div>
+                            </details>
+
+                            <details open>
+                                <summary>【返回契约】 <span class="pill warn">必填</span></summary>
+                                <div class="grid-2">
+                                    <div class="field-row">
+                                        <label for="md-return-meaning">返回含义（成功时）</label>
+                                        <textarea id="md-return-meaning" rows="3" placeholder="例如：返回该用户在指定范围内的订单分页列表"></textarea>
+                                    </div>
+                                    <div class="field-row">
+                                        <label for="md-return-key-fields">关键字段（调用方最关心）</label>
+                                        <textarea id="md-return-key-fields" rows="3" placeholder="例如：totalCount/hasNextPage；每条订单的 orderId/status/payAmount..."></textarea>
+                                    </div>
+                                </div>
+                                <div class="field-row">
+                                    <label for="md-return-empty">空结果/找不到时</label>
+                                    <textarea id="md-return-empty" rows="2" placeholder="例如：无订单返回空列表；用户不存在抛 NOT_FOUND..."></textarea>
+                                </div>
+                            </details>
+
+                            <details>
+                                <summary>【副作用/一致性/幂等】</summary>
+                                <div class="grid-2">
+                                    <div class="field-row">
+                                        <label for="md-side-effects">数据变化/外部动作</label>
+                                        <textarea id="md-side-effects" rows="3" placeholder="例如：写库/发消息/触发异步任务/影响缓存（没有则写“无”）"></textarea>
+                                    </div>
+                                    <div class="field-row">
+                                        <label for="md-idempotency">幂等性（重复调用会怎样）</label>
+                                        <textarea id="md-idempotency" rows="3" placeholder="例如：幂等；以 requestId 幂等；重复调用返回相同结果"></textarea>
+                                    </div>
+                                </div>
+                                <div class="field-row">
+                                    <label for="md-consistency">一致性/时效性</label>
+                                    <textarea id="md-consistency" rows="2" placeholder="例如：最终一致；数据延迟≤5s；强一致..."></textarea>
+                                </div>
+                            </details>
+
+                            <details>
+                                <summary>【权限/风控/限制】</summary>
+                                <div class="grid-2">
+                                    <div class="field-row">
+                                        <label for="md-permission">权限要求</label>
+                                        <textarea id="md-permission" rows="2" placeholder="例如：仅 admin 可调用；租户隔离；数据范围受 orgId 限制"></textarea>
+                                    </div>
+                                    <div class="field-row">
+                                        <label for="md-rate-limit">限流/配额/大查询限制</label>
+                                        <textarea id="md-rate-limit" rows="2" placeholder="例如：QPS≤50；最大 pageSize 100；禁止无条件全量查询"></textarea>
+                                    </div>
+                                </div>
+                            </details>
+
+                            <details open>
+                                <summary>【异常与重试策略】 <span class="pill warn">必填</span></summary>
+                                <div class="grid-2">
+                                    <div class="field-row">
+                                        <label for="md-common-failures">常见失败（参数非法/权限不足/状态不允许/下游超时…）</label>
+                                        <textarea id="md-common-failures" rows="3" placeholder="例如：INVALID_ARGUMENT；PERMISSION_DENIED；ORDER_STATUS_NOT_ALLOWED；DOWNSTREAM_TIMEOUT"></textarea>
+                                    </div>
+                                    <div class="field-row">
+                                        <label for="md-retry">是否可重试（及前提）</label>
+                                        <textarea id="md-retry" rows="3" placeholder="例如：仅 DOWNSTREAM_TIMEOUT 可重试；退避 200/500/1000ms；需保证幂等"></textarea>
+                                    </div>
+                                </div>
+                            </details>
+
+                            <details open>
+                                <summary>【示例】 <span class="pill warn">必填(至少 1 组)</span></summary>
+                                <div class="grid-2">
+                                    <div class="field-row">
+                                        <label for="md-example-in">示例入参（JSON/伪代码）</label>
+                                        <textarea id="md-example-in" rows="5" placeholder='例如：{"userId":123,"status":"PAID","pageNo":1,"pageSize":20}'></textarea>
+                                    </div>
+                                    <div class="field-row">
+                                        <label for="md-example-out">示例出参（JSON/关键字段）</label>
+                                        <textarea id="md-example-out" rows="5" placeholder='例如：{"totalCount":1,"list":[{"orderId":"O2024...","status":"PAID"}]}'></textarea>
+                                    </div>
+                                </div>
+                            </details>
+
+                            <details>
+                                <summary>【备注/关联】</summary>
+                                <div class="grid-2">
+                                    <div class="field-row">
+                                        <label for="md-related">关联方法/上下游</label>
+                                        <textarea id="md-related" rows="2" placeholder="例如：创建后可调用 getOrderDetail()；配套取消方法 cancelOrder()"></textarea>
+                                    </div>
+                                    <div class="field-row">
+                                        <label for="md-remarks">业务术语/补充说明</label>
+                                        <textarea id="md-remarks" rows="2" placeholder="例如：主订单号与子单号区别；金额单位分..."></textarea>
+                                    </div>
+                                </div>
+                                <div class="hint">保存时会自动生成标准化文本并落库；你也可以切到“原始文本”做少量修订。</div>
+                            </details>
+                        </div>
+
+                        <div class="template-card">
+                            <div class="template-card-title">
+                                <span>预览（最终会保存的文本）</span>
+                                <div class="mini-actions" style="margin: 0;">
+                                    <button type="button" class="btn btn-secondary" id="md-copy-preview" style="padding: 6px 10px; font-size: 12px; box-shadow: none;">复制</button>
+                                    <button type="button" class="btn btn-secondary" id="md-to-raw" style="padding: 6px 10px; font-size: 12px; box-shadow: none;">写入原始文本</button>
+                                </div>
+                            </div>
+                            <div id="md-inline-error" class="inline-error"></div>
+                            <div id="md-preview" class="preview-box"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="md-raw-root" style="display:none;">
+                    <div class="form-group">
+                        <label>原始文本（高级：直接编辑最终落库内容）</label>
+                        <textarea id="method-desc-text" rows="14" placeholder="建议优先使用“模板填写”，这里用于微调或迁移旧文本"></textarea>
+                        <div class="hint">注意：保存时仍会校验是否包含关键段落（例如：一句话、返回契约、异常与重试、示例）。</div>
+                        <div class="mini-actions" style="justify-content: flex-start;">
+                            <button type="button" class="btn btn-secondary" id="md-try-parse" style="padding: 6px 10px; font-size: 12px; box-shadow: none;">尝试解析到模板</button>
+                            <button type="button" class="btn btn-secondary" id="md-fill-template" style="padding: 6px 10px; font-size: 12px; box-shadow: none;">填充空模板</button>
+                        </div>
+                    </div>
+                    <div id="md-inline-error-raw" class="inline-error"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('method-desc-modal')">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- 参数编辑模态框 -->
     <div id="parameter-modal" class="modal">
         <div class="modal-content">
+            <button class="modal-close" type="button" aria-label="关闭" onclick="closeModal('parameter-modal')">×</button>
             <div class="modal-header" id="parameter-modal-title">新增参数</div>
             <form id="parameter-form">
                 <input type="hidden" id="parameter-id">
                 <input type="hidden" id="parameter-method-id">
-                <div class="form-group">
-                    <label>参数名 *</label>
-                    <input type="text" id="parameter-name" required>
+                <input type="hidden" id="parameter-schema-json">
+                <details id="pd-basic-details" open style="margin-bottom: 12px;">
+                    <summary style="cursor:pointer; font-weight: 900; font-size: 13px; color: rgba(15, 23, 42, 0.82);">参数基础信息（复杂类型可不展开）</summary>
+                    <div class="grid-2" style="margin-top: 10px;">
+                        <div class="field-row" style="margin-top: 0;">
+                            <label for="parameter-name">参数名 *</label>
+                            <input type="text" id="parameter-name" required>
+                        </div>
+                        <div class="field-row" style="margin-top: 0;">
+                            <label for="parameter-type">参数类型 *</label>
+                            <input type="text" id="parameter-type" required>
+                        </div>
+                    </div>
+                    <div class="field-row">
+                        <label for="parameter-order">参数顺序 *</label>
+                        <input type="number" id="parameter-order" required min="0">
+                    </div>
+                </details>
+
+                <div id="pd-template-root">
+                    <div class="template-layout">
+                        <div class="template-card template-fields">
+                            <div class="template-card-title">
+                                <span>参数说明（结构化、可解析）</span>
+                                <span class="pill">强校验</span>
+                            </div>
+
+                            <details open>
+                                <summary>基础信息 <span class="pill warn">必填</span></summary>
+                                <div class="grid-2">
+                                    <div class="field-row">
+                                        <label for="pd-cn-name">中文名</label>
+                                        <input type="text" id="pd-cn-name" placeholder="例如：用户ID / 订单状态 / 查询条件">
+                                    </div>
+                                    <div class="field-row">
+                                        <label for="pd-required">必填</label>
+                                        <select id="pd-required">
+                                            <option value="是">是</option>
+                                            <option value="否" selected>否</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="grid-2">
+                                    <div class="field-row">
+                                        <label for="pd-default">默认值（可选）</label>
+                                        <input type="text" id="pd-default" placeholder="例如：20 / ALL / 空表示不过滤">
+                                    </div>
+                                    <div class="field-row">
+                                        <label for="pd-meaning">含义（一句话）</label>
+                                        <input type="text" id="pd-meaning" placeholder="例如：指定要查询的用户唯一标识">
+                                    </div>
+                                </div>
+                            </details>
+
+                            <details open>
+                                <summary>约束与格式 <span class="pill warn">建议</span></summary>
+                                <div class="grid-2">
+                                    <div class="field-row">
+                                        <label for="pd-constraints">约束（范围/长度/枚举/互斥/依赖）</label>
+                                        <textarea id="pd-constraints" rows="2" placeholder="例如：范围 1~10^9；枚举 PAID/CREATED/CANCELLED；与 includeDeleted 互斥"></textarea>
+                                    </div>
+                                    <div class="field-row">
+                                        <label for="pd-format">格式（时间/ID 规则/精度）</label>
+                                        <textarea id="pd-format" rows="2" placeholder="例如：yyyy-MM-dd HH:mm:ss；orderId 以 O 开头；金额单位分"></textarea>
+                                    </div>
+                                </div>
+                                <div class="field-row">
+                                    <label for="pd-unit-timezone">单位/时区（可选）</label>
+                                    <input type="text" id="pd-unit-timezone" placeholder="例如：单位=ms；时区=Asia/Shanghai">
+                                </div>
+                            </details>
+
+                            <details open>
+                                <summary>示例 <span class="pill warn">必填</span></summary>
+                                <div class="field-row">
+                                    <label for="pd-examples">示例值（每行一个；JSON 请单独占一行）</label>
+                                    <textarea id="pd-examples" rows="4" placeholder='例如：\n12345\n"PAID"\n{"pageNo":1,"pageSize":20}'></textarea>
+                                </div>
+                            </details>
+
+                            <details>
+                                <summary>结构（复杂对象/集合/Map 时必填）</summary>
+                                <div class="grid-2">
+                                    <div class="field-row">
+                                        <label for="pd-structure">参数结构</label>
+                                        <select id="pd-structure">
+                                            <option value="scalar" selected>普通值（标量）</option>
+                                            <option value="object">对象（复杂类型）</option>
+                                            <option value="list">集合/数组（List/Set/[]）</option>
+                                            <option value="map">Map/字典</option>
+                                        </select>
+                                    </div>
+                                    <div class="field-row">
+                                        <label for="pd-sensitive">敏感级别（可选）</label>
+                                        <input type="text" id="pd-sensitive" placeholder="例如：敏感/需脱敏/不可落日志/需加密">
+                                    </div>
+                                </div>
+
+                                <div id="pd-object-root" style="display:none; margin-top: 10px;">
+                                    <div class="template-card-title" style="margin: 6px 0 8px;">
+                                        <span>对象/嵌套字段定义（支持 `.` / `[]` / `{}`）</span>
+                                        <button type="button" class="btn btn-secondary" id="pd-add-field" style="padding: 6px 10px; font-size: 12px; box-shadow: none;">添加字段</button>
+                                    </div>
+                                    <table class="mini-table">
+                                        <thead>
+                                        <tr>
+                                            <th style="width: 20%;">字段路径</th>
+                                            <th style="width: 14%;">类型</th>
+                                            <th style="width: 9%;">必填</th>
+                                            <th>含义</th>
+                                            <th style="width: 22%;">约束/示例</th>
+                                            <th style="width: 8%;">操作</th>
+                                        </tr>
+                                        </thead>
+                                        <tbody id="pd-fields-body"></tbody>
+                                    </table>
+                                    <div class="hint">
+                                        路径写法示例：<br>
+                                        - 嵌套对象：<code>address.city</code><br>
+                                        - 对象里包含集合：<code>items[].product.id</code>（<code>[]</code> 表示数组元素）<br>
+                                        - Map：<code>attrs{string}.value</code>（<code>{}</code> 表示 Map value，key 默认 string）
+                                    </div>
+                                </div>
+
+                                <div id="pd-list-root" style="display:none; margin-top: 10px;">
+                                    <div class="grid-2">
+                                        <div class="field-row">
+                                            <label for="pd-list-element-type">集合元素类型</label>
+                                            <input type="text" id="pd-list-element-type" placeholder="例如：OrderItem / Long / String">
+                                        </div>
+                                        <div class="field-row">
+                                            <label for="pd-list-size">数量限制（可选）</label>
+                                            <input type="text" id="pd-list-size" placeholder="例如：min=1,max=100">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div id="pd-map-root" style="display:none; margin-top: 10px;">
+                                    <div class="grid-2">
+                                        <div class="field-row">
+                                            <label for="pd-map-key">Map key（类型/含义）</label>
+                                            <input type="text" id="pd-map-key" placeholder="例如：String(字段名)/Long(userId)">
+                                        </div>
+                                        <div class="field-row">
+                                            <label for="pd-map-value">Map value（类型/含义）</label>
+                                            <input type="text" id="pd-map-value" placeholder="例如：String(字段值)/Order(订单对象)">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="hint">复杂类型强烈建议把“最小可用字段集”写清楚，否则 agent 无法正确构造请求。</div>
+                            </details>
+                        </div>
+
+                        <div class="template-card">
+                            <div class="template-card-title">
+                                <span>预览（最终会保存的文本）</span>
+                                <div class="mini-actions" style="margin: 0;">
+                                    <button type="button" class="btn btn-secondary" id="pd-copy-preview" style="padding: 6px 10px; font-size: 12px; box-shadow: none;">复制</button>
+                                </div>
+                            </div>
+                            <div id="pd-inline-error" class="inline-error"></div>
+                            <div id="pd-preview" class="preview-box" style="min-height: 260px;"></div>
+                            <details style="margin-top: 10px;">
+                                <summary style="cursor:pointer; font-weight: 900; font-size: 12px; color: rgba(15, 23, 42, 0.78);">结构化Schema(JSON)预览（用于生成 MCP inputSchema）</summary>
+                                <pre id="pd-schema-preview" class="preview-box" style="min-height: 180px; margin-top: 10px;"></pre>
+                            </details>
+                        </div>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label>参数类型 *</label>
-                    <input type="text" id="parameter-type" required>
-                </div>
-                <div class="form-group">
-                    <label>参数顺序 *</label>
-                    <input type="number" id="parameter-order" required min="0">
-                </div>
-                <div class="form-group">
-                    <label>参数描述</label>
-                    <textarea id="parameter-description" rows="3"></textarea>
-                </div>
+
+                <!-- parameterDescription is still persisted; keep hidden and auto-generated from template -->
+                <textarea id="parameter-description" style="display:none;"></textarea>
+                <div id="pd-inline-error-raw" class="inline-error"></div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" onclick="closeModal('parameter-modal')">取消</button>
                     <button type="submit" class="btn btn-primary">保存</button>
@@ -513,6 +1259,8 @@
         document.addEventListener('DOMContentLoaded', function() {
             setupTabs();
             setupEventListeners();
+            initPageSizeFromInputs();
+            initTemplateEditors();
             loadServices();
         });
 
@@ -550,16 +1298,77 @@
         // 设置事件监听
         function setupEventListeners() {
             document.getElementById('refresh-services').addEventListener('click', function() {
-                loadServices(currentPage.services);
+                reloadTab('services');
             });
             document.getElementById('refresh-pending').addEventListener('click', function() {
-                loadPendingServices(currentPage.pending);
+                reloadTab('pending');
             });
             document.getElementById('refresh-approved').addEventListener('click', function() {
-                loadApprovedServices(currentPage.approved);
+                reloadTab('approved');
             });
             
             document.getElementById('parameter-form').addEventListener('submit', saveParameter);
+            document.getElementById('method-desc-form').addEventListener('submit', saveMethodDescription);
+
+            // page size change handlers (services / pending / approved)
+            setupPageSizeInput('page-size', 'services');
+            setupPageSizeInput('pending-page-size', 'pending');
+            setupPageSizeInput('approved-page-size', 'approved');
+        }
+
+        function clampInt(value, min, max, fallback) {
+            const n = parseInt(value, 10);
+            if (Number.isNaN(n)) return fallback;
+            return Math.max(min, Math.min(max, n));
+        }
+
+        function initPageSizeFromInputs() {
+            pageSize.services = clampInt(document.getElementById('page-size')?.value, 1, 100, 10);
+            pageSize.pending = clampInt(document.getElementById('pending-page-size')?.value, 1, 100, 10);
+            pageSize.approved = clampInt(document.getElementById('approved-page-size')?.value, 1, 100, 10);
+        }
+
+        function setupPageSizeInput(inputId, tabName) {
+            const el = document.getElementById(inputId);
+            if (!el) return;
+
+            const apply = () => {
+                const newSize = clampInt(el.value, 1, 100, pageSize[tabName] || 10);
+                el.value = String(newSize);
+                if (pageSize[tabName] === newSize) return;
+
+                pageSize[tabName] = newSize;
+                currentPage[tabName] = 1;
+                // If user is on this tab, reload immediately; otherwise keep state for later.
+                if (currentTab === tabName) {
+                    reloadTab(tabName);
+                }
+            };
+
+            el.addEventListener('change', apply);
+            el.addEventListener('blur', apply);
+            el.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    apply();
+                }
+            });
+        }
+
+        function reloadTab(tabName) {
+            const loader = {
+                services: loadServices,
+                pending: loadPendingServices,
+                approved: loadApprovedServices
+            }[tabName];
+            if (!loader) return;
+            loader(currentPage[tabName] || 1);
+        }
+
+        // pagination hook used by generated table HTML
+        function changePage(tabName, page) {
+            currentPage[tabName] = page;
+            reloadTab(tabName);
         }
 
         // 加载服务列表
@@ -648,7 +1457,7 @@
                 }[status] || status;
 
                 html += '<tr class="service-row" data-service-id="' + service.id + '">';
-                html += '<td><button class="btn-expand" onclick="toggleNodes(' + service.id + ', this)" style="background: none; border: none; cursor: pointer; font-size: 14px; padding: 4px;">▶</button></td>';
+                html += '<td><button class="btn-expand" onclick="toggleNodes(' + service.id + ', this)">▶</button></td>';
                 html += `<td>${service.id}</td>`;
                 html += `<td>${escapeHtml(service.interfaceName || '-')}</td>`;
                 html += `<td>${escapeHtml(service.protocol || '-')}</td>`;
@@ -683,7 +1492,7 @@
                 html += '</tr>';
                 // 节点列表行（初始隐藏）
                 html += '<tr class="nodes-row" id="nodes-row-' + service.id + '" style="display: none;">';
-                html += '<td colspan="13"><div id="nodes-content-' + service.id + '" style="padding: 10px; background: #f8f9fa;">加载中...</div></td>';
+                html += '<td colspan="13"><div id="nodes-content-' + service.id + '" style="padding: 10px; background: rgba(15, 23, 42, 0.03); border-radius: 12px; border: 1px solid rgba(15, 23, 42, 0.06);">加载中...</div></td>';
                 html += '</tr>';
             });
 
@@ -692,9 +1501,9 @@
             // 分页
             if (result.totalPages > 1) {
                 html += '<div class="pagination">';
-                html += `<button class="btn btn-secondary" ${result.currentPage <= 1 ? 'disabled' : ''} onclick="load${type.charAt(0).toUpperCase() + type.slice(1)}Services(${result.currentPage - 1})">上一页</button>`;
+                html += `<button class="btn btn-secondary" ${result.currentPage <= 1 ? 'disabled' : ''} onclick="changePage('${type}', ${result.currentPage - 1})">上一页</button>`;
                 html += `<span>第 ${result.currentPage} / ${result.totalPages} 页 (共 ${result.totalElements} 条)</span>`;
-                html += `<button class="btn btn-secondary" ${result.currentPage >= result.totalPages ? 'disabled' : ''} onclick="load${type.charAt(0).toUpperCase() + type.slice(1)}Services(${result.currentPage + 1})">下一页</button>`;
+                html += `<button class="btn btn-secondary" ${result.currentPage >= result.totalPages ? 'disabled' : ''} onclick="changePage('${type}', ${result.currentPage + 1})">下一页</button>`;
                 html += '</div>';
             }
 
@@ -750,8 +1559,20 @@
                     if (methods && methods.length > 0) {
                         html += '<div class="method-parameters">';
                         for (const method of methods) {
-                            html += `<div style="margin-bottom: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 5px;">`;
-                            html += `<div style="margin-bottom: 8px;"><strong style="color: #667eea; font-size: 14px;">${escapeHtml(method.methodName)}()</strong></div>`;
+                            const methodNameJson = JSON.stringify(method.methodName || '');
+                            const methodDesc = method.methodDescription || '';
+                            html += `<div class="method-card">`;
+                            html += `<div class="method-header-row">`;
+                            html += `<div class="method-title">${escapeHtml(method.methodName)}()</div>`;
+                            html += `<div>`;
+                            html += `<button class="btn btn-secondary" onclick="openMethodDescModalFromBtn(this)" data-method-id="${method.id}" data-method-name="${encodeURIComponent(method.methodName || '')}" data-method-desc="${encodeURIComponent(methodDesc || '')}" style="padding: 4px 8px; font-size: 11px; box-shadow: none;">${methodDesc ? '编辑描述' : '添加描述'}</button>`;
+                            html += `</div>`;
+                            html += `</div>`;
+                            if (methodDesc) {
+                                html += `<div class="method-desc">${escapeHtml(methodDesc)}</div>`;
+                            } else {
+                                html += `<div class="method-desc-empty">暂无描述</div>`;
+                            }
                             
                             // 加载参数列表
                             try {
@@ -766,7 +1587,7 @@
                                             html += `<td>${param.parameterOrder}</td>`;
                                             html += `<td>${escapeHtml(param.parameterName)}</td>`;
                                             html += `<td>${escapeHtml(param.parameterType)}</td>`;
-                                            html += `<td>${escapeHtml(param.parameterDescription || '-')}</td>`;
+                                            html += `<td style="white-space: pre-wrap;">${escapeHtml(param.parameterDescription || '-')}</td>`;
                                             html += '<td>';
                                             html += `<button class="btn btn-secondary" onclick="editParameter(${param.id}, ${method.id})" style="padding: 2px 6px; font-size: 11px;">编辑</button> `;
                                             html += `<button class="btn btn-danger" onclick="deleteParameter(${param.id})" style="padding: 2px 6px; font-size: 11px;">删除</button>`;
@@ -1059,8 +1880,72 @@
             document.getElementById('parameter-name').value = '';
             document.getElementById('parameter-type').value = '';
             document.getElementById('parameter-order').value = '0';
+            // reset template fields
+            fillParameterTemplateEmpty();
+            setParameterEditorMode('template');
             document.getElementById('parameter-description').value = '';
+            document.getElementById('parameter-schema-json').value = '';
             openModal('parameter-modal');
+        }
+
+        // 打开方法描述编辑模态框
+        function openMethodDescModal(methodId, methodName, currentDesc) {
+            document.getElementById('method-desc-method-id').value = methodId;
+            document.getElementById('method-desc-modal-title').textContent = `方法描述 - ${methodName}()`;
+            const raw = currentDesc || '';
+            document.getElementById('method-desc-text').value = raw;
+            // Prefer template mode when we can parse; otherwise fallback to raw.
+            const parsedOk = parseMethodDescriptionToForm(raw);
+            if (parsedOk) {
+                setMethodDescEditorMode('template');
+                updateMethodDescPreview();
+            } else {
+                setMethodDescEditorMode(raw ? 'raw' : 'template');
+                if (!raw) {
+                    fillMethodDescTemplateEmpty();
+                    updateMethodDescPreview();
+                }
+            }
+            openModal('method-desc-modal');
+        }
+
+        function openMethodDescModalFromBtn(btn) {
+            const methodId = btn?.dataset?.methodId;
+            const methodName = decodeURIComponent(btn?.dataset?.methodName || '');
+            const currentDesc = decodeURIComponent(btn?.dataset?.methodDesc || '');
+            openMethodDescModal(methodId, methodName, currentDesc);
+        }
+
+        // 保存方法描述
+        async function saveMethodDescription(e) {
+            e.preventDefault();
+            const methodId = document.getElementById('method-desc-method-id').value;
+            const ok = prepareMethodDescForSubmit();
+            if (!ok) return;
+
+            const desc = (document.getElementById('method-desc-text').value || '').trim();
+
+            try {
+                const response = await fetch(`${API_BASE}/methods/${methodId}/description`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ methodDescription: desc })
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(errorText || '保存失败');
+                }
+
+                alert('保存成功');
+                closeModal('method-desc-modal');
+                if (window.currentServiceId) {
+                    viewServiceDetail(window.currentServiceId);
+                }
+            } catch (error) {
+                console.error('保存方法描述失败:', error);
+                alert('保存失败: ' + error.message);
+            }
         }
 
         // 编辑参数
@@ -1077,6 +1962,26 @@
                 document.getElementById('parameter-type').value = param.parameterType || '';
                 document.getElementById('parameter-order').value = param.parameterOrder || 0;
                 document.getElementById('parameter-description').value = param.parameterDescription || '';
+                document.getElementById('parameter-schema-json').value = param.parameterSchemaJson || '';
+
+                // Prefer structured schema JSON if available
+                const schemaOk = parseParameterSchemaJsonToForm(param.parameterSchemaJson || '');
+                if (schemaOk) {
+                    setParameterEditorMode('template');
+                    updateParameterPreview();
+                } else {
+                    const parsedOk = parseParameterDescriptionToForm(param.parameterDescription || '');
+                    if (parsedOk) {
+                        setParameterEditorMode('template');
+                        updateParameterPreview();
+                    } else {
+                        setParameterEditorMode((param.parameterDescription || '').trim() ? 'raw' : 'template');
+                        if (!(param.parameterDescription || '').trim()) {
+                            fillParameterTemplateEmpty();
+                            updateParameterPreview();
+                        }
+                    }
+                }
                 openModal('parameter-modal');
             } catch (error) {
                 console.error('加载参数失败:', error);
@@ -1090,12 +1995,16 @@
             
             const parameterId = document.getElementById('parameter-id').value;
             const methodId = document.getElementById('parameter-method-id').value;
+            const ok = prepareParameterDescForSubmit();
+            if (!ok) return;
+
             const parameter = {
                 methodId: parseInt(methodId),
                 parameterName: document.getElementById('parameter-name').value,
                 parameterType: document.getElementById('parameter-type').value,
                 parameterOrder: parseInt(document.getElementById('parameter-order').value),
-                parameterDescription: document.getElementById('parameter-description').value
+                parameterDescription: document.getElementById('parameter-description').value,
+                parameterSchemaJson: document.getElementById('parameter-schema-json')?.value || null
             };
 
             try {
@@ -1166,6 +2075,1142 @@
         // 关闭模态框
         function closeModal(modalId) {
             document.getElementById(modalId).classList.remove('active');
+        }
+
+        // -----------------------------
+        // Description Template Editors
+        // -----------------------------
+        let mdEditorMode = 'template'; // 'template' | 'raw'
+        let pdEditorMode = 'template'; // template-only (raw removed)
+
+        function initTemplateEditors() {
+            // Method desc mode switch
+            document.getElementById('md-mode-template')?.addEventListener('click', () => setMethodDescEditorMode('template'));
+            document.getElementById('md-mode-raw')?.addEventListener('click', () => setMethodDescEditorMode('raw'));
+            document.getElementById('md-to-raw')?.addEventListener('click', () => {
+                const text = buildMethodDescriptionFromForm();
+                document.getElementById('method-desc-text').value = text;
+                setMethodDescEditorMode('raw');
+            });
+            document.getElementById('md-copy-preview')?.addEventListener('click', async () => {
+                const text = buildMethodDescriptionFromForm();
+                await copyToClipboard(text);
+            });
+            document.getElementById('md-try-parse')?.addEventListener('click', () => {
+                const raw = (document.getElementById('method-desc-text')?.value || '').trim();
+                const ok = parseMethodDescriptionToForm(raw);
+                if (ok) {
+                    setMethodDescEditorMode('template');
+                    updateMethodDescPreview();
+                } else {
+                    showInlineError('md-inline-error-raw', '无法解析：未检测到标准段落（例如：【一句话】、【返回契约】、【异常与重试策略】、【示例】）。你可以先点击“填充空模板”，再把旧内容拆分粘贴到对应位置。');
+                }
+            });
+            document.getElementById('md-fill-template')?.addEventListener('click', () => {
+                fillMethodDescTemplateEmpty();
+                setMethodDescEditorMode('template');
+                updateMethodDescPreview();
+            });
+
+            // Parameter desc mode switch
+            document.getElementById('pd-copy-preview')?.addEventListener('click', async () => {
+                const text = buildParameterDescriptionFromForm();
+                await copyToClipboard(text);
+            });
+
+            // Parameter structure controls
+            document.getElementById('pd-structure')?.addEventListener('change', () => {
+                updateParameterStructureVisibility();
+                updateParameterBasicDetailsByStructure();
+                updateParameterPreview();
+            });
+            document.getElementById('pd-add-field')?.addEventListener('click', () => {
+                addParameterFieldRow();
+                updateParameterPreview();
+            });
+
+            // Preview auto-update
+            const mdIds = [
+                'md-one-line','md-trigger','md-goal','md-not-applicable',
+                'md-input-key','md-input-rules','md-default-behavior',
+                'md-return-meaning','md-return-key-fields','md-return-empty',
+                'md-side-effects','md-idempotency','md-consistency',
+                'md-permission','md-rate-limit',
+                'md-common-failures','md-retry',
+                'md-example-in','md-example-out',
+                'md-related','md-remarks'
+            ];
+            mdIds.forEach(id => {
+                document.getElementById(id)?.addEventListener('input', updateMethodDescPreview);
+            });
+
+            const pdIds = [
+                'pd-cn-name','pd-required','pd-default','pd-meaning',
+                'pd-constraints','pd-format','pd-unit-timezone','pd-examples',
+                'pd-sensitive','pd-list-element-type','pd-list-size','pd-map-key','pd-map-value'
+            ];
+            pdIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.addEventListener('input', updateParameterPreview);
+                el.addEventListener('change', updateParameterPreview);
+            });
+
+            // Initialize empty previews
+            fillMethodDescTemplateEmpty();
+            fillParameterTemplateEmpty();
+            updateParameterStructureVisibility();
+            updateParameterBasicDetailsByStructure();
+            updateMethodDescPreview();
+            updateParameterPreview();
+        }
+
+        function setMethodDescEditorMode(mode) {
+            mdEditorMode = mode;
+            const btnT = document.getElementById('md-mode-template');
+            const btnR = document.getElementById('md-mode-raw');
+            const tpl = document.getElementById('md-template-root');
+            const raw = document.getElementById('md-raw-root');
+            if (mode === 'raw') {
+                const ta = document.getElementById('method-desc-text');
+                if (ta && !(ta.value || '').trim()) {
+                    const generated = buildMethodDescriptionFromForm();
+                    if (generated) ta.value = generated;
+                }
+            }
+            if (btnT) btnT.classList.toggle('active', mode === 'template');
+            if (btnR) btnR.classList.toggle('active', mode === 'raw');
+            if (tpl) tpl.style.display = mode === 'template' ? '' : 'none';
+            if (raw) raw.style.display = mode === 'raw' ? '' : 'none';
+            hideInlineError('md-inline-error');
+            hideInlineError('md-inline-error-raw');
+        }
+
+        function setParameterEditorMode(mode) {
+            // Raw mode removed for parameters; keep compatibility as template-only.
+            pdEditorMode = 'template';
+            const tpl = document.getElementById('pd-template-root');
+            if (tpl) tpl.style.display = '';
+            hideInlineError('pd-inline-error');
+            hideInlineError('pd-inline-error-raw');
+        }
+
+        function updateParameterBasicDetailsByStructure() {
+            const structure = document.getElementById('pd-structure')?.value || 'scalar';
+            const details = document.getElementById('pd-basic-details');
+            if (!details) return;
+            // For complex types, default collapse to reduce visual noise
+            if (structure === 'scalar') {
+                details.open = true;
+            } else {
+                details.open = false;
+            }
+        }
+
+        function showInlineError(id, message) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.textContent = message;
+            el.style.display = 'block';
+        }
+
+        function hideInlineError(id) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.textContent = '';
+            el.style.display = 'none';
+        }
+
+        function getTrimmedValue(id) {
+            const el = document.getElementById(id);
+            return (el?.value || '').trim();
+        }
+
+        function normalizeLines(text) {
+            return (text || '')
+                .split('\n')
+                .map(s => s.trim())
+                .filter(Boolean);
+        }
+
+        async function copyToClipboard(text) {
+            try {
+                if (navigator?.clipboard?.writeText) {
+                    await navigator.clipboard.writeText(text || '');
+                    alert('已复制到剪贴板');
+                    return;
+                }
+            } catch (e) {
+                // fallback below
+            }
+            window.prompt('复制以下文本：', text || '');
+        }
+
+        // -------- Method description (template) --------
+        function fillMethodDescTemplateEmpty() {
+            const ids = [
+                'md-one-line','md-trigger','md-goal','md-not-applicable',
+                'md-input-key','md-input-rules','md-default-behavior',
+                'md-return-meaning','md-return-key-fields','md-return-empty',
+                'md-side-effects','md-idempotency','md-consistency',
+                'md-permission','md-rate-limit',
+                'md-common-failures','md-retry',
+                'md-example-in','md-example-out',
+                'md-related','md-remarks'
+            ];
+            ids.forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.value = '';
+            });
+            hideInlineError('md-inline-error');
+            hideInlineError('md-inline-error-raw');
+        }
+
+        function buildMethodDescriptionFromForm() {
+            const oneLine = getTrimmedValue('md-one-line');
+            const trigger = normalizeLines(getTrimmedValue('md-trigger'));
+            const goal = normalizeLines(getTrimmedValue('md-goal'));
+            const notApplicable = normalizeLines(getTrimmedValue('md-not-applicable'));
+
+            const inputKey = normalizeLines(getTrimmedValue('md-input-key'));
+            const inputRules = normalizeLines(getTrimmedValue('md-input-rules'));
+            const defaultBehavior = normalizeLines(getTrimmedValue('md-default-behavior'));
+
+            const returnMeaning = normalizeLines(getTrimmedValue('md-return-meaning'));
+            const returnKeyFields = normalizeLines(getTrimmedValue('md-return-key-fields'));
+            const returnEmpty = normalizeLines(getTrimmedValue('md-return-empty'));
+
+            const sideEffects = normalizeLines(getTrimmedValue('md-side-effects'));
+            const idempotency = normalizeLines(getTrimmedValue('md-idempotency'));
+            const consistency = normalizeLines(getTrimmedValue('md-consistency'));
+
+            const permission = normalizeLines(getTrimmedValue('md-permission'));
+            const rateLimit = normalizeLines(getTrimmedValue('md-rate-limit'));
+
+            const failures = normalizeLines(getTrimmedValue('md-common-failures'));
+            const retry = normalizeLines(getTrimmedValue('md-retry'));
+
+            const exIn = getTrimmedValue('md-example-in');
+            const exOut = getTrimmedValue('md-example-out');
+
+            const related = normalizeLines(getTrimmedValue('md-related'));
+            const remarks = normalizeLines(getTrimmedValue('md-remarks'));
+
+            const lines = [];
+            lines.push(`【一句话】${oneLine || ''}`);
+
+            lines.push('');
+            lines.push('【用途/何时调用】');
+            if (trigger.length) lines.push(`- 触发场景：${trigger.join('；')}`);
+            if (goal.length) lines.push(`- 典型目标：${goal.join('；')}`);
+            if (notApplicable.length) lines.push(`- 不适用：${notApplicable.join('；')}`);
+
+            if (inputKey.length || inputRules.length || defaultBehavior.length) {
+                lines.push('');
+                lines.push('【输入契约（方法级，不重复逐参）】');
+                if (inputKey.length) lines.push(`- 关键输入：${inputKey.join('；')}`);
+                if (inputRules.length) lines.push(`- 取值规则：${inputRules.join('；')}`);
+                if (defaultBehavior.length) lines.push(`- 默认行为：${defaultBehavior.join('；')}`);
+            }
+
+            lines.push('');
+            lines.push('【返回契约】');
+            if (returnMeaning.length) lines.push(`- 返回含义：${returnMeaning.join('；')}`);
+            if (returnKeyFields.length) lines.push(`- 关键字段：${returnKeyFields.join('；')}`);
+            if (returnEmpty.length) lines.push(`- 空结果：${returnEmpty.join('；')}`);
+
+            if (sideEffects.length || idempotency.length || consistency.length) {
+                lines.push('');
+                lines.push('【副作用/一致性/幂等】');
+                if (sideEffects.length) lines.push(`- 数据变化：${sideEffects.join('；')}`);
+                if (idempotency.length) lines.push(`- 幂等性：${idempotency.join('；')}`);
+                if (consistency.length) lines.push(`- 时效性：${consistency.join('；')}`);
+            }
+
+            if (permission.length || rateLimit.length) {
+                lines.push('');
+                lines.push('【权限/风控/限制】');
+                if (permission.length) lines.push(`- 权限要求：${permission.join('；')}`);
+                if (rateLimit.length) lines.push(`- 限制：${rateLimit.join('；')}`);
+            }
+
+            lines.push('');
+            lines.push('【异常与重试策略】');
+            if (failures.length) lines.push(`- 常见失败：${failures.join('；')}`);
+            if (retry.length) lines.push(`- 重试策略：${retry.join('；')}`);
+
+            lines.push('');
+            lines.push('【示例】');
+            if (exIn) {
+                lines.push('- 示例入参：');
+                lines.push(exIn);
+            }
+            if (exOut) {
+                lines.push('- 示例出参：');
+                lines.push(exOut);
+            }
+
+            if (related.length || remarks.length) {
+                lines.push('');
+                lines.push('【备注/关联】');
+                if (related.length) lines.push(`- 关联方法：${related.join('；')}`);
+                if (remarks.length) lines.push(`- 备注：${remarks.join('；')}`);
+            }
+
+            return lines.join('\n').trim();
+        }
+
+        function validateMethodDescForm() {
+            const errors = [];
+            const oneLine = getTrimmedValue('md-one-line');
+            const trigger = getTrimmedValue('md-trigger');
+            const goal = getTrimmedValue('md-goal');
+            const returnMeaning = getTrimmedValue('md-return-meaning');
+            const failures = getTrimmedValue('md-common-failures');
+            const exIn = getTrimmedValue('md-example-in');
+            const exOut = getTrimmedValue('md-example-out');
+
+            if (!oneLine) errors.push('【一句话】必填：请用动词开头写清“做什么/为谁/产出什么”。');
+            if (!trigger && !goal) errors.push('【用途/何时调用】必填：至少填写“触发场景”或“典型目标”。');
+            if (!returnMeaning) errors.push('【返回契约】必填：请说明成功时返回的业务含义。');
+            if (!failures) errors.push('【异常与重试策略】必填：请列出常见失败类型/错误码。');
+            if (!exIn || !exOut) errors.push('【示例】必填：请至少提供一组“示例入参 + 示例出参”。');
+
+            // helpful guidance (not blocking)
+            if (oneLine && oneLine.length > 60) errors.push('【一句话】建议更短：尽量 ≤25字。');
+            return errors;
+        }
+
+        function validateMethodDescRawText(text) {
+            const t = (text || '').trim();
+            const errors = [];
+            if (!t) {
+                errors.push('方法描述为空：请填写模板或原始文本。');
+                return errors;
+            }
+            const requiredHeads = ['【一句话】', '【返回契约】', '【异常与重试策略】', '【示例】'];
+            requiredHeads.forEach(h => {
+                if (!t.includes(h)) errors.push(`缺少段落：${h}`);
+            });
+            // Ensure examples exist
+            if (!/示例入参/.test(t) || !/示例出参/.test(t)) {
+                errors.push('示例不完整：请同时包含“示例入参”和“示例出参”。');
+            }
+            return errors;
+        }
+
+        function updateMethodDescPreview() {
+            const preview = document.getElementById('md-preview');
+            if (!preview) return;
+            const text = buildMethodDescriptionFromForm();
+            preview.textContent = text || '（预览为空：请先填写左侧模板）';
+        }
+
+        function prepareMethodDescForSubmit() {
+            hideInlineError('md-inline-error');
+            hideInlineError('md-inline-error-raw');
+
+            if (mdEditorMode === 'template') {
+                const errors = validateMethodDescForm();
+                if (errors.length) {
+                    showInlineError('md-inline-error', errors.join('\n'));
+                    return false;
+                }
+                const text = buildMethodDescriptionFromForm();
+                document.getElementById('method-desc-text').value = text;
+                updateMethodDescPreview();
+                return true;
+            }
+
+            const raw = document.getElementById('method-desc-text').value || '';
+            const errors = validateMethodDescRawText(raw);
+            if (errors.length) {
+                showInlineError('md-inline-error-raw', errors.join('\n'));
+                return false;
+            }
+            return true;
+        }
+
+        function parseMethodDescriptionToForm(text) {
+            const t = (text || '').trim();
+            if (!t) return false;
+            if (!t.includes('【一句话】')) return false;
+
+            // reset first to avoid carrying stale values
+            fillMethodDescTemplateEmpty();
+
+            const oneLineMatch = t.match(/【一句话】\s*([^\n]+)/);
+            if (oneLineMatch) document.getElementById('md-one-line').value = oneLineMatch[1].trim();
+
+            const usageSection = extractSection(t, '【用途/何时调用】');
+            if (usageSection) {
+                document.getElementById('md-trigger').value = extractBulletValue(usageSection, '触发场景');
+                document.getElementById('md-goal').value = extractBulletValue(usageSection, '典型目标');
+                document.getElementById('md-not-applicable').value = extractBulletValue(usageSection, '不适用');
+            }
+
+            const inputSection = extractSection(t, '【输入契约（方法级，不重复逐参）】');
+            if (inputSection) {
+                document.getElementById('md-input-key').value = extractBulletValue(inputSection, '关键输入');
+                document.getElementById('md-input-rules').value = extractBulletValue(inputSection, '取值规则');
+                document.getElementById('md-default-behavior').value = extractBulletValue(inputSection, '默认行为');
+            }
+
+            const returnSection = extractSection(t, '【返回契约】');
+            if (returnSection) {
+                document.getElementById('md-return-meaning').value = extractBulletValue(returnSection, '返回含义');
+                document.getElementById('md-return-key-fields').value = extractBulletValue(returnSection, '关键字段');
+                document.getElementById('md-return-empty').value = extractBulletValue(returnSection, '空结果');
+            }
+
+            const effectSection = extractSection(t, '【副作用/一致性/幂等】');
+            if (effectSection) {
+                document.getElementById('md-side-effects').value = extractBulletValue(effectSection, '数据变化');
+                document.getElementById('md-idempotency').value = extractBulletValue(effectSection, '幂等性');
+                document.getElementById('md-consistency').value = extractBulletValue(effectSection, '时效性');
+            }
+
+            const permSection = extractSection(t, '【权限/风控/限制】');
+            if (permSection) {
+                document.getElementById('md-permission').value = extractBulletValue(permSection, '权限要求');
+                document.getElementById('md-rate-limit').value = extractBulletValue(permSection, '限制');
+            }
+
+            const errSection = extractSection(t, '【异常与重试策略】');
+            if (errSection) {
+                document.getElementById('md-common-failures').value = extractBulletValue(errSection, '常见失败');
+                document.getElementById('md-retry').value = extractBulletValue(errSection, '重试策略');
+            }
+
+            const exampleSection = extractSection(t, '【示例】');
+            if (exampleSection) {
+                const exIn = extractBlockAfterLabel(exampleSection, '示例入参');
+                const exOut = extractBlockAfterLabel(exampleSection, '示例出参');
+                if (exIn) document.getElementById('md-example-in').value = exIn;
+                if (exOut) document.getElementById('md-example-out').value = exOut;
+            }
+
+            const remarkSection = extractSection(t, '【备注/关联】');
+            if (remarkSection) {
+                document.getElementById('md-related').value = extractBulletValue(remarkSection, '关联方法');
+                document.getElementById('md-remarks').value = extractBulletValue(remarkSection, '备注');
+            }
+            return true;
+        }
+
+        // -------- Parameter description (template) --------
+        function fillParameterTemplateEmpty() {
+            const ids = [
+                'pd-cn-name','pd-default','pd-meaning','pd-constraints','pd-format',
+                'pd-unit-timezone','pd-examples','pd-sensitive','pd-list-element-type','pd-list-size','pd-map-key','pd-map-value'
+            ];
+            ids.forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.value = '';
+            });
+            const req = document.getElementById('pd-required');
+            if (req) req.value = '否';
+
+            const structure = document.getElementById('pd-structure');
+            if (structure) structure.value = 'scalar';
+
+            const body = document.getElementById('pd-fields-body');
+            if (body) body.innerHTML = '';
+
+            hideInlineError('pd-inline-error');
+            hideInlineError('pd-inline-error-raw');
+        }
+
+        function updateParameterStructureVisibility() {
+            const type = document.getElementById('pd-structure')?.value || 'scalar';
+            const obj = document.getElementById('pd-object-root');
+            const list = document.getElementById('pd-list-root');
+            const map = document.getElementById('pd-map-root');
+            // nested field path table is useful for object / list(items) / map(values)
+            if (obj) obj.style.display = (type === 'object' || type === 'list' || type === 'map') ? '' : 'none';
+            if (list) list.style.display = type === 'list' ? '' : 'none';
+            if (map) map.style.display = type === 'map' ? '' : 'none';
+
+            // keep "基础信息" UX in sync with structure
+            updateParameterBasicDetailsByStructure();
+        }
+
+        function addParameterFieldRow(seed) {
+            const body = document.getElementById('pd-fields-body');
+            if (!body) return;
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><input type="text" class="pd-field-name" placeholder="例如：items[].product.id / address.city / attrs{string}.value" value="${escapeHtmlAttr(seed?.name || '')}"></td>
+                <td><input type="text" class="pd-field-type" placeholder="string/integer/boolean 或 Java类型(String/Long/...)" value="${escapeHtmlAttr(seed?.type || '')}"></td>
+                <td>
+                    <select class="pd-field-required">
+                        <option value="是" ${seed?.required === '是' ? 'selected' : ''}>是</option>
+                        <option value="否" ${seed?.required === '否' || !seed?.required ? 'selected' : ''}>否</option>
+                    </select>
+                </td>
+                <td><textarea class="pd-field-meaning" rows="2" placeholder="含义">${escapeHtml(seed?.meaning || '')}</textarea></td>
+                <td>
+                    <textarea class="pd-field-constraint" rows="2" placeholder="约束/示例">${escapeHtml(seed?.constraint || '')}</textarea>
+                </td>
+                <td>
+                    <button type="button" class="btn btn-danger pd-field-remove" style="padding: 4px 8px; font-size: 11px; box-shadow: none;">删</button>
+                </td>
+            `;
+            body.appendChild(tr);
+
+            tr.querySelectorAll('input,textarea,select').forEach(el => {
+                el.addEventListener('input', updateParameterPreview);
+                el.addEventListener('change', updateParameterPreview);
+            });
+            tr.querySelector('.pd-field-remove')?.addEventListener('click', () => {
+                tr.remove();
+                updateParameterPreview();
+            });
+        }
+
+        function escapeHtmlAttr(text) {
+            return (text || '')
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
+
+        function buildParameterDescriptionFromForm() {
+            const cn = getTrimmedValue('pd-cn-name');
+            const required = document.getElementById('pd-required')?.value || '否';
+            const def = getTrimmedValue('pd-default');
+            const meaning = getTrimmedValue('pd-meaning');
+
+            const constraints = getTrimmedValue('pd-constraints');
+            const format = getTrimmedValue('pd-format');
+            const unitTz = getTrimmedValue('pd-unit-timezone');
+            const examples = getTrimmedValue('pd-examples');
+            const sensitive = getTrimmedValue('pd-sensitive');
+
+            const structure = document.getElementById('pd-structure')?.value || 'scalar';
+            const lines = [];
+
+            const firstLine = `中文名：${cn || ''}；必填：${required}${def ? `(默认=${def})` : ''}；含义：${meaning || ''}`;
+            lines.push(firstLine);
+            if (constraints) lines.push(`约束：${constraints}`);
+            if (format) lines.push(`格式：${format}`);
+            if (unitTz) lines.push(`单位/时区：${unitTz}`);
+            if (examples) {
+                const exLines = examples.split('\n').map(s => s.trim()).filter(Boolean);
+                if (exLines.length <= 1) {
+                    lines.push(`示例：${exLines[0] || ''}`);
+                } else {
+                    lines.push('示例：');
+                    exLines.forEach(v => lines.push(v));
+                }
+            }
+
+            if (structure === 'object') {
+                const body = document.getElementById('pd-fields-body');
+                const rows = Array.from(body?.querySelectorAll('tr') || []);
+                lines.push('');
+                lines.push('对象关键字段：');
+                rows.forEach(r => {
+                    const name = (r.querySelector('.pd-field-name')?.value || '').trim();
+                    const type = (r.querySelector('.pd-field-type')?.value || '').trim();
+                    const req = (r.querySelector('.pd-field-required')?.value || '否').trim();
+                    const m = (r.querySelector('.pd-field-meaning')?.value || '').trim();
+                    const c = (r.querySelector('.pd-field-constraint')?.value || '').trim();
+                    if (!name && !type && !m && !c) return;
+                    const parts = [];
+                    if (m) parts.push(m);
+                    parts.push(`必填：${req}`);
+                    if (c) parts.push(c);
+                    lines.push(`- ${name || '<field>'}${type ? `(${type})` : ''}：${parts.join('；')}`);
+                });
+            } else if (structure === 'list') {
+                const elementType = getTrimmedValue('pd-list-element-type');
+                const size = getTrimmedValue('pd-list-size');
+                lines.push('');
+                if (elementType) lines.push(`集合元素：${elementType}`);
+                if (size) lines.push(`数量限制：${size}`);
+            } else if (structure === 'map') {
+                const key = getTrimmedValue('pd-map-key');
+                const val = getTrimmedValue('pd-map-value');
+                lines.push('');
+                if (key || val) lines.push(`Map 结构：key=${key || ''}；value=${val || ''}`);
+            }
+
+            if (sensitive) {
+                lines.push('');
+                lines.push(`敏感级别：${sensitive}`);
+            }
+
+            return lines.join('\n').trim();
+        }
+
+        function validateParameterForm() {
+            const errors = [];
+            const cn = getTrimmedValue('pd-cn-name');
+            const meaning = getTrimmedValue('pd-meaning');
+            const examples = getTrimmedValue('pd-examples');
+            const structure = document.getElementById('pd-structure')?.value || 'scalar';
+            const hasNestedFields = (() => {
+                const body = document.getElementById('pd-fields-body');
+                const rows = Array.from(body?.querySelectorAll('tr') || []);
+                return rows.some(r => ((r.querySelector('.pd-field-name')?.value || '').trim()));
+            })();
+
+            if (!cn) errors.push('中文名必填：请用业务语言描述参数含义。');
+            if (!meaning) errors.push('含义必填：请用一句话说明参数做什么。');
+            if (!examples) errors.push('示例必填：至少提供 1 个典型值。');
+
+            if (structure === 'object') {
+                const body = document.getElementById('pd-fields-body');
+                const rows = Array.from(body?.querySelectorAll('tr') || []);
+                const hasAtLeastOne = rows.some(r => {
+                    const name = (r.querySelector('.pd-field-name')?.value || '').trim();
+                    const m = (r.querySelector('.pd-field-meaning')?.value || '').trim();
+                    return name && m;
+                });
+                if (!hasAtLeastOne) errors.push('对象关键字段至少 1 个：请填写至少一行“字段名 + 含义”。');
+            }
+
+            if (structure === 'list') {
+                const elementType = getTrimmedValue('pd-list-element-type');
+                // If user already defined nested fields, element type can be omitted (we will treat it as object)
+                if (!elementType && !hasNestedFields) errors.push('集合元素类型必填：请填写集合里每个元素是什么类型（或在下方用字段路径定义元素结构）。');
+            }
+
+            if (structure === 'map') {
+                const key = getTrimmedValue('pd-map-key');
+                const val = getTrimmedValue('pd-map-value');
+                // If user already defined nested fields, key/value can be omitted (we will treat value as object)
+                if ((!key || !val) && !hasNestedFields) errors.push('Map 结构必填：请同时说明 key 和 value 的类型/含义（或在下方用字段路径定义 value 结构）。');
+            }
+
+            return errors;
+        }
+
+        function validateParameterRawText(text) {
+            const t = (text || '').trim();
+            const errors = [];
+            if (!t) {
+                errors.push('参数描述为空：请填写模板或原始文本。');
+                return errors;
+            }
+            if (!/^中文名：/.test(t)) errors.push('参数描述建议以“中文名：...；必填：...；含义：...”开头（便于 agent 解析）。');
+            if (!/含义：/.test(t)) errors.push('缺少“含义：...”');
+            if (!/示例：/.test(t)) errors.push('缺少“示例：...”（至少 1 个典型值）');
+            return errors;
+        }
+
+        function updateParameterPreview() {
+            updateParameterStructureVisibility();
+            const preview = document.getElementById('pd-preview');
+            if (!preview) return;
+            const text = buildParameterDescriptionFromForm();
+            preview.textContent = text || '（预览为空：请先填写左侧模板）';
+
+            // Schema preview (best-effort)
+            const schemaEl = document.getElementById('pd-schema-preview');
+            if (schemaEl) {
+                try {
+                    const bundle = buildParameterSchemaBundleFromForm();
+                    schemaEl.textContent = JSON.stringify(bundle, null, 2);
+                } catch (e) {
+                    schemaEl.textContent = '（Schema 生成失败：' + (e?.message || String(e)) + '）';
+                }
+            }
+        }
+
+        function prepareParameterDescForSubmit() {
+            hideInlineError('pd-inline-error');
+            hideInlineError('pd-inline-error-raw');
+
+            if (pdEditorMode === 'template') {
+                const errors = validateParameterForm();
+                if (errors.length) {
+                    showInlineError('pd-inline-error', errors.join('\n'));
+                    return false;
+                }
+                const text = buildParameterDescriptionFromForm();
+                document.getElementById('parameter-description').value = text;
+                // also generate structured schema JSON for MCP tools
+                try {
+                    const bundle = buildParameterSchemaBundleFromForm();
+                    document.getElementById('parameter-schema-json').value = JSON.stringify(bundle);
+                } catch (e) {
+                    console.error('生成参数Schema失败:', e);
+                    showInlineError('pd-inline-error', '生成参数Schema失败：' + (e?.message || String(e)));
+                    return false;
+                }
+                updateParameterPreview();
+                return true;
+            }
+
+            const raw = document.getElementById('parameter-description').value || '';
+            const errors = validateParameterRawText(raw);
+            if (errors.length) {
+                showInlineError('pd-inline-error-raw', errors.join('\n'));
+                return false;
+            }
+            return true;
+        }
+
+        /**
+         * 从参数模板表单生成“结构化Schema Bundle”
+         *
+         * 该 Bundle 会保存到数据库 `parameter_schema_json`，用于生成 MCP tool 的 inputSchema。
+         * - rootKind: scalar/object/array/map（对应 pd-structure）
+         * - fields: 使用字段路径表达任意层级嵌套（`.` / `[]` / `{}`）
+         * - jsonSchema: 自动生成的 JSON Schema（子树），供后端直接使用
+         */
+        function buildParameterSchemaBundleFromForm() {
+            const structure = document.getElementById('pd-structure')?.value || 'scalar';
+            const rootKind = structure === 'list' ? 'array' : structure; // map/object/scalar
+
+            const required = (document.getElementById('pd-required')?.value || '否') === '是';
+            // Examples: one per line (JSON-friendly). Comma split breaks JSON.
+            const examplesRaw = getTrimmedValue('pd-examples');
+            const examples = examplesRaw
+                    ? examplesRaw.split('\n').map(s => s.trim()).filter(Boolean)
+                    : [];
+
+            const bundle = {
+                version: 1,
+                rootKind,
+                cnName: getTrimmedValue('pd-cn-name'),
+                required,
+                default: getTrimmedValue('pd-default') || null,
+                meaning: getTrimmedValue('pd-meaning'),
+                constraints: getTrimmedValue('pd-constraints') || null,
+                format: getTrimmedValue('pd-format') || null,
+                unitTimezone: getTrimmedValue('pd-unit-timezone') || null,
+                examples,
+                sensitive: getTrimmedValue('pd-sensitive') || null,
+                fields: [],
+                jsonSchema: {}
+            };
+
+            // Collect nested fields (for object/array/map)
+            if (rootKind === 'object' || rootKind === 'array' || rootKind === 'map') {
+                bundle.fields = collectNestedFieldRows();
+            }
+
+            bundle.jsonSchema = generateJsonSchemaForBundle(bundle);
+            return bundle;
+        }
+
+        function collectNestedFieldRows() {
+            const body = document.getElementById('pd-fields-body');
+            const rows = Array.from(body?.querySelectorAll('tr') || []);
+            const fields = [];
+            rows.forEach(r => {
+                const path = (r.querySelector('.pd-field-name')?.value || '').trim();
+                const typeRaw = (r.querySelector('.pd-field-type')?.value || '').trim();
+                const req = (r.querySelector('.pd-field-required')?.value || '否').trim();
+                const meaning = (r.querySelector('.pd-field-meaning')?.value || '').trim();
+                const constraint = (r.querySelector('.pd-field-constraint')?.value || '').trim();
+                if (!path && !typeRaw && !meaning && !constraint) return;
+                fields.push({
+                    path,
+                    type: normalizeTypeToJsonType(typeRaw),
+                    javaType: typeRaw || null,
+                    required: req === '是',
+                    description: meaning || '',
+                    constraints: constraint || null
+                });
+            });
+            return fields;
+        }
+
+        function normalizeTypeToJsonType(typeRaw) {
+            const t = (typeRaw || '').trim();
+            if (!t) return 'any';
+            const lower = t.toLowerCase();
+            const direct = ['string','integer','number','boolean','object','array','any'];
+            if (direct.includes(lower)) return lower;
+            // Java-ish inference
+            if (t === 'int' || t === 'long' || t.includes('Integer') || t.includes('Long') || t.includes('Short') || t.includes('Byte')) return 'integer';
+            if (t.includes('Double') || t.includes('Float') || t.includes('BigDecimal')) return 'number';
+            if (t === 'boolean' || t.includes('Boolean')) return 'boolean';
+            if (t.includes('String') || t === 'char' || t.includes('Character')) return 'string';
+            if (t.endsWith('[]') || t.includes('List') || t.includes('Set') || t.includes('Collection')) return 'array';
+            if (t.includes('Map')) return 'object';
+            // unknown object type
+            return 'object';
+        }
+
+        function generateJsonSchemaForBundle(bundle) {
+            const rootKind = bundle.rootKind;
+            const base = {};
+
+            // Root schema (parameter itself)
+            if (rootKind === 'scalar') {
+                // Try to infer from parameterType, fallback to any
+                const paramType = document.getElementById('parameter-type')?.value || '';
+                base.type = normalizeTypeToJsonType(paramType);
+            } else if (rootKind === 'object') {
+                base.type = 'object';
+                base.properties = {};
+                base.required = [];
+            } else if (rootKind === 'array') {
+                base.type = 'array';
+                // default items type (if user didn't define nested fields)
+                const elementTypeRaw = document.getElementById('pd-list-element-type')?.value || '';
+                const elementJsonType = normalizeTypeToJsonType(elementTypeRaw);
+                base.items = elementJsonType === 'object'
+                        ? { type: 'object', properties: {}, required: [] }
+                        : { type: elementJsonType };
+            } else if (rootKind === 'map') {
+                base.type = 'object';
+                const valueTypeRaw = document.getElementById('pd-map-value')?.value || '';
+                const valueJsonType = normalizeTypeToJsonType(valueTypeRaw);
+                base.additionalProperties = valueJsonType === 'object'
+                        ? { type: 'object', properties: {}, required: [] }
+                        : { type: valueJsonType };
+            } else {
+                base.type = 'any';
+            }
+
+            // Root description: prioritize meaning + constraints, so agents can understand it
+            const rootDescParts = [];
+            if (bundle.cnName) rootDescParts.push(`中文名：${bundle.cnName}`);
+            if (bundle.meaning) rootDescParts.push(`含义：${bundle.meaning}`);
+            if (bundle.constraints) rootDescParts.push(`约束：${bundle.constraints}`);
+            if (bundle.format) rootDescParts.push(`格式：${bundle.format}`);
+            if (bundle.unitTimezone) rootDescParts.push(`单位/时区：${bundle.unitTimezone}`);
+            if (bundle.default) rootDescParts.push(`默认：${bundle.default}`);
+            if (bundle.examples && bundle.examples.length) {
+                const preview = bundle.examples.slice(0, 2).join(' / ');
+                rootDescParts.push(`示例：${preview}${bundle.examples.length > 2 ? ' …' : ''}`);
+            }
+            if (bundle.sensitive) rootDescParts.push(`敏感：${bundle.sensitive}`);
+            if (rootDescParts.length) base.description = rootDescParts.join('；');
+
+            // Apply nested fields
+            if (bundle.fields && bundle.fields.length && (rootKind === 'object' || rootKind === 'array' || rootKind === 'map')) {
+                // For array/map root, ensure items/additionalProperties is object container if we are going to apply nested fields
+                if (rootKind === 'array') {
+                    if (!base.items || typeof base.items !== 'object') base.items = {};
+                    if (!base.items.type || base.items.type !== 'object') base.items.type = 'object';
+                    if (!base.items.properties) base.items.properties = {};
+                    if (!base.items.required) base.items.required = [];
+                }
+                if (rootKind === 'map') {
+                    if (!base.additionalProperties || typeof base.additionalProperties !== 'object') base.additionalProperties = {};
+                    if (!base.additionalProperties.type || base.additionalProperties.type !== 'object') base.additionalProperties.type = 'object';
+                    if (!base.additionalProperties.properties) base.additionalProperties.properties = {};
+                    if (!base.additionalProperties.required) base.additionalProperties.required = [];
+                }
+                for (const f of bundle.fields) {
+                    if (!f.path) continue;
+                    applyPathFieldToSchema(base, rootKind, f);
+                }
+            }
+
+            // cleanup empty required arrays to keep schema concise
+            cleanupEmptyRequired(base);
+            return base;
+        }
+
+        function cleanupEmptyRequired(schema) {
+            if (!schema || typeof schema !== 'object') return;
+            if (Array.isArray(schema.required) && schema.required.length === 0) delete schema.required;
+            if (schema.properties && typeof schema.properties === 'object') {
+                Object.values(schema.properties).forEach(cleanupEmptyRequired);
+            }
+            if (schema.items) cleanupEmptyRequired(schema.items);
+            if (schema.additionalProperties) cleanupEmptyRequired(schema.additionalProperties);
+        }
+
+        function applyPathFieldToSchema(rootSchema, rootKind, field) {
+            // Determine traversal start based on root kind
+            let container;
+            if (rootKind === 'object') {
+                container = rootSchema;
+            } else if (rootKind === 'array') {
+                container = rootSchema.items;
+            } else if (rootKind === 'map') {
+                container = rootSchema.additionalProperties;
+            } else {
+                return;
+            }
+
+            const tokens = tokenizePath(field.path);
+            if (tokens.length === 0) return;
+
+            for (let i = 0; i < tokens.length; i++) {
+                const token = tokens[i];
+                const isLast = i === tokens.length - 1;
+
+                ensureObjectContainer(container);
+
+                // Ensure property node exists
+                const propName = token.name;
+                if (!propName) return;
+
+                // Array segment
+                if (token.kind === 'array') {
+                    if (!container.properties[propName] || typeof container.properties[propName] !== 'object') {
+                        container.properties[propName] = { type: 'array', items: {} };
+                    }
+                    const arrSchema = container.properties[propName];
+                    if (!arrSchema.type) arrSchema.type = 'array';
+                    if (!arrSchema.items) arrSchema.items = {};
+
+                    // If this is the last token, the field describes array items' type
+                    if (isLast) {
+                        arrSchema.items = buildLeafSchema(field);
+                    } else {
+                        // Otherwise, ensure items is an object container and continue traversal into items
+                        if (!arrSchema.items.type) arrSchema.items.type = 'object';
+                        if (!arrSchema.items.properties) arrSchema.items.properties = {};
+                        if (!arrSchema.items.required) arrSchema.items.required = [];
+                        container = arrSchema.items;
+                    }
+
+                    // Required applies to the array property itself at current container level
+                    if (field.required && !container.required.includes(propName) && isLast) {
+                        container.required.push(propName);
+                    }
+                    continue;
+                }
+
+                // Map segment: name{keyType}
+                if (token.kind === 'map') {
+                    if (!container.properties[propName] || typeof container.properties[propName] !== 'object') {
+                        container.properties[propName] = { type: 'object', additionalProperties: {} };
+                    }
+                    const mapSchema = container.properties[propName];
+                    mapSchema.type = 'object';
+                    if (!mapSchema.additionalProperties) mapSchema.additionalProperties = {};
+
+                    if (isLast) {
+                        mapSchema.additionalProperties = buildLeafSchema(field);
+                    } else {
+                        if (!mapSchema.additionalProperties.type) mapSchema.additionalProperties.type = 'object';
+                        if (!mapSchema.additionalProperties.properties) mapSchema.additionalProperties.properties = {};
+                        if (!mapSchema.additionalProperties.required) mapSchema.additionalProperties.required = [];
+                        container = mapSchema.additionalProperties;
+                    }
+
+                    if (field.required && !container.required.includes(propName) && isLast) {
+                        container.required.push(propName);
+                    }
+                    continue;
+                }
+
+                // Normal object segment
+                if (isLast) {
+                    container.properties[propName] = buildLeafSchema(field);
+                    if (field.required && !container.required.includes(propName)) {
+                        container.required.push(propName);
+                    }
+                } else {
+                    if (!container.properties[propName] || typeof container.properties[propName] !== 'object') {
+                        container.properties[propName] = { type: 'object', properties: {}, required: [] };
+                    } else {
+                        if (!container.properties[propName].type) container.properties[propName].type = 'object';
+                        if (!container.properties[propName].properties) container.properties[propName].properties = {};
+                        if (!container.properties[propName].required) container.properties[propName].required = [];
+                    }
+                    container = container.properties[propName];
+                }
+            }
+        }
+
+        function ensureObjectContainer(schema) {
+            if (!schema.type) schema.type = 'object';
+            if (!schema.properties) schema.properties = {};
+            if (!schema.required) schema.required = [];
+        }
+
+        function buildLeafSchema(field) {
+            const schema = {};
+            const t = field.type || 'any';
+            if (t !== 'any') schema.type = t;
+            else schema.type = 'any';
+            const descParts = [];
+            if (field.description) descParts.push(field.description);
+            if (field.constraints) descParts.push(`约束/示例：${field.constraints}`);
+            if (descParts.length) schema.description = descParts.join('；');
+            return schema;
+        }
+
+        /**
+         * Path syntax:
+         * - "." nested object: a.b.c
+         * - "[]" array segment: items[] / items[].id
+         * - "{}" map segment: attrs{} / attrs{string}.value
+         */
+        function tokenizePath(path) {
+            const raw = (path || '').trim();
+            if (!raw) return [];
+            const parts = raw.split('.').map(s => s.trim()).filter(Boolean);
+            return parts.map(seg => {
+                if (seg.endsWith('[]')) {
+                    return { name: seg.slice(0, -2), kind: 'array' };
+                }
+                const mapMatch = seg.match(/^(.+?)\{.*\}$/);
+                if (mapMatch) {
+                    return { name: mapMatch[1], kind: 'map' };
+                }
+                return { name: seg, kind: 'object' };
+            });
+        }
+
+        /**
+         * 将数据库中保存的 parameterSchemaJson 回填到模板表单
+         *
+         * 返回 true 表示解析成功（并已填充表单）；false 表示没有可用结构或解析失败。
+         */
+        function parseParameterSchemaJsonToForm(schemaJson) {
+            const raw = (schemaJson || '').trim();
+            if (!raw) return false;
+            let bundle;
+            try {
+                bundle = JSON.parse(raw);
+            } catch (e) {
+                return false;
+            }
+            if (!bundle || typeof bundle !== 'object' || !bundle.rootKind) return false;
+
+            fillParameterTemplateEmpty();
+
+            // meta
+            document.getElementById('pd-cn-name').value = bundle.cnName || '';
+            document.getElementById('pd-required').value = bundle.required ? '是' : '否';
+            document.getElementById('pd-default').value = bundle.default || '';
+            document.getElementById('pd-meaning').value = bundle.meaning || '';
+            document.getElementById('pd-constraints').value = bundle.constraints || '';
+            document.getElementById('pd-format').value = bundle.format || '';
+            document.getElementById('pd-unit-timezone').value = bundle.unitTimezone || '';
+            document.getElementById('pd-examples').value = Array.isArray(bundle.examples) ? bundle.examples.join('\n') : (bundle.examples || '');
+            document.getElementById('pd-sensitive').value = bundle.sensitive || '';
+
+            // structure
+            const structure = bundle.rootKind === 'array' ? 'list' : bundle.rootKind;
+            const elStructure = document.getElementById('pd-structure');
+            if (elStructure) elStructure.value = structure;
+            updateParameterStructureVisibility();
+
+            // nested fields table
+            const body = document.getElementById('pd-fields-body');
+            if (body) body.innerHTML = '';
+            if ((structure === 'object' || structure === 'list' || structure === 'map') && Array.isArray(bundle.fields)) {
+                bundle.fields.forEach(f => {
+                    addParameterFieldRow({
+                        name: f.path || '',
+                        type: f.javaType || f.type || '',
+                        required: f.required ? '是' : '否',
+                        meaning: f.description || '',
+                        constraint: f.constraints || ''
+                    });
+                });
+                if ((document.getElementById('pd-fields-body')?.children?.length || 0) === 0) {
+                    addParameterFieldRow();
+                }
+            }
+
+            // Keep raw JSON in hidden input for future edits
+            const hidden = document.getElementById('parameter-schema-json');
+            if (hidden) hidden.value = raw;
+            return true;
+        }
+
+        function parseParameterDescriptionToForm(text) {
+            const t = (text || '').trim();
+            if (!t) return false;
+            if (!/^中文名：/.test(t)) return false;
+
+            // reset first to avoid carrying stale values
+            fillParameterTemplateEmpty();
+
+            // Basic line parsing (best-effort)
+            const firstLine = t.split('\n')[0] || '';
+            const cn = (firstLine.match(/中文名：([^；\n]+)/)?.[1] || '').trim();
+            const req = (firstLine.match(/必填：([^；\n]+)/)?.[1] || '').trim();
+            const def = (firstLine.match(/默认=([^)；\n]+)/)?.[1] || '').trim();
+            const meaning = (firstLine.match(/含义：(.+)$/)?.[1] || '').trim();
+
+            if (cn) document.getElementById('pd-cn-name').value = cn;
+            if (req) document.getElementById('pd-required').value = req.includes('是') ? '是' : '否';
+            document.getElementById('pd-default').value = def;
+            if (meaning) document.getElementById('pd-meaning').value = meaning;
+
+            document.getElementById('pd-constraints').value = (t.match(/约束：([^\n]+)/)?.[1] || '').trim();
+            document.getElementById('pd-format').value = (t.match(/格式：([^\n]+)/)?.[1] || '').trim();
+            document.getElementById('pd-unit-timezone').value = (t.match(/单位\/时区：([^\n]+)/)?.[1] || '').trim();
+            document.getElementById('pd-examples').value = (t.match(/示例：([^\n]+)/)?.[1] || '').trim();
+            document.getElementById('pd-sensitive').value = (t.match(/敏感级别：([^\n]+)/)?.[1] || '').trim();
+
+            // Structure detection
+            const hasObject = /对象关键字段：/.test(t);
+            const hasList = /集合元素：/.test(t);
+            const hasMap = /Map 结构：/.test(t);
+            const structure = hasObject ? 'object' : (hasList ? 'list' : (hasMap ? 'map' : 'scalar'));
+            document.getElementById('pd-structure').value = structure;
+            updateParameterStructureVisibility();
+
+            const body = document.getElementById('pd-fields-body');
+            if (body) body.innerHTML = '';
+
+            if (structure === 'object') {
+                const section = t.split('对象关键字段：')[1] || '';
+                const lines = section.split('\n').map(s => s.trim()).filter(Boolean);
+                lines.filter(l => l.startsWith('- ')).forEach(l => {
+                    // - field(Type)：meaning；必填：是；...
+                    const m = l.replace(/^- /, '');
+                    const name = (m.match(/^([^(:：]+)[(:（]/)?.[1] || m.split('：')[0] || '').trim();
+                    const type = (m.match(/\(([^)]+)\)/)?.[1] || m.match(/（([^）]+)）/)?.[1] || '').trim();
+                    const afterColon = (m.split('：').slice(1).join('：') || '').trim();
+                    const req = (afterColon.match(/必填：([^；]+)/)?.[1] || '').trim();
+                    const meaningGuess = afterColon.split('；')[0]?.replace(/^必填：.+$/, '').trim() || '';
+                    const constraint = afterColon.split('；').slice(1).join('；').trim();
+                    addParameterFieldRow({
+                        name,
+                        type,
+                        required: req ? (req.includes('是') ? '是' : '否') : '否',
+                        meaning: meaningGuess,
+                        constraint
+                    });
+                });
+                if ((document.getElementById('pd-fields-body')?.children?.length || 0) === 0) {
+                    addParameterFieldRow();
+                }
+            } else if (structure === 'list') {
+                document.getElementById('pd-list-element-type').value = (t.match(/集合元素：([^\n]+)/)?.[1] || '').trim();
+                document.getElementById('pd-list-size').value = (t.match(/数量限制：([^\n]+)/)?.[1] || '').trim();
+            } else if (structure === 'map') {
+                const mapLine = (t.match(/Map 结构：([^\n]+)/)?.[1] || '').trim();
+                document.getElementById('pd-map-key').value = (mapLine.match(/key=([^；]+)/)?.[1] || '').trim();
+                document.getElementById('pd-map-value').value = (mapLine.match(/value=(.+)$/)?.[1] || '').trim();
+            }
+            return true;
+        }
+
+        function extractSection(text, heading) {
+            if (!text.includes(heading)) return '';
+            const idx = text.indexOf(heading);
+            const rest = text.slice(idx + heading.length);
+            const nextIdx = rest.search(/\n【[^】]+】/);
+            return (nextIdx >= 0 ? rest.slice(0, nextIdx) : rest).trim();
+        }
+
+        function extractBulletValue(section, label) {
+            const re = new RegExp(`-\\s*${label}：([^\\n]+)`);
+            return (section.match(re)?.[1] || '').trim().replace(/；/g, '\n');
+        }
+
+        function extractBlockAfterLabel(section, label) {
+            // expects "- label：" then a block until next "- " label or end
+            const idx = section.indexOf(label + '：');
+            if (idx < 0) return '';
+            const after = section.slice(idx + (label + '：').length);
+            const cleaned = after.replace(/^\s*\n?/, '');
+            const next = cleaned.search(/\n-\s*示例(入参|出参)：/);
+            const block = (next >= 0 ? cleaned.slice(0, next) : cleaned).trim();
+            return block;
         }
 
         // 显示提示

@@ -39,6 +39,25 @@ public class McpToolSchemaGenerator {
     
     // ObjectMapper 用于解析 JSON
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    /**
+     * 获取人工维护的方法描述（来自数据库）。
+     *
+     * 用于 tools 的 description 展示；如果数据库没有则返回 null。
+     */
+    public String getMethodDescriptionFromDb(String interfaceName, String methodName) {
+        if (methodSignatureResolver == null) return null;
+        try {
+            MethodSignatureResolver.MethodSignature sig = methodSignatureResolver.getMethodSignature(interfaceName, methodName);
+            if (sig == null) return null;
+            String desc = sig.getMethodDescription();
+            if (desc == null || desc.isBlank()) return null;
+            return desc;
+        } catch (Exception e) {
+            log.debug("⚠️ Failed to get methodDescription from DB: {}.{} error={}", interfaceName, methodName, e.getMessage());
+            return null;
+        }
+    }
     
     /**
      * 方法签名信息
@@ -78,6 +97,15 @@ public class McpToolSchemaGenerator {
         
         Map<String, Object> properties = new HashMap<>();
         List<String> required = new ArrayList<>();
+        // DB signature (human maintained description/schema) is used as overlay even when ZK metadata exists
+        MethodSignatureResolver.MethodSignature dbSignature = null;
+        try {
+            if (methodSignatureResolver != null) {
+                dbSignature = methodSignatureResolver.getMethodSignature(interfaceName, methodName);
+            }
+        } catch (Exception e) {
+            log.debug("⚠️ Failed to load DB signature for overlay: {}.{} error={}", interfaceName, methodName, e.getMessage());
+        }
         
         try {
             // 从 ProviderService 获取方法签名信息（从 ZooKeeper metadata 或推断）
@@ -112,23 +140,81 @@ public class McpToolSchemaGenerator {
                         
                         log.info("    Parameter[{}]: name={}, type={}", i, paramName, paramType);
                         
-                        Map<String, Object> paramProperty = new HashMap<>();
-                        paramProperty.put("description", getParameterDescriptionFromType(paramType, paramName));
-                        
-                        // 根据参数类型设置 type
-                        String jsonType = getJsonTypeFromJavaTypeName(paramType);
-                        paramProperty.put("type", jsonType);
-                        
-                        // 如果是数组或集合类型，设置 items
-                        if (paramType != null && (paramType.endsWith("[]") || paramType.contains("List") || 
-                            paramType.contains("Set") || paramType.contains("Collection"))) {
-                            Map<String, Object> items = new HashMap<>();
-                            items.put("type", "any");
-                            paramProperty.put("items", items);
+                        // Overlay: prefer DB description + structured schema if available
+                        MethodSignatureResolver.ParameterInfo dbParam = null;
+                        if (dbSignature != null && dbSignature.getParameters() != null && !dbSignature.getParameters().isEmpty()) {
+                            // 1) match by name
+                            for (MethodSignatureResolver.ParameterInfo p : dbSignature.getParameters()) {
+                                if (p != null && p.getName() != null && p.getName().equals(paramName)) {
+                                    dbParam = p;
+                                    break;
+                                }
+                            }
+                            // 2) fallback by index
+                            if (dbParam == null && i < dbSignature.getParameters().size()) {
+                                dbParam = dbSignature.getParameters().get(i);
+                            }
+                        }
+
+                        String dbDesc = dbParam != null ? dbParam.getDescription() : null;
+                        String dbSchemaJson = dbParam != null ? dbParam.getSchemaJson() : null;
+
+                        Map<String, Object> paramProperty = null;
+                        boolean paramRequired = true;
+
+                        // If structured schema exists, use it to build property schema
+                        if (dbSchemaJson != null && !dbSchemaJson.isBlank()) {
+                            try {
+                                JsonNode root = objectMapper.readTree(dbSchemaJson);
+                                JsonNode requiredNode = root.get("required");
+                                if (requiredNode != null && requiredNode.isBoolean()) {
+                                    paramRequired = requiredNode.asBoolean(true);
+                                }
+                                JsonNode schemaNode = root.get("jsonSchema");
+                                if (schemaNode == null || schemaNode.isMissingNode() || schemaNode.isNull()) {
+                                    // backward compatibility: accept "schema" as alias
+                                    schemaNode = root.get("schema");
+                                }
+                                if (schemaNode != null && schemaNode.isObject()) {
+                                    @SuppressWarnings("unchecked")
+                                    Map<String, Object> schemaMap = objectMapper.convertValue(schemaNode, Map.class);
+                                    paramProperty = new HashMap<>(schemaMap);
+                                }
+                            } catch (Exception ex) {
+                                log.debug("⚠️ Failed to parse parameter schemaJson for {}.{} param={} error={}",
+                                        interfaceName, methodName, paramName, ex.getMessage());
+                            }
+                        }
+
+                        // Fallback to type-based schema
+                        if (paramProperty == null) {
+                            paramProperty = new HashMap<>();
+                            // 根据参数类型设置 type
+                            String jsonType = getJsonTypeFromJavaTypeName(paramType);
+                            paramProperty.put("type", jsonType);
+
+                            // 如果是数组或集合类型，设置 items
+                            if (paramType != null && (paramType.endsWith("[]") || paramType.contains("List") ||
+                                paramType.contains("Set") || paramType.contains("Collection"))) {
+                                Map<String, Object> items = new HashMap<>();
+                                items.put("type", "any");
+                                paramProperty.put("items", items);
+                            }
+                        }
+
+                        // Description: prefer DB, fallback to type-based
+                        String finalDesc = (dbDesc != null && !dbDesc.isBlank())
+                                ? dbDesc
+                                : getParameterDescriptionFromType(paramType, paramName);
+                        if (!paramProperty.containsKey("description") || paramProperty.get("description") == null ||
+                                String.valueOf(paramProperty.get("description")).isBlank()) {
+                            paramProperty.put("description", finalDesc);
                         }
                         
                         properties.put(paramName, paramProperty);
-                        required.add(paramName);
+                        if (paramRequired) {
+                            required.add(paramName);
+                        }
                     }
                     log.info("  ✅ 成功创建 {} 个参数的 properties", properties.size());
                 }

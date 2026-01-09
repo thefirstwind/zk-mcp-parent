@@ -54,6 +54,11 @@ public class DubboServiceMethodEntity {
      * 返回值类型
      */
     private String returnType;
+
+    /**
+     * 方法描述（人工维护）
+     */
+    private String methodDescription;
     
     /**
      * 方法参数列表

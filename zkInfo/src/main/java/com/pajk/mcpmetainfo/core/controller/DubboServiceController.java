@@ -455,6 +455,45 @@ public class DubboServiceController {
             return ResponseEntity.status(500).build();
         }
     }
+
+    /**
+     * 更新方法描述（人工维护）
+     *
+     * @param methodId 方法ID
+     * @param request 请求体
+     * @return 更新结果
+     */
+    @PutMapping("/methods/{methodId}/description")
+    public ResponseEntity<String> updateMethodDescription(
+            @PathVariable Long methodId,
+            @RequestBody MethodDescriptionUpdateRequest request) {
+        try {
+            // 权限校验
+            String desc = request != null ? request.getMethodDescription() : null;
+            dubboServiceMethodService.updateMethodDescription(methodId, desc);
+            return ResponseEntity.ok("保存成功");
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        } catch (SecurityException e) {
+            log.warn("权限不足: {}", e.getMessage());
+            return ResponseEntity.status(403).body("权限不足");
+        } catch (Exception e) {
+            log.error("更新方法描述失败: methodId={}", methodId, e);
+            return ResponseEntity.status(500).body("保存失败: " + e.getMessage());
+        }
+    }
+
+    public static class MethodDescriptionUpdateRequest {
+        private String methodDescription;
+
+        public String getMethodDescription() {
+            return methodDescription;
+        }
+
+        public void setMethodDescription(String methodDescription) {
+            this.methodDescription = methodDescription;
+        }
+    }
     
     /**
      * 同步节点（从ZooKeeper重新同步服务节点信息）

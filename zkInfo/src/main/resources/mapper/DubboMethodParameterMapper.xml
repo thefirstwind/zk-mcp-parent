@@ -13,20 +13,21 @@
         <result property="parameterType" column="parameter_type"/>
         <result property="parameterOrder" column="parameter_order"/>
         <result property="parameterDescription" column="parameter_description"/>
+        <result property="parameterSchemaJson" column="parameter_schema_json"/>
         <result property="createdAt" column="gmt_created"/>
         <result property="updatedAt" column="gmt_modified"/>
     </resultMap>
     
     <sql id="parameterColumns">
-        id, method_id, interface_name, version, parameter_name, parameter_type, parameter_order, parameter_description, gmt_created, gmt_modified
+        id, method_id, interface_name, version, parameter_name, parameter_type, parameter_order, parameter_description, parameter_schema_json, gmt_created, gmt_modified
     </sql>
     
     <!-- 插入Dubbo服务方法参数信息（使用 ON DUPLICATE KEY UPDATE 避免重复键错误） -->
     <insert id="insert" parameterType="com.pajk.mcpmetainfo.persistence.entity.DubboMethodParameterEntity" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO zk_dubbo_method_parameter (
-            method_id, interface_name, version, parameter_name, parameter_type, parameter_order, parameter_description, gmt_created, gmt_modified
+            method_id, interface_name, version, parameter_name, parameter_type, parameter_order, parameter_description, parameter_schema_json, gmt_created, gmt_modified
         ) VALUES (
-            #{methodId}, #{interfaceName}, #{version}, #{parameterName}, #{parameterType}, #{parameterOrder}, #{parameterDescription}, #{createdAt}, #{updatedAt}
+            #{methodId}, #{interfaceName}, #{version}, #{parameterName}, #{parameterType}, #{parameterOrder}, #{parameterDescription}, #{parameterSchemaJson}, #{createdAt}, #{updatedAt}
         )
         ON DUPLICATE KEY UPDATE
             interface_name = VALUES(interface_name),
@@ -34,6 +35,7 @@
             parameter_name = VALUES(parameter_name),
             parameter_type = VALUES(parameter_type),
             parameter_description = VALUES(parameter_description),
+            parameter_schema_json = VALUES(parameter_schema_json),
             gmt_modified = VALUES(gmt_modified)
     </insert>
     
@@ -47,6 +49,7 @@
             parameter_type = #{parameterType},
             parameter_order = #{parameterOrder},
             parameter_description = #{parameterDescription},
+            parameter_schema_json = #{parameterSchemaJson},
             gmt_modified = #{updatedAt}
         WHERE id = #{id}
     </update>

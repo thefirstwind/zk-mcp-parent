@@ -11,25 +11,27 @@
         <result property="version" column="version"/>
         <result property="methodName" column="method_name"/>
         <result property="returnType" column="return_type"/>
+        <result property="methodDescription" column="method_description"/>
         <result property="createdAt" column="gmt_created"/>
         <result property="updatedAt" column="gmt_modified"/>
     </resultMap>
     
     <sql id="methodColumns">
-        id, service_id, interface_name, version, method_name, return_type, gmt_created, gmt_modified
+        id, service_id, interface_name, version, method_name, return_type, method_description, gmt_created, gmt_modified
     </sql>
     
     <!-- 插入Dubbo服务方法信息（使用 ON DUPLICATE KEY UPDATE 避免重复键错误） -->
     <insert id="insert" parameterType="com.pajk.mcpmetainfo.persistence.entity.DubboServiceMethodEntity" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO zk_dubbo_service_method (
-            service_id, interface_name, version, method_name, return_type, gmt_created, gmt_modified
+            service_id, interface_name, version, method_name, return_type, method_description, gmt_created, gmt_modified
         ) VALUES (
-            #{serviceId}, #{interfaceName}, #{version}, #{methodName}, #{returnType}, #{createdAt}, #{updatedAt}
+            #{serviceId}, #{interfaceName}, #{version}, #{methodName}, #{returnType}, #{methodDescription}, #{createdAt}, #{updatedAt}
         )
         ON DUPLICATE KEY UPDATE
             interface_name = VALUES(interface_name),
             version = VALUES(version),
             return_type = VALUES(return_type),
+            method_description = IF(VALUES(method_description) IS NULL OR VALUES(method_description) = '', method_description, VALUES(method_description)),
             gmt_modified = VALUES(gmt_modified)
     </insert>
     
@@ -41,6 +43,15 @@
             version = #{version},
             method_name = #{methodName},
             return_type = #{returnType},
+            method_description = #{methodDescription},
+            gmt_modified = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <!-- 更新方法描述 -->
+    <update id="updateDescription">
+        UPDATE zk_dubbo_service_method SET
+            method_description = #{methodDescription},
             gmt_modified = #{updatedAt}
         WHERE id = #{id}
     </update>

@@ -495,8 +495,10 @@ public class VirtualProjectRegistrationService {
                     tool.put("name", toolName);
                     
                     // 工具描述
-                    tool.put("description", String.format("调用 %s 服务的 %s 方法", 
-                            provider.getInterfaceName(), methodName));
+                    String dbDesc = mcpToolSchemaGenerator.getMethodDescriptionFromDb(provider.getInterfaceName(), methodName);
+                    tool.put("description", (dbDesc != null && !dbDesc.isBlank())
+                            ? dbDesc
+                            : String.format("调用 %s 服务的 %s 方法", provider.getInterfaceName(), methodName));
                     
                     // 根据实际方法参数生成 inputSchema
                     Map<String, Object> inputSchema = mcpToolSchemaGenerator.createInputSchemaFromMethod(

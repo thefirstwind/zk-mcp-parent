@@ -432,8 +432,10 @@ public class McpMessageController {
                                                 tool.put("name", toolName);
                                                 
                                                 // 工具描述
-                                                tool.put("description", String.format("调用 %s 服务的 %s 方法", 
-                                                        provider.getInterfaceName(), method.trim()));
+                                                String dbDesc = mcpToolSchemaGenerator.getMethodDescriptionFromDb(provider.getInterfaceName(), method.trim());
+                                                tool.put("description", (dbDesc != null && !dbDesc.isBlank())
+                                                        ? dbDesc
+                                                        : String.format("调用 %s 服务的 %s 方法", provider.getInterfaceName(), method.trim()));
                                                 
                                                 // 根据实际方法参数生成 inputSchema
                                                 Map<String, Object> inputSchema = mcpToolSchemaGenerator.createInputSchemaFromMethod(

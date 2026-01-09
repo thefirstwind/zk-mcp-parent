@@ -63,6 +63,13 @@ public class DubboMethodParameterEntity {
      * 参数描述
      */
     private String parameterDescription;
+
+    /**
+     * 参数结构化 Schema（JSON 字符串）
+     *
+     * 用于表达嵌套复杂对象/集合/Map 的结构，最终用于生成 MCP 工具的 inputSchema。
+     */
+    private String parameterSchemaJson;
     
     /**
      * 创建时间

@@ -196,8 +196,10 @@ public class NacosMcpRegistrationService {
                     tool.put("name", toolName);
                     
                     // 工具描述
-                    tool.put("description", String.format("调用 %s 服务的 %s 方法", 
-                            provider.getInterfaceName(), methodName));
+                    String dbDesc = mcpToolSchemaGenerator.getMethodDescriptionFromDb(provider.getInterfaceName(), methodName);
+                    tool.put("description", (dbDesc != null && !dbDesc.isBlank())
+                            ? dbDesc
+                            : String.format("调用 %s 服务的 %s 方法", provider.getInterfaceName(), methodName));
                     
                     // 根据数据库中持久化的参数信息生成 inputSchema
                     Map<String, Object> inputSchema = createInputSchemaFromDatabase(
@@ -287,6 +289,7 @@ public class NacosMcpRegistrationService {
                     String paramName = param.getParameterName();
                     String paramType = param.getParameterType();
                     String paramDescription = param.getParameterDescription();
+                    String paramSchemaJson = param.getParameterSchemaJson();
                     
                     // 如果参数名为空，使用默认名称
                     if (paramName == null || paramName.isEmpty()) {
@@ -295,29 +298,60 @@ public class NacosMcpRegistrationService {
                     
                     log.debug("    Parameter[{}]: {} ({})", param.getParameterOrder(), paramName, paramType);
                     
-                    Map<String, Object> paramProperty = new HashMap<>();
-                    
-                    // 设置描述：优先使用数据库中的描述，否则根据类型生成
-                    if (paramDescription != null && !paramDescription.isEmpty()) {
-                        paramProperty.put("description", paramDescription);
-                    } else {
-                        paramProperty.put("description", getParameterDescriptionFromType(paramType, paramName));
+                    Map<String, Object> paramProperty = null;
+                    boolean paramRequired = true;
+
+                    // If structured schema exists, use it (preferred)
+                    if (paramSchemaJson != null && !paramSchemaJson.isBlank()) {
+                        try {
+                            com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(paramSchemaJson);
+                            com.fasterxml.jackson.databind.JsonNode requiredNode = root.get("required");
+                            if (requiredNode != null && requiredNode.isBoolean()) {
+                                paramRequired = requiredNode.asBoolean(true);
+                            }
+                            com.fasterxml.jackson.databind.JsonNode schemaNode = root.get("jsonSchema");
+                            if (schemaNode == null || schemaNode.isMissingNode() || schemaNode.isNull()) {
+                                schemaNode = root.get("schema");
+                            }
+                            if (schemaNode != null && schemaNode.isObject()) {
+                                @SuppressWarnings("unchecked")
+                                Map<String, Object> schemaMap = objectMapper.convertValue(schemaNode, Map.class);
+                                paramProperty = new HashMap<>(schemaMap);
+                            }
+                        } catch (Exception ex) {
+                            log.debug("⚠️ Failed to parse parameter_schema_json for {}.{} param={} error={}",
+                                    interfaceName, methodName, paramName, ex.getMessage());
+                        }
+                    }
+
+                    if (paramProperty == null) {
+                        paramProperty = new HashMap<>();
+                        // 根据参数类型设置 type
+                        String jsonType = getJsonTypeFromJavaTypeName(paramType);
+                        paramProperty.put("type", jsonType);
+
+                        // 如果是数组或集合类型，设置 items
+                        if (paramType != null && (paramType.endsWith("[]") || paramType.contains("List") ||
+                                paramType.contains("Set") || paramType.contains("Collection"))) {
+                            Map<String, Object> items = new HashMap<>();
+                            items.put("type", "any");
+                            paramProperty.put("items", items);
+                        }
                     }
                     
-                    // 根据参数类型设置 type
-                    String jsonType = getJsonTypeFromJavaTypeName(paramType);
-                    paramProperty.put("type", jsonType);
-                    
-                    // 如果是数组或集合类型，设置 items
-                    if (paramType != null && (paramType.endsWith("[]") || paramType.contains("List") || 
-                            paramType.contains("Set") || paramType.contains("Collection"))) {
-                        Map<String, Object> items = new HashMap<>();
-                        items.put("type", "any");
-                        paramProperty.put("items", items);
+                    // 设置描述：优先使用数据库中的描述，否则根据类型生成
+                    String finalDesc = (paramDescription != null && !paramDescription.isEmpty())
+                            ? paramDescription
+                            : getParameterDescriptionFromType(paramType, paramName);
+                    if (!paramProperty.containsKey("description") || paramProperty.get("description") == null ||
+                            String.valueOf(paramProperty.get("description")).isBlank()) {
+                        paramProperty.put("description", finalDesc);
                     }
                     
                     properties.put(paramName, paramProperty);
-                    required.add(paramName);
+                    if (paramRequired) {
+                        required.add(paramName);
+                    }
                 }
             }
         } catch (Exception e) {
