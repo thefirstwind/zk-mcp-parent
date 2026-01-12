@@ -53,23 +53,9 @@ public class McpMessageController {
     /**
      * 处理 MCP 消息：POST /mcp/{serviceName}/message?sessionId=xxx（路径参数方式，参考 mcp-router-v3）
      */
-    /**
-     * 处理 CORS 预检请求：OPTIONS /mcp/{serviceName}/message
-     */
-    @RequestMapping(value = "/{serviceName}/message", method = RequestMethod.OPTIONS)
-    public ResponseEntity<Void> handleOptionsWithPath(@PathVariable String serviceName) {
-        log.debug("📨 CORS preflight request: OPTIONS /mcp/{}/message", serviceName);
-        return ResponseEntity.ok()
-                .header("Access-Control-Allow-Origin", "*")
-                .header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
-                .header("Access-Control-Allow-Headers", "*")
-                .header("Access-Control-Max-Age", "3600")
-                .build();
-    }
-    
     @PostMapping(value = "/{serviceName}/message", 
                  consumes = MediaType.APPLICATION_JSON_VALUE,
-                 produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.ALL_VALUE})
+                 produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Map<String, Object>> handleMessageWithPath(
             @PathVariable String serviceName,
             @RequestParam(required = false) String sessionId,
@@ -92,27 +78,13 @@ public class McpMessageController {
         // 调用统一的处理逻辑
         return handleMessage(sessionId, endpoint, request, serviceName);
     }
-    
-    /**
-     * 处理 CORS 预检请求：OPTIONS /mcp/message
-     */
-    @RequestMapping(value = "/message", method = RequestMethod.OPTIONS)
-    public ResponseEntity<Void> handleOptions() {
-        log.debug("📨 CORS preflight request: OPTIONS /mcp/message");
-        return ResponseEntity.ok()
-                .header("Access-Control-Allow-Origin", "*")
-                .header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
-                .header("Access-Control-Allow-Headers", "*")
-                .header("Access-Control-Max-Age", "3600")
-                .build();
-    }
-    
+
     /**
      * 处理 MCP 消息：POST /mcp/message?sessionId=xxx（查询参数方式）
      */
     @PostMapping(value = "/message", 
                  consumes = MediaType.APPLICATION_JSON_VALUE,
-                 produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.ALL_VALUE})
+                 produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Map<String, Object>> handleMessage(
             @RequestParam(required = false) String sessionId,
             @RequestParam(required = false) String endpoint,  // 从 URL 参数获取 endpoint
@@ -273,34 +245,7 @@ public class McpMessageController {
                         .body(Map.of("status", "accepted", 
                                 "message", "Notification ignored"));
             }
-            
-            // initialize 方法处理：
-            // 1. 如果有 SSE emitter，通过 SSE 发送响应（客户端会通过 SSE 接收后续的 tools/list 等响应）
-            // 2. 如果没有 SSE emitter（直接 HTTP 调用），直接返回 JSON 响应
-            if ("initialize".equals(method)) {
-                if (emitter != null) {
-                    // SSE 模式：通过 SSE 发送响应
-                    log.info("📨 Handling initialize request via SSE: sessionId={}, endpoint={}", sessionId, endpoint);
-                    try {
-                        handleInitialize(emitter, request, id, sessionId);
-                        // 返回 202 Accepted（响应通过 SSE 发送）
-                        return ResponseEntity.accepted()
-                                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                                .body(Map.of("status", "accepted", 
-                                        "message", "Request accepted, response will be sent via SSE"));
-                    } catch (IOException e) {
-                        log.error("❌ Failed to send initialize response via SSE: sessionId={}, id={}", 
-                                sessionId, id, e);
-                        // 如果 SSE 发送失败，回退到 RESTful 响应
-                        return handleInitializeRestful(request, id, endpoint, sessionId);
-                    }
-                } else {
-                    // 直接 HTTP 调用：返回 JSON 响应
-                    log.info("📨 Handling initialize request (RESTful): sessionId={}, endpoint={}", sessionId, endpoint);
-                    return handleInitializeRestful(request, id, endpoint, sessionId);
-                }
-            }
-            
+
             // 如果是直接 HTTP 调用（没有 SSE emitter），直接返回 JSON 响应
             if (isDirectHttpCall) {
                 log.info("📨 Direct HTTP call: method={}, sessionId={}, endpoint={}", method, sessionId, endpoint);
@@ -310,7 +255,9 @@ public class McpMessageController {
             // SSE 模式：通过 SSE 发送响应
             log.info("📨 Processing SSE message: method={}, sessionId={}, endpoint={}, id={}", 
                     method, sessionId, endpoint, id);
-            if ("prompts/list".equals(method)) {
+            if ("initialize".equals(method)) {
+                handleInitialize(emitter, request, id, sessionId);
+            } else if ("prompts/list".equals(method)) {
                 handlePromptsList(emitter, endpoint, id, sessionId);
             } else if ("tools/list".equals(method)) {
                 log.info("🔧 Calling handleToolsList: endpoint={}, id={}, sessionId={}", endpoint, id, sessionId);
@@ -418,76 +365,7 @@ public class McpMessageController {
             throw e;
         }
     }
-    
-    /**
-     * 处理 initialize 请求（RESTful 模式，立即返回 JSON 响应）
-     * 关键：必须立即响应，mcp-router-v3 的初始化超时只有 200ms
-     */
-    private ResponseEntity<Map<String, Object>> handleInitializeRestful(
-            Map<String, Object> request, String id, String endpoint, String sessionId) {
-        log.info("📨 Handling initialize request (RESTful): sessionId={}, endpoint={}, id={}", sessionId, endpoint, id);
-        
-        // 如果 endpoint 为 null，尝试从 session 获取
-        if (endpoint == null && sessionId != null) {
-            endpoint = sessionManager.getEndpointForSession(sessionId);
-        }
-        
-        String serviceName = endpoint != null ? endpoint : "zkInfo-MCP-Server";
-        
-        // 如果 endpoint 是 MCP 服务名称，使用它作为 serverInfo.name
-        if (endpoint != null && endpoint.startsWith("zk-mcp-")) {
-            serviceName = endpoint;
-        }
-        
-        // 如果 endpoint 以 virtual- 开头，去掉前缀
-        if (endpoint != null && endpoint.startsWith("virtual-")) {
-            endpoint = endpoint.substring("virtual-".length());
-        }
-        
-        // 构建响应（使用 LinkedHashMap 确保顺序）
-        Map<String, Object> result = new java.util.LinkedHashMap<>();
-        result.put("protocolVersion", "2024-11-05");
-        
-        // 参考 mcp-router-v3 的实现，设置完整的 capabilities 以触发客户端自动调用 tools/list、resources/list、prompts/list
-        Map<String, Object> capabilities = new java.util.LinkedHashMap<>();
-        
-        // 设置 tools 能力（listChanged = true 会触发客户端自动调用 tools/list）
-        Map<String, Object> toolsCap = new java.util.LinkedHashMap<>();
-        toolsCap.put("listChanged", true);
-        capabilities.put("tools", toolsCap);
-        
-        // 设置 resources 能力（listChanged = true 会触发客户端自动调用 resources/list）
-        Map<String, Object> resourcesCap = new java.util.LinkedHashMap<>();
-        resourcesCap.put("subscribe", false);
-        resourcesCap.put("listChanged", true);
-        capabilities.put("resources", resourcesCap);
-        
-        // 设置 prompts 能力（listChanged = true 会触发客户端自动调用 prompts/list）
-        Map<String, Object> promptsCap = new java.util.LinkedHashMap<>();
-        promptsCap.put("listChanged", true);
-        capabilities.put("prompts", promptsCap);
-        
-        result.put("capabilities", capabilities);
-        
-        Map<String, Object> serverInfo = new java.util.LinkedHashMap<>();
-        serverInfo.put("name", serviceName);
-        serverInfo.put("version", "1.0.0");
-        result.put("serverInfo", serverInfo);
-        
-        Map<String, Object> response = new java.util.LinkedHashMap<>();
-        response.put("jsonrpc", "2.0");
-        response.put("id", id != null ? id : "null");
-        response.put("result", result);
-        
-        log.info("✅ Initialize response (RESTful): sessionId={}, id={}, serviceName={}", 
-                sessionId, id, serviceName);
-        
-        // 明确设置响应头，确保 Content Negotiation 不会返回 406
-        return ResponseEntity.ok()
-                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                .body(response);
-    }
-    
+
     /**
      * 获取 endpoint 的工具列表（内部方法，供 SSE 和 RESTful 调用复用）
      */
@@ -572,10 +450,8 @@ public class McpMessageController {
                                                 tool.put("name", toolName);
                                                 
                                                 // 工具描述
-                                                String dbDesc = mcpToolSchemaGenerator.getMethodDescriptionFromDb(provider.getInterfaceName(), method.trim());
-                                                tool.put("description", (dbDesc != null && !dbDesc.isBlank())
-                                                        ? dbDesc
-                                                        : String.format("调用 %s 服务的 %s 方法", provider.getInterfaceName(), method.trim()));
+                                                tool.put("description", String.format("调用 %s 服务的 %s 方法",
+                                                        provider.getInterfaceName(), method.trim()));
                                                 
                                                 // 根据实际方法参数生成 inputSchema
                                                 Map<String, Object> inputSchema = mcpToolSchemaGenerator.createInputSchemaFromMethod(

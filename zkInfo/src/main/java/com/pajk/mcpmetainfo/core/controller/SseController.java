@@ -73,17 +73,9 @@ public class SseController {
     @GetMapping(value = "/sse", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public ResponseEntity<SseEmitter> sseStandard(
             @RequestParam(required = false) String serviceName,
-            @RequestParam(required = false) String url,  // MCP Inspector 代理模式参数
-            @RequestParam(required = false) String transportType,  // MCP Inspector 代理模式参数
             @RequestHeader(value = "X-Service-Name", required = false) String serviceNameHeader,
             @RequestHeader(value = "Host", required = false) String hostHeader) {
-        
-        // 如果提供了 url 参数（MCP Inspector 代理模式），忽略它，因为这是代理服务器的参数
-        // 我们只需要处理 serviceName
-        if (url != null && !url.isEmpty()) {
-            log.debug("📨 SSE request with url parameter (MCP Inspector proxy mode): url={}, transportType={}", url, transportType);
-        }
-        
+
         String actualServiceName = serviceName != null ? serviceName : serviceNameHeader;
         
         // 如果还没有 serviceName，尝试从 Nacos 注册信息中查找
@@ -206,15 +198,7 @@ public class SseController {
             endpoint = tryServiceName;
         }
         
-        try {
-            return handleSse(endpoint);
-        } catch (Exception e) {
-            log.error("❌ Error in sseStandard for serviceName: {}, endpoint: {}", actualServiceName, endpoint, e);
-            // 返回 500 错误，但提供友好的错误信息
-            return ResponseEntity.status(500)
-                    .header("Content-Type", MediaType.APPLICATION_JSON_VALUE)
-                    .body(null);
-        }
+        return handleSse(endpoint);
     }
     
     /**
@@ -304,135 +288,110 @@ public class SseController {
      * 处理 SSE 连接
      */
     private ResponseEntity<SseEmitter> handleSse(String endpoint) {
-        String sessionId = null;
-        SseEmitter emitter = null;
-        try {
-            // 解析 endpoint
-            EndpointResolver.EndpointInfo endpointInfo = endpointResolver.resolveEndpoint(endpoint)
-                    .orElse(null);
-            
-            String mcpServiceName;
-            if (endpointInfo == null) {
-                log.warn("⚠️ Endpoint not found: {}, but creating SSE connection anyway", endpoint);
-                // 如果无法解析 endpoint，判断是否为虚拟项目，使用 virtual-{endpoint} 格式
-                // 否则使用 endpoint 本身作为 serviceName（支持直接使用 MCP 服务名称如 zk-mcp-*）
-                // 这里无法判断是否为虚拟项目，所以先尝试使用 endpoint 本身
-                mcpServiceName = endpoint;
-            } else {
-                // 使用解析后的 mcpServiceName（虚拟项目会是 virtual-{endpointName} 格式）
-                mcpServiceName = endpointInfo.getMcpServiceName();
-                log.info("✅ Resolved endpoint '{}' to MCP service: {}", endpoint, mcpServiceName);
-            }
-            
-            // 创建 SseEmitter（超时时间 10 分钟，与 mcp-router-v3 保持一致）
-            // 注意：实际会话超时由 SessionCleanupService 定期清理，这里设置较长的超时时间以避免过早断开
-            // 但会话在 Redis 中的 TTL 是 10 分钟，超过 10 分钟未活跃会被清理
-            emitter = new SseEmitter(10 * 60 * 1000L);
-            sessionId = UUID.randomUUID().toString();
-            
-            // 将 sessionId 和 emitter 声明为 final，以便在 lambda 中使用
-            final String finalSessionId = sessionId;
-            final SseEmitter finalEmitter = emitter;
-            
-            // 注册 session（WebMVC 模式使用 SseEmitter）
-            // 参考 mcp-router-v3 的 initializeSession：先注册 serviceName，再注册 emitter
-            sseEmitterMap.put(finalSessionId, finalEmitter);
-            sessionManager.registerSseEmitter(finalSessionId, endpoint, finalEmitter);
-            
-            // 注册 serviceName（参考 mcp-router-v3 的 registerSessionService）
-            if (mcpServiceName != null && !mcpServiceName.isEmpty()) {
-                sessionManager.registerSessionService(finalSessionId, mcpServiceName);
-                log.info("✅ Registered serviceName for SSE connection: sessionId={}, serviceName={}", finalSessionId, mcpServiceName);
-            }
-            
-            // 初始化时调用 touch（参考 mcp-router-v3 的 initializeSession）
-            try {
-                sessionManager.touch(finalSessionId);
-            } catch (Exception e) {
-                log.warn("⚠️ Failed to touch session during initialization: {}", e.getMessage());
-            }
-            
-            // 构建消息端点 URL（从请求头动态构建，参考 mcp-router-v3）
-            // 如果有 serviceName，使用 /mcp/{serviceName}/message 格式；否则使用 /mcp/message 格式
-            // 注意：IP 请求时不包含 context-path，域名请求时包含 context-path
-            String baseUrl = buildBaseUrlFromRequestForMessageEndpoint();
-            String messageEndpoint;
-            if (mcpServiceName != null && !mcpServiceName.isEmpty()) {
-                // 路径参数方式：/mcp/{serviceName}/message?sessionId={sessionId}
-                messageEndpoint = String.format("%s/mcp/%s/message?sessionId=%s", baseUrl, mcpServiceName, finalSessionId);
-            } else {
-                // 查询参数方式：/mcp/message?sessionId={sessionId}
-                messageEndpoint = String.format("%s/mcp/message?sessionId=%s", baseUrl, finalSessionId);
-            }
-            log.info("📡 Generated message endpoint: serviceName={}, messageEndpoint={}", mcpServiceName, messageEndpoint);
-            
-            try {
-                // 发送 endpoint 事件（客户端收到后会通过 POST /mcp/message 发送 initialize 和 tools/list 请求）
-                // 注意：使用 id() 避免空行，确保 SSE 格式正确
-                finalEmitter.send(SseEmitter.event()
-                        .name("endpoint")
-                        .id(finalSessionId)
-                        .data(messageEndpoint));
-                
-                // 启动心跳并保存任务引用（传递 sessionId 用于日志和清理）
-                java.util.concurrent.ScheduledFuture<?> heartbeatTask = startHeartbeat(finalEmitter, finalSessionId);
-                heartbeatTasks.put(finalSessionId, heartbeatTask);
-                
-                // 设置完成和超时回调
-                finalEmitter.onCompletion(() -> {
-                    log.info("SSE connection completed for session: {}", finalSessionId);
-                    cleanupSession(finalSessionId);
-                });
-                
-                finalEmitter.onTimeout(() -> {
-                    log.warn("SSE connection timeout for session: {}", finalSessionId);
-                    cleanupSession(finalSessionId);
-                });
-                
-                finalEmitter.onError((ex) -> {
-                    // Broken pipe、Connection reset 和 already completed 是正常的客户端断开情况，降级为 DEBUG
-                    String errorMsg = ex.getMessage();
-                    if (ex instanceof IOException && errorMsg != null && 
-                        (errorMsg.contains("Broken pipe") || errorMsg.contains("Connection reset"))) {
-                        log.debug("ℹ️ Client disconnected ({}) for session: {}", errorMsg, finalSessionId);
-                    } else if (ex instanceof IllegalStateException && errorMsg != null && errorMsg.contains("already completed")) {
-                        log.debug("ℹ️ SSE emitter already completed for session: {}", finalSessionId);
-                    } else {
-                        log.error("SSE connection error for session: {}", finalSessionId, ex);
-                    }
-                    cleanupSession(finalSessionId);
-                });
-                
-            } catch (IOException e) {
-                log.error("Failed to send initial SSE event", e);
-                finalEmitter.completeWithError(e);
-                return ResponseEntity.internalServerError().build();
-            }
-            
-            // 设置 SSE 响应头（参考 mcp-router-v3）
-            return ResponseEntity.ok()
-                    .header("Content-Type", MediaType.TEXT_EVENT_STREAM_VALUE)
-                    .header("Cache-Control", "no-cache, no-transform")
-                    .header("Connection", "keep-alive")
-                    .header("X-Accel-Buffering", "no")
-                    .body(finalEmitter);
-                    
-        } catch (Exception e) {
-            log.error("❌ Error creating SSE connection for endpoint: {}", endpoint, e);
-            // 清理可能已创建的资源
-            if (sessionId != null) {
-                try {
-                    cleanupSession(sessionId);
-                } catch (Exception cleanupEx) {
-                    log.debug("Failed to cleanup session during error handling: {}", cleanupEx.getMessage());
-                }
-            }
-            // 返回 500 错误，但提供友好的错误信息
-            // 注意：无法返回 SseEmitter，所以返回错误响应
-            return ResponseEntity.status(500)
-                    .header("Content-Type", MediaType.APPLICATION_JSON_VALUE)
-                    .body(null);
+        // 解析 endpoint
+        EndpointResolver.EndpointInfo endpointInfo = endpointResolver.resolveEndpoint(endpoint)
+                .orElse(null);
+
+        String mcpServiceName;
+        if (endpointInfo == null) {
+            log.warn("⚠️ Endpoint not found: {}, but creating SSE connection anyway", endpoint);
+            // 如果无法解析 endpoint，判断是否为虚拟项目，使用 virtual-{endpoint} 格式
+            // 否则使用 endpoint 本身作为 serviceName（支持直接使用 MCP 服务名称如 zk-mcp-*）
+            // 这里无法判断是否为虚拟项目，所以先尝试使用 endpoint 本身
+            mcpServiceName = endpoint;
+        } else {
+            // 使用解析后的 mcpServiceName（虚拟项目会是 virtual-{endpointName} 格式）
+            mcpServiceName = endpointInfo.getMcpServiceName();
+            log.info("✅ Resolved endpoint '{}' to MCP service: {}", endpoint, mcpServiceName);
         }
+
+        // 创建 SseEmitter（超时时间 10 分钟，与 mcp-router-v3 保持一致）
+        // 注意：实际会话超时由 SessionCleanupService 定期清理，这里设置较长的超时时间以避免过早断开
+        // 但会话在 Redis 中的 TTL 是 10 分钟，超过 10 分钟未活跃会被清理
+        SseEmitter emitter = new SseEmitter(10 * 60 * 1000L);
+        String sessionId = UUID.randomUUID().toString();
+
+        // 注册 session（WebMVC 模式使用 SseEmitter）
+        // 参考 mcp-router-v3 的 initializeSession：先注册 serviceName，再注册 emitter
+        sseEmitterMap.put(sessionId, emitter);
+        sessionManager.registerSseEmitter(sessionId, endpoint, emitter);
+
+        // 注册 serviceName（参考 mcp-router-v3 的 registerSessionService）
+        if (mcpServiceName != null && !mcpServiceName.isEmpty()) {
+            sessionManager.registerSessionService(sessionId, mcpServiceName);
+            log.info("✅ Registered serviceName for SSE connection: sessionId={}, serviceName={}", sessionId, mcpServiceName);
+        }
+
+        // 初始化时调用 touch（参考 mcp-router-v3 的 initializeSession）
+        try {
+            sessionManager.touch(sessionId);
+        } catch (Exception e) {
+            log.warn("⚠️ Failed to touch session during initialization: {}", e.getMessage());
+        }
+
+        // 构建消息端点 URL（从请求头动态构建，参考 mcp-router-v3）
+        // 如果有 serviceName，使用 /mcp/{serviceName}/message 格式；否则使用 /mcp/message 格式
+        // 注意：IP 请求时不包含 context-path，域名请求时包含 context-path
+        String baseUrl = buildBaseUrlFromRequestForMessageEndpoint();
+        String messageEndpoint;
+        if (mcpServiceName != null && !mcpServiceName.isEmpty()) {
+            // 路径参数方式：/mcp/{serviceName}/message?sessionId={sessionId}
+            messageEndpoint = String.format("%s/mcp/%s/message?sessionId=%s", baseUrl, mcpServiceName, sessionId);
+        } else {
+            // 查询参数方式：/mcp/message?sessionId={sessionId}
+            messageEndpoint = String.format("%s/mcp/message?sessionId=%s", baseUrl, sessionId);
+        }
+        log.info("📡 Generated message endpoint: serviceName={}, messageEndpoint={}", mcpServiceName, messageEndpoint);
+
+        try {
+            // 发送 endpoint 事件（客户端收到后会通过 POST /mcp/message 发送 initialize 和 tools/list 请求）
+            // 注意：使用 id() 避免空行，确保 SSE 格式正确
+            emitter.send(SseEmitter.event()
+                    .name("endpoint")
+                    .id(sessionId)
+                    .data(messageEndpoint));
+
+            // 启动心跳并保存任务引用（传递 sessionId 用于日志和清理）
+            java.util.concurrent.ScheduledFuture<?> heartbeatTask = startHeartbeat(emitter, sessionId);
+            heartbeatTasks.put(sessionId, heartbeatTask);
+
+            // 设置完成和超时回调
+            emitter.onCompletion(() -> {
+                log.info("SSE connection completed for session: {}", sessionId);
+                cleanupSession(sessionId);
+            });
+
+            emitter.onTimeout(() -> {
+                log.warn("SSE connection timeout for session: {}", sessionId);
+                cleanupSession(sessionId);
+            });
+
+            emitter.onError((ex) -> {
+                // Broken pipe、Connection reset 和 already completed 是正常的客户端断开情况，降级为 DEBUG
+                String errorMsg = ex.getMessage();
+                if (ex instanceof IOException && errorMsg != null &&
+                    (errorMsg.contains("Broken pipe") || errorMsg.contains("Connection reset"))) {
+                    log.debug("ℹ️ Client disconnected ({}) for session: {}", errorMsg, sessionId);
+                } else if (ex instanceof IllegalStateException && errorMsg != null && errorMsg.contains("already completed")) {
+                    log.debug("ℹ️ SSE emitter already completed for session: {}", sessionId);
+                } else {
+                    log.error("SSE connection error for session: {}", sessionId, ex);
+                }
+                cleanupSession(sessionId);
+            });
+
+        } catch (IOException e) {
+            log.error("Failed to send initial SSE event", e);
+            emitter.completeWithError(e);
+            return ResponseEntity.internalServerError().build();
+        }
+
+        // 设置 SSE 响应头（参考 mcp-router-v3）
+        return ResponseEntity.ok()
+                .header("Cache-Control", "no-cache, no-transform")
+                .header("Connection", "keep-alive")
+                .header("X-Accel-Buffering", "no")
+                .body(emitter);
     }
     
     /**
