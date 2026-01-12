@@ -20,6 +20,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import org.springframework.web.bind.annotation.RequestMethod;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -32,7 +33,7 @@ import java.util.Map;
  */
 @Slf4j
 @RestController
-@RequestMapping("/mcp")
+@RequestMapping(value = "/mcp", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor
 @CrossOrigin(origins = "*")
 public class McpMessageController {
@@ -52,7 +53,23 @@ public class McpMessageController {
     /**
      * 处理 MCP 消息：POST /mcp/{serviceName}/message?sessionId=xxx（路径参数方式，参考 mcp-router-v3）
      */
-    @PostMapping(value = "/{serviceName}/message", consumes = MediaType.APPLICATION_JSON_VALUE)
+    /**
+     * 处理 CORS 预检请求：OPTIONS /mcp/{serviceName}/message
+     */
+    @RequestMapping(value = "/{serviceName}/message", method = RequestMethod.OPTIONS)
+    public ResponseEntity<Void> handleOptionsWithPath(@PathVariable String serviceName) {
+        log.debug("📨 CORS preflight request: OPTIONS /mcp/{}/message", serviceName);
+        return ResponseEntity.ok()
+                .header("Access-Control-Allow-Origin", "*")
+                .header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
+                .header("Access-Control-Allow-Headers", "*")
+                .header("Access-Control-Max-Age", "3600")
+                .build();
+    }
+    
+    @PostMapping(value = "/{serviceName}/message", 
+                 consumes = MediaType.APPLICATION_JSON_VALUE,
+                 produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.ALL_VALUE})
     public ResponseEntity<Map<String, Object>> handleMessageWithPath(
             @PathVariable String serviceName,
             @RequestParam(required = false) String sessionId,
@@ -77,9 +94,25 @@ public class McpMessageController {
     }
     
     /**
+     * 处理 CORS 预检请求：OPTIONS /mcp/message
+     */
+    @RequestMapping(value = "/message", method = RequestMethod.OPTIONS)
+    public ResponseEntity<Void> handleOptions() {
+        log.debug("📨 CORS preflight request: OPTIONS /mcp/message");
+        return ResponseEntity.ok()
+                .header("Access-Control-Allow-Origin", "*")
+                .header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
+                .header("Access-Control-Allow-Headers", "*")
+                .header("Access-Control-Max-Age", "3600")
+                .build();
+    }
+    
+    /**
      * 处理 MCP 消息：POST /mcp/message?sessionId=xxx（查询参数方式）
      */
-    @PostMapping(value = "/message", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PostMapping(value = "/message", 
+                 consumes = MediaType.APPLICATION_JSON_VALUE,
+                 produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.ALL_VALUE})
     public ResponseEntity<Map<String, Object>> handleMessage(
             @RequestParam(required = false) String sessionId,
             @RequestParam(required = false) String endpoint,  // 从 URL 参数获取 endpoint
@@ -231,6 +264,43 @@ public class McpMessageController {
         String id = request.get("id") != null ? request.get("id").toString() : null;
         
         try {
+            // JSON-RPC 通知（无 id）应不产生响应，直接忽略（参考 mcp-router-v3）
+            if (id == null && method != null && method.startsWith("notifications/")) {
+                log.info("ℹ️ Received JSON-RPC notification '{}', ignoring as per spec", method);
+                // 不通过 SSE 发送任何数据，直接返回 202 Accepted
+                return ResponseEntity.accepted()
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .body(Map.of("status", "accepted", 
+                                "message", "Notification ignored"));
+            }
+            
+            // initialize 方法处理：
+            // 1. 如果有 SSE emitter，通过 SSE 发送响应（客户端会通过 SSE 接收后续的 tools/list 等响应）
+            // 2. 如果没有 SSE emitter（直接 HTTP 调用），直接返回 JSON 响应
+            if ("initialize".equals(method)) {
+                if (emitter != null) {
+                    // SSE 模式：通过 SSE 发送响应
+                    log.info("📨 Handling initialize request via SSE: sessionId={}, endpoint={}", sessionId, endpoint);
+                    try {
+                        handleInitialize(emitter, request, id, sessionId);
+                        // 返回 202 Accepted（响应通过 SSE 发送）
+                        return ResponseEntity.accepted()
+                                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                                .body(Map.of("status", "accepted", 
+                                        "message", "Request accepted, response will be sent via SSE"));
+                    } catch (IOException e) {
+                        log.error("❌ Failed to send initialize response via SSE: sessionId={}, id={}", 
+                                sessionId, id, e);
+                        // 如果 SSE 发送失败，回退到 RESTful 响应
+                        return handleInitializeRestful(request, id, endpoint, sessionId);
+                    }
+                } else {
+                    // 直接 HTTP 调用：返回 JSON 响应
+                    log.info("📨 Handling initialize request (RESTful): sessionId={}, endpoint={}", sessionId, endpoint);
+                    return handleInitializeRestful(request, id, endpoint, sessionId);
+                }
+            }
+            
             // 如果是直接 HTTP 调用（没有 SSE emitter），直接返回 JSON 响应
             if (isDirectHttpCall) {
                 log.info("📨 Direct HTTP call: method={}, sessionId={}, endpoint={}", method, sessionId, endpoint);
@@ -240,9 +310,7 @@ public class McpMessageController {
             // SSE 模式：通过 SSE 发送响应
             log.info("📨 Processing SSE message: method={}, sessionId={}, endpoint={}, id={}", 
                     method, sessionId, endpoint, id);
-            if ("initialize".equals(method)) {
-                handleInitialize(emitter, request, id, sessionId);
-            } else if ("prompts/list".equals(method)) {
+            if ("prompts/list".equals(method)) {
                 handlePromptsList(emitter, endpoint, id, sessionId);
             } else if ("tools/list".equals(method)) {
                 log.info("🔧 Calling handleToolsList: endpoint={}, id={}, sessionId={}", endpoint, id, sessionId);
@@ -258,6 +326,7 @@ public class McpMessageController {
             
             // 返回 202 Accepted（响应通过 SSE 发送）
             return ResponseEntity.accepted()
+                    .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                     .body(Map.of("status", "accepted", 
                             "message", "Request accepted, response will be sent via SSE"));
             
@@ -270,12 +339,14 @@ public class McpMessageController {
                         sessionId, method, e.getMessage());
             }
             return ResponseEntity.accepted()
+                    .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                     .body(Map.of("status", "accepted", 
                             "message", "Request accepted, but client disconnected"));
         } catch (Exception e) {
             log.error("❌ Error handling MCP message: sessionId={}, method={}", sessionId, method, e);
             sendErrorResponseSafe(emitter, id, -32603, "Internal error: " + e.getMessage(), sessionId);
             return ResponseEntity.accepted()
+                    .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                     .body(Map.of("status", "accepted", 
                             "message", "Request accepted, error response will be sent via SSE"));
         }
@@ -346,6 +417,75 @@ public class McpMessageController {
                     sessionId, id, e);
             throw e;
         }
+    }
+    
+    /**
+     * 处理 initialize 请求（RESTful 模式，立即返回 JSON 响应）
+     * 关键：必须立即响应，mcp-router-v3 的初始化超时只有 200ms
+     */
+    private ResponseEntity<Map<String, Object>> handleInitializeRestful(
+            Map<String, Object> request, String id, String endpoint, String sessionId) {
+        log.info("📨 Handling initialize request (RESTful): sessionId={}, endpoint={}, id={}", sessionId, endpoint, id);
+        
+        // 如果 endpoint 为 null，尝试从 session 获取
+        if (endpoint == null && sessionId != null) {
+            endpoint = sessionManager.getEndpointForSession(sessionId);
+        }
+        
+        String serviceName = endpoint != null ? endpoint : "zkInfo-MCP-Server";
+        
+        // 如果 endpoint 是 MCP 服务名称，使用它作为 serverInfo.name
+        if (endpoint != null && endpoint.startsWith("zk-mcp-")) {
+            serviceName = endpoint;
+        }
+        
+        // 如果 endpoint 以 virtual- 开头，去掉前缀
+        if (endpoint != null && endpoint.startsWith("virtual-")) {
+            endpoint = endpoint.substring("virtual-".length());
+        }
+        
+        // 构建响应（使用 LinkedHashMap 确保顺序）
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("protocolVersion", "2024-11-05");
+        
+        // 参考 mcp-router-v3 的实现，设置完整的 capabilities 以触发客户端自动调用 tools/list、resources/list、prompts/list
+        Map<String, Object> capabilities = new java.util.LinkedHashMap<>();
+        
+        // 设置 tools 能力（listChanged = true 会触发客户端自动调用 tools/list）
+        Map<String, Object> toolsCap = new java.util.LinkedHashMap<>();
+        toolsCap.put("listChanged", true);
+        capabilities.put("tools", toolsCap);
+        
+        // 设置 resources 能力（listChanged = true 会触发客户端自动调用 resources/list）
+        Map<String, Object> resourcesCap = new java.util.LinkedHashMap<>();
+        resourcesCap.put("subscribe", false);
+        resourcesCap.put("listChanged", true);
+        capabilities.put("resources", resourcesCap);
+        
+        // 设置 prompts 能力（listChanged = true 会触发客户端自动调用 prompts/list）
+        Map<String, Object> promptsCap = new java.util.LinkedHashMap<>();
+        promptsCap.put("listChanged", true);
+        capabilities.put("prompts", promptsCap);
+        
+        result.put("capabilities", capabilities);
+        
+        Map<String, Object> serverInfo = new java.util.LinkedHashMap<>();
+        serverInfo.put("name", serviceName);
+        serverInfo.put("version", "1.0.0");
+        result.put("serverInfo", serverInfo);
+        
+        Map<String, Object> response = new java.util.LinkedHashMap<>();
+        response.put("jsonrpc", "2.0");
+        response.put("id", id != null ? id : "null");
+        response.put("result", result);
+        
+        log.info("✅ Initialize response (RESTful): sessionId={}, id={}, serviceName={}", 
+                sessionId, id, serviceName);
+        
+        // 明确设置响应头，确保 Content Negotiation 不会返回 406
+        return ResponseEntity.ok()
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .body(response);
     }
     
     /**
@@ -494,27 +634,65 @@ public class McpMessageController {
     private void handleToolsList(SseEmitter emitter, String endpoint, String id, String sessionId) throws IOException {
         log.info("📨 Handling tools/list request: endpoint={}, id={}, sessionId={}", endpoint, id, sessionId);
         
-        // 如果 endpoint 为 null，尝试从所有虚拟项目中查找
+        // 如果 endpoint 为 null，尝试从 session 中获取（多节点环境下，endpoint 存储在 Redis）
         String actualEndpoint = endpoint;
         if (actualEndpoint == null || actualEndpoint.isEmpty()) {
-            log.warn("⚠️ Endpoint is null in handleToolsList, trying to find from virtual projects");
-            List<VirtualProjectService.VirtualProjectInfo> virtualProjects = virtualProjectService.getAllVirtualProjects();
-            if (virtualProjects != null && virtualProjects.size() == 1) {
-                VirtualProjectService.VirtualProjectInfo vp = virtualProjects.get(0);
-                if (vp.getEndpoint() != null) {
-                    actualEndpoint = vp.getEndpoint().getEndpointName();
-                    log.info("📝 Using single virtual project endpoint: {}", actualEndpoint);
-                }
-            } else if (virtualProjects != null && virtualProjects.size() > 1) {
-                log.warn("⚠️ Multiple virtual projects found ({}), cannot auto-select endpoint", virtualProjects.size());
-                // 列出所有虚拟项目，帮助调试
-                for (VirtualProjectService.VirtualProjectInfo vp : virtualProjects) {
-                    if (vp.getEndpoint() != null) {
-                        log.info("   Available endpoint: {}", vp.getEndpoint().getEndpointName());
+            if (sessionId != null && !sessionId.isEmpty()) {
+                // 1. 尝试从 session 中获取 endpoint
+                actualEndpoint = sessionManager.getEndpointForSession(sessionId);
+                if (actualEndpoint != null && !actualEndpoint.isEmpty()) {
+                    log.info("📝 Using endpoint from session: {}", actualEndpoint);
+                } else {
+                    // 2. 尝试从 session 中获取 serviceName，然后转换为 endpoint
+                    String serviceName = sessionManager.getServiceName(sessionId);
+                    if (serviceName != null && !serviceName.isEmpty()) {
+                        // 如果 serviceName 以 virtual- 开头，去掉前缀
+                        if (serviceName.startsWith("virtual-")) {
+                            actualEndpoint = serviceName.substring("virtual-".length());
+                            log.info("📝 Using endpoint from session serviceName: {} -> {}", serviceName, actualEndpoint);
+                        } else if (serviceName.startsWith("mcp-")) {
+                            actualEndpoint = serviceName.substring("mcp-".length());
+                            log.info("📝 Using endpoint from session serviceName: {} -> {}", serviceName, actualEndpoint);
+                        } else {
+                            actualEndpoint = serviceName;
+                            log.info("📝 Using serviceName as endpoint: {}", actualEndpoint);
+                        }
                     }
                 }
-            } else {
-                log.warn("⚠️ No virtual projects found");
+            }
+            
+            // 3. 如果仍然为 null，尝试从所有虚拟项目中查找（向后兼容）
+            if (actualEndpoint == null || actualEndpoint.isEmpty()) {
+                log.warn("⚠️ Endpoint is null in handleToolsList, trying to find from virtual projects");
+                List<VirtualProjectService.VirtualProjectInfo> virtualProjects = virtualProjectService.getAllVirtualProjects();
+                if (virtualProjects != null && virtualProjects.size() == 1) {
+                    VirtualProjectService.VirtualProjectInfo vp = virtualProjects.get(0);
+                    if (vp.getEndpoint() != null) {
+                        actualEndpoint = vp.getEndpoint().getEndpointName();
+                        log.info("📝 Using single virtual project endpoint: {}", actualEndpoint);
+                    }
+                } else if (virtualProjects != null && virtualProjects.size() > 1) {
+                    log.warn("⚠️ Multiple virtual projects found ({}), cannot auto-select endpoint", virtualProjects.size());
+                    // 列出所有虚拟项目，帮助调试
+                    for (VirtualProjectService.VirtualProjectInfo vp : virtualProjects) {
+                        if (vp.getEndpoint() != null) {
+                            log.info("   Available endpoint: {}", vp.getEndpoint().getEndpointName());
+                        }
+                    }
+                } else {
+                    log.warn("⚠️ No virtual projects found");
+                }
+            }
+        }
+        
+        // 如果 endpoint 以 virtual- 或 mcp- 开头，去掉前缀再解析
+        if (actualEndpoint != null) {
+            if (actualEndpoint.startsWith("virtual-")) {
+                actualEndpoint = actualEndpoint.substring("virtual-".length());
+                log.info("📝 Endpoint '{}' starts with virtual-, using '{}' for lookup", endpoint, actualEndpoint);
+            } else if (actualEndpoint.startsWith("mcp-")) {
+                actualEndpoint = actualEndpoint.substring("mcp-".length());
+                log.info("📝 Endpoint '{}' starts with mcp-, using '{}' for lookup", endpoint, actualEndpoint);
             }
         }
         
@@ -550,39 +728,76 @@ public class McpMessageController {
         Map<String, Object> params = (Map<String, Object>) request.get("params");
         String toolName = (String) params.get("name");
 
-        // 如果 endpoint 为 null，尝试从所有虚拟项目中查找
+        // 如果 endpoint 为 null，尝试从 session 中获取（多节点环境下，endpoint 存储在 Redis）
         String actualEndpoint = endpoint;
         if (actualEndpoint == null || actualEndpoint.isEmpty()) {
-            log.warn("⚠️ Endpoint is null in handleToolCall, trying to find from virtual projects");
-            List<VirtualProjectService.VirtualProjectInfo> virtualProjects = virtualProjectService.getAllVirtualProjects();
-            if (virtualProjects != null && virtualProjects.size() == 1) {
-                VirtualProjectService.VirtualProjectInfo vp = virtualProjects.get(0);
-                if (vp.getEndpoint() != null) {
-                    actualEndpoint = vp.getEndpoint().getEndpointName();
-                    log.info("📝 Using single virtual project endpoint: {}", actualEndpoint);
+            if (sessionId != null && !sessionId.isEmpty()) {
+                // 1. 尝试从 session 中获取 endpoint
+                actualEndpoint = sessionManager.getEndpointForSession(sessionId);
+                if (actualEndpoint != null && !actualEndpoint.isEmpty()) {
+                    log.info("📝 Using endpoint from session: {}", actualEndpoint);
+                } else {
+                    // 2. 尝试从 session 中获取 serviceName，然后转换为 endpoint
+                    String serviceName = sessionManager.getServiceName(sessionId);
+                    if (serviceName != null && !serviceName.isEmpty()) {
+                        // 如果 serviceName 以 virtual- 开头，去掉前缀
+                        if (serviceName.startsWith("virtual-")) {
+                            actualEndpoint = serviceName.substring("virtual-".length());
+                            log.info("📝 Using endpoint from session serviceName: {} -> {}", serviceName, actualEndpoint);
+                        } else if (serviceName.startsWith("mcp-")) {
+                            actualEndpoint = serviceName.substring("mcp-".length());
+                            log.info("📝 Using endpoint from session serviceName: {} -> {}", serviceName, actualEndpoint);
+                        } else {
+                            actualEndpoint = serviceName;
+                            log.info("📝 Using serviceName as endpoint: {}", actualEndpoint);
+                        }
+                    }
                 }
-            } else if (virtualProjects != null && virtualProjects.size() > 1) {
-                log.warn("⚠️ Multiple virtual projects found ({}), cannot auto-select endpoint", virtualProjects.size());
+            }
+            
+            // 3. 如果仍然为 null，尝试从所有虚拟项目中查找（向后兼容）
+            if (actualEndpoint == null || actualEndpoint.isEmpty()) {
+                log.warn("⚠️ Endpoint is null in handleToolCall, trying to find from virtual projects");
+                List<VirtualProjectService.VirtualProjectInfo> virtualProjects = virtualProjectService.getAllVirtualProjects();
+                if (virtualProjects != null && virtualProjects.size() == 1) {
+                    VirtualProjectService.VirtualProjectInfo vp = virtualProjects.get(0);
+                    if (vp.getEndpoint() != null) {
+                        actualEndpoint = vp.getEndpoint().getEndpointName();
+                        log.info("📝 Using single virtual project endpoint: {}", actualEndpoint);
+                    }
+                } else if (virtualProjects != null && virtualProjects.size() > 1) {
+                    log.warn("⚠️ Multiple virtual projects found ({}), cannot auto-select endpoint", virtualProjects.size());
+                }
             }
         }
         
-        // 如果 endpoint 以 mcp- 开头，去掉前缀再解析（因为注册时不添加 mcp- 前缀）
-        if (actualEndpoint.startsWith("mcp-")) {
-            actualEndpoint = actualEndpoint.substring("mcp-".length());
-            log.info("📝 Endpoint '{}' starts with mcp-, using '{}' for lookup", endpoint, actualEndpoint);
+        // 如果 endpoint 以 virtual- 或 mcp- 开头，去掉前缀再解析
+        if (actualEndpoint != null) {
+            if (actualEndpoint.startsWith("virtual-")) {
+                actualEndpoint = actualEndpoint.substring("virtual-".length());
+                log.info("📝 Endpoint '{}' starts with virtual-, using '{}' for lookup", endpoint, actualEndpoint);
+            } else if (actualEndpoint.startsWith("mcp-")) {
+                actualEndpoint = actualEndpoint.substring("mcp-".length());
+                log.info("📝 Endpoint '{}' starts with mcp-, using '{}' for lookup", endpoint, actualEndpoint);
+            }
         }
         
         // 尝试解析 endpoint（但即使解析失败也继续执行，因为 McpExecutorService 会根据 toolName 自动查找服务）
-        java.util.Optional<EndpointResolver.EndpointInfo> endpointInfoOpt = endpointResolver.resolveEndpoint(actualEndpoint);
-        if (!endpointInfoOpt.isPresent()) {
-            log.warn("⚠️ Endpoint not found: {} (tried as: {}), but continuing execution. " +
-                    "McpExecutorService will try to find the service by toolName: {}", 
-                    endpoint, actualEndpoint, toolName);
-            // 不返回错误，让 McpExecutorService 尝试根据 toolName 查找服务
+        if (actualEndpoint != null && !actualEndpoint.isEmpty()) {
+            java.util.Optional<EndpointResolver.EndpointInfo> endpointInfoOpt = endpointResolver.resolveEndpoint(actualEndpoint);
+            if (!endpointInfoOpt.isPresent()) {
+                log.warn("⚠️ Endpoint not found: {} (tried as: {}), but continuing execution. " +
+                        "McpExecutorService will try to find the service by toolName: {}", 
+                        endpoint, actualEndpoint, toolName);
+                // 不返回错误，让 McpExecutorService 尝试根据 toolName 查找服务
+            } else {
+                EndpointResolver.EndpointInfo endpointInfo = endpointInfoOpt.get();
+                log.info("✅ Resolved endpoint '{}' to {} project: {}", 
+                        actualEndpoint, endpointInfo.isVirtualProject() ? "virtual" : "real", endpointInfo.getMcpServiceName());
+            }
         } else {
-            EndpointResolver.EndpointInfo endpointInfo = endpointInfoOpt.get();
-            log.info("✅ Resolved endpoint '{}' to {} project: {}", 
-                    actualEndpoint, endpointInfo.isVirtualProject() ? "virtual" : "real", endpointInfo.getMcpServiceName());
+            log.warn("⚠️ Endpoint is still null after all attempts, but continuing execution. " +
+                    "McpExecutorService will try to find the service by toolName: {}", toolName);
         }
 
         // MCP 协议中，arguments 应该是 Map<String, Object>，根据方法签名提取参数
@@ -693,14 +908,63 @@ public class McpMessageController {
     private void handleResourcesList(SseEmitter emitter, String endpoint, String id, String sessionId) throws IOException {
         log.info("📨 Handling resources/list request: endpoint={}, sessionId={}", endpoint, sessionId);
         
+        // 如果 endpoint 为 null，尝试从 session 中获取（多节点环境下，endpoint 存储在 Redis）
+        String actualEndpoint = endpoint;
+        if (actualEndpoint == null || actualEndpoint.isEmpty()) {
+            if (sessionId != null && !sessionId.isEmpty()) {
+                // 1. 尝试从 session 中获取 endpoint
+                actualEndpoint = sessionManager.getEndpointForSession(sessionId);
+                if (actualEndpoint != null && !actualEndpoint.isEmpty()) {
+                    log.info("📝 Using endpoint from session: {}", actualEndpoint);
+                } else {
+                    // 2. 尝试从 session 中获取 serviceName，然后转换为 endpoint
+                    String serviceName = sessionManager.getServiceName(sessionId);
+                    if (serviceName != null && !serviceName.isEmpty()) {
+                        // 如果 serviceName 以 virtual- 开头，去掉前缀
+                        if (serviceName.startsWith("virtual-")) {
+                            actualEndpoint = serviceName.substring("virtual-".length());
+                            log.info("📝 Using endpoint from session serviceName: {} -> {}", serviceName, actualEndpoint);
+                        } else if (serviceName.startsWith("mcp-")) {
+                            actualEndpoint = serviceName.substring("mcp-".length());
+                            log.info("📝 Using endpoint from session serviceName: {} -> {}", serviceName, actualEndpoint);
+                        } else {
+                            actualEndpoint = serviceName;
+                            log.info("📝 Using serviceName as endpoint: {}", actualEndpoint);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 如果 endpoint 以 virtual- 或 mcp- 开头，去掉前缀再解析
+        if (actualEndpoint != null) {
+            if (actualEndpoint.startsWith("virtual-")) {
+                actualEndpoint = actualEndpoint.substring("virtual-".length());
+                log.info("📝 Endpoint '{}' starts with virtual-, using '{}' for lookup", endpoint, actualEndpoint);
+            } else if (actualEndpoint.startsWith("mcp-")) {
+                actualEndpoint = actualEndpoint.substring("mcp-".length());
+                log.info("📝 Endpoint '{}' starts with mcp-, using '{}' for lookup", endpoint, actualEndpoint);
+            }
+        }
+        
         // 参考 tools/list 的实现，先解析 endpoint（确保 endpoint 正确解析）
-        java.util.Optional<EndpointResolver.EndpointInfo> endpointInfoOpt = endpointResolver.resolveEndpoint(endpoint);
-        if (!endpointInfoOpt.isPresent()) {
+        if (actualEndpoint == null || actualEndpoint.isEmpty()) {
             log.error("❌ Endpoint not found: {}. " +
                     "Please ensure: 1) For virtual projects, the endpoint is registered; " +
                     "2) For MCP service names (zk-mcp-*), the service is registered in a project.", endpoint);
             sendErrorResponseSafe(emitter, id, -32602, 
                     "Endpoint not found: " + endpoint + ". Please check if the service is registered.", sessionId);
+            return;
+        }
+        
+        java.util.Optional<EndpointResolver.EndpointInfo> endpointInfoOpt = endpointResolver.resolveEndpoint(actualEndpoint);
+        if (!endpointInfoOpt.isPresent()) {
+            log.error("❌ Endpoint not found: {} (tried as: {}). " +
+                    "Please ensure: 1) For virtual projects, the endpoint is registered; " +
+                    "2) For MCP service names (zk-mcp-*), the service is registered in a project.", 
+                    endpoint, actualEndpoint);
+            sendErrorResponseSafe(emitter, id, -32602, 
+                    "Endpoint not found: " + actualEndpoint + ". Please check if the service is registered.", sessionId);
             return;
         }
         
@@ -756,9 +1020,47 @@ public class McpMessageController {
     private void handlePromptsList(SseEmitter emitter, String endpoint, String id, String sessionId) throws IOException {
         log.info("📨 Handling prompts/list request: endpoint={}, sessionId={}", endpoint, sessionId);
         
+        // 如果 endpoint 为 null，尝试从 session 中获取（多节点环境下，endpoint 存储在 Redis）
+        String actualEndpoint = endpoint;
+        if (actualEndpoint == null || actualEndpoint.isEmpty()) {
+            if (sessionId != null && !sessionId.isEmpty()) {
+                // 1. 尝试从 session 中获取 endpoint
+                actualEndpoint = sessionManager.getEndpointForSession(sessionId);
+                if (actualEndpoint != null && !actualEndpoint.isEmpty()) {
+                    log.info("📝 Using endpoint from session: {}", actualEndpoint);
+                } else {
+                    // 2. 尝试从 session 中获取 serviceName，然后转换为 endpoint
+                    String serviceName = sessionManager.getServiceName(sessionId);
+                    if (serviceName != null && !serviceName.isEmpty()) {
+                        // 如果 serviceName 以 virtual- 开头，去掉前缀
+                        if (serviceName.startsWith("virtual-")) {
+                            actualEndpoint = serviceName.substring("virtual-".length());
+                            log.info("📝 Using endpoint from session serviceName: {} -> {}", serviceName, actualEndpoint);
+                        } else if (serviceName.startsWith("mcp-")) {
+                            actualEndpoint = serviceName.substring("mcp-".length());
+                            log.info("📝 Using endpoint from session serviceName: {} -> {}", serviceName, actualEndpoint);
+                        } else {
+                            actualEndpoint = serviceName;
+                            log.info("📝 Using serviceName as endpoint: {}", actualEndpoint);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 如果 endpoint 以 virtual- 或 mcp- 开头，去掉前缀再解析
+        if (actualEndpoint != null) {
+            if (actualEndpoint.startsWith("virtual-")) {
+                actualEndpoint = actualEndpoint.substring("virtual-".length());
+                log.info("📝 Endpoint '{}' starts with virtual-, using '{}' for lookup", endpoint, actualEndpoint);
+            } else if (actualEndpoint.startsWith("mcp-")) {
+                actualEndpoint = actualEndpoint.substring("mcp-".length());
+                log.info("📝 Endpoint '{}' starts with mcp-, using '{}' for lookup", endpoint, actualEndpoint);
+            }
+        }
+        
         // 参考 tools/list 的实现，先解析 endpoint（确保 endpoint 正确解析）
-        java.util.Optional<EndpointResolver.EndpointInfo> endpointInfoOpt = endpointResolver.resolveEndpoint(endpoint);
-        if (!endpointInfoOpt.isPresent()) {
+        if (actualEndpoint == null || actualEndpoint.isEmpty()) {
             log.error("❌ Endpoint not found: {}. " +
                     "Please ensure: 1) For virtual projects, the endpoint is registered; " +
                     "2) For MCP service names (zk-mcp-*), the service is registered in a project.", endpoint);
@@ -767,9 +1069,20 @@ public class McpMessageController {
             return;
         }
         
+        java.util.Optional<EndpointResolver.EndpointInfo> endpointInfoOpt = endpointResolver.resolveEndpoint(actualEndpoint);
+        if (!endpointInfoOpt.isPresent()) {
+            log.error("❌ Endpoint not found: {} (tried as: {}). " +
+                    "Please ensure: 1) For virtual projects, the endpoint is registered; " +
+                    "2) For MCP service names (zk-mcp-*), the service is registered in a project.", 
+                    endpoint, actualEndpoint);
+            sendErrorResponseSafe(emitter, id, -32602, 
+                    "Endpoint not found: " + actualEndpoint + ". Please check if the service is registered.", sessionId);
+            return;
+        }
+        
         EndpointResolver.EndpointInfo endpointInfo = endpointInfoOpt.get();
         log.info("✅ Resolved endpoint '{}' to {} project: {}", 
-                endpoint, endpointInfo.isVirtualProject() ? "virtual" : "real", endpointInfo.getMcpServiceName());
+                actualEndpoint, endpointInfo.isVirtualProject() ? "virtual" : "real", endpointInfo.getMcpServiceName());
         
         // 调用 McpPromptsService 获取提示列表（异步执行，避免阻塞）
         McpProtocol.ListPromptsParams params = new McpProtocol.ListPromptsParams();

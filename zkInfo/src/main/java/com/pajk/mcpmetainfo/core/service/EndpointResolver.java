@@ -22,6 +22,7 @@ public class EndpointResolver {
     private final VirtualProjectService virtualProjectService;
     private final ProjectManagementService projectManagementService;
     private final NacosV3ApiService nacosV3ApiService;
+    private final VirtualProjectRegistrationService virtualProjectRegistrationService;
     
     /**
      * Endpoint信息
@@ -110,9 +111,14 @@ public class EndpointResolver {
                     virtualServiceName, "mcp-server", null, true);
             if (instances != null && !instances.isEmpty()) {
                 // 找到健康实例，说明服务已注册到 Nacos
-                log.info("✅ Found virtual project service '{}' in Nacos (not in memory cache), " +
-                        "using service name: {}", actualEndpoint, virtualServiceName);
+                log.info("✅ Found virtual project service '{}' in Nacos, " +
+                        "attempting to load from database: {}", actualEndpoint, virtualServiceName);
+                
+                // 数据库中没有找到，但 Nacos 中有实例，说明可能是新注册的服务
+                log.info("✅ Virtual project service '{}' found in Nacos, " +
+                        "service is available: {}", actualEndpoint, virtualServiceName);
                 // 返回 EndpointInfo，project 和 endpoint 为 null，但 mcpServiceName 正确
+                // 后续的 tools/list 会通过 endpointName 从 Nacos 查询工具配置
                 return Optional.of(new EndpointInfo(null, null, virtualServiceName, true));
             }
         } catch (Exception e) {

@@ -37,6 +37,7 @@ public class NacosMcpRegistrationService {
     private final ConfigService configService; // 保留用于向后兼容
     private final NacosV3ApiService nacosV3ApiService; // Nacos v3 HTTP API 服务
     private final McpConverterService mcpConverterService;
+    private final ZkInfoNodeDiscoveryService zkInfoNodeDiscoveryService; // zkInfo 节点发现服务
     private final ObjectMapper objectMapper = new ObjectMapper();
     
     @Value("${nacos.v3.api.enabled:true}")
@@ -46,6 +47,9 @@ public class NacosMcpRegistrationService {
     private com.pajk.mcpmetainfo.core.util.McpToolSchemaGenerator mcpToolSchemaGenerator;
     
     @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.pajk.mcpmetainfo.core.util.EnhancedMcpToolGenerator enhancedMcpToolGenerator;
+    
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.pajk.mcpmetainfo.core.service.DubboServiceDbService dubboServiceDbService;
     
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -53,6 +57,9 @@ public class NacosMcpRegistrationService {
 
     @Value("${server.port:9091}")
     private int serverPort;
+
+    @Value("${server.servlet.context-path:}")
+    private String contextPath;
 
     @Value("${nacos.registry.service-group:mcp-server}")
     private String serviceGroup;
@@ -138,7 +145,8 @@ public class NacosMcpRegistrationService {
             // 4. 注册服务实例到Nacos服务列表（使用虚拟项目名称作为 application）
             // 虚拟项目使用永久节点（ephemeral=false），即使 zkInfo 停止也不会自动删除
             // 需要手动删除或通过 API 删除
-            registerInstanceToNacos(mcpServiceName, serviceId, version, tools, providers, virtualProjectName, false);
+            // 注册所有活跃的 zkInfo 节点
+            registerInstancesToNacosForAllNodes(mcpServiceName, serviceId, version, tools, providers, virtualProjectName, false);
             
             log.info("✅ Successfully registered virtual project MCP service: {} to Nacos (application: {})", 
                     mcpServiceName, virtualProjectName);
@@ -241,17 +249,53 @@ public class NacosMcpRegistrationService {
         List<String> required = new ArrayList<>();
         
         try {
-            // 如果数据库服务不可用，回退到使用 mcpToolSchemaGenerator
+            // 如果数据库服务不可用，优先使用 EnhancedMcpToolGenerator（反射），否则回退到 mcpToolSchemaGenerator
             if (dubboServiceDbService == null || dubboServiceMethodService == null) {
-                log.debug("⚠️ Database services not available, falling back to mcpToolSchemaGenerator");
+                log.debug("⚠️ Database services not available, trying EnhancedMcpToolGenerator (reflection)");
+                if (enhancedMcpToolGenerator != null) {
+                    try {
+                        Map<String, Object> enhancedTool = enhancedMcpToolGenerator.generateEnhancedTool(interfaceName, methodName);
+                        if (enhancedTool != null && enhancedTool.containsKey("inputSchema")) {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> reflectionSchema = (Map<String, Object>) enhancedTool.get("inputSchema");
+                            if (reflectionSchema != null && reflectionSchema.containsKey("properties")) {
+                                log.info("✅ Successfully generated inputSchema via reflection for {}.{}", 
+                                        interfaceName, methodName);
+                                return reflectionSchema;
+                            }
+                        }
+                    } catch (Exception e) {
+                        log.debug("⚠️ EnhancedMcpToolGenerator failed for {}.{}: {}, falling back to mcpToolSchemaGenerator", 
+                                interfaceName, methodName, e.getMessage());
+                    }
+                }
+                log.debug("⚠️ Falling back to mcpToolSchemaGenerator");
                 return mcpToolSchemaGenerator.createInputSchemaFromMethod(interfaceName, methodName);
             }
             
             // 1. 根据 interfaceName 查找服务
             DubboServiceEntity service = dubboServiceDbService.findByInterfaceName(interfaceName);
             if (service == null) {
-                log.debug("⚠️ Service not found in database: {}, falling back to mcpToolSchemaGenerator", 
+                log.debug("⚠️ Service not found in database: {}, trying EnhancedMcpToolGenerator (reflection)", 
                         interfaceName);
+                if (enhancedMcpToolGenerator != null) {
+                    try {
+                        Map<String, Object> enhancedTool = enhancedMcpToolGenerator.generateEnhancedTool(interfaceName, methodName);
+                        if (enhancedTool != null && enhancedTool.containsKey("inputSchema")) {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> reflectionSchema = (Map<String, Object>) enhancedTool.get("inputSchema");
+                            if (reflectionSchema != null && reflectionSchema.containsKey("properties")) {
+                                log.info("✅ Successfully generated inputSchema via reflection for {}.{}", 
+                                        interfaceName, methodName);
+                                return reflectionSchema;
+                            }
+                        }
+                    } catch (Exception e) {
+                        log.debug("⚠️ EnhancedMcpToolGenerator failed for {}.{}: {}, falling back to mcpToolSchemaGenerator", 
+                                interfaceName, methodName, e.getMessage());
+                    }
+                }
+                log.debug("⚠️ Falling back to mcpToolSchemaGenerator");
                 return mcpToolSchemaGenerator.createInputSchemaFromMethod(interfaceName, methodName);
             }
             
@@ -262,8 +306,26 @@ public class NacosMcpRegistrationService {
             DubboServiceMethodEntity method = dubboServiceMethodService.findByServiceIdAndMethodName(
                     serviceId, methodName);
             if (method == null) {
-                log.debug("⚠️ Method not found in database: {}.{}, falling back to mcpToolSchemaGenerator", 
+                log.debug("⚠️ Method not found in database: {}.{}, trying EnhancedMcpToolGenerator (reflection)", 
                         interfaceName, methodName);
+                if (enhancedMcpToolGenerator != null) {
+                    try {
+                        Map<String, Object> enhancedTool = enhancedMcpToolGenerator.generateEnhancedTool(interfaceName, methodName);
+                        if (enhancedTool != null && enhancedTool.containsKey("inputSchema")) {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> reflectionSchema = (Map<String, Object>) enhancedTool.get("inputSchema");
+                            if (reflectionSchema != null && reflectionSchema.containsKey("properties")) {
+                                log.info("✅ Successfully generated inputSchema via reflection for {}.{}", 
+                                        interfaceName, methodName);
+                                return reflectionSchema;
+                            }
+                        }
+                    } catch (Exception e) {
+                        log.debug("⚠️ EnhancedMcpToolGenerator failed for {}.{}: {}, falling back to mcpToolSchemaGenerator", 
+                                interfaceName, methodName, e.getMessage());
+                    }
+                }
+                log.debug("⚠️ Falling back to mcpToolSchemaGenerator");
                 return mcpToolSchemaGenerator.createInputSchemaFromMethod(interfaceName, methodName);
             }
             
@@ -274,8 +336,31 @@ public class NacosMcpRegistrationService {
                     method.getId());
             
             if (parameters == null || parameters.isEmpty()) {
-                log.debug("⚠️ No parameters found in database for {}.{}, creating schema without parameters", 
+                log.debug("⚠️ No parameters found in database for {}.{}, trying EnhancedMcpToolGenerator (reflection)", 
                         interfaceName, methodName);
+                // 尝试使用反射获取参数信息
+                if (enhancedMcpToolGenerator != null) {
+                    try {
+                        Map<String, Object> enhancedTool = enhancedMcpToolGenerator.generateEnhancedTool(interfaceName, methodName);
+                        if (enhancedTool != null && enhancedTool.containsKey("inputSchema")) {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> reflectionSchema = (Map<String, Object>) enhancedTool.get("inputSchema");
+                            if (reflectionSchema != null && reflectionSchema.containsKey("properties")) {
+                                @SuppressWarnings("unchecked")
+                                Map<String, Object> reflectionProperties = (Map<String, Object>) reflectionSchema.get("properties");
+                                if (reflectionProperties != null && !reflectionProperties.isEmpty()) {
+                                    log.info("✅ Successfully generated inputSchema via reflection for {}.{} ({} parameters)", 
+                                            interfaceName, methodName, reflectionProperties.size());
+                                    return reflectionSchema;
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        log.debug("⚠️ EnhancedMcpToolGenerator failed for {}.{}: {}", 
+                                interfaceName, methodName, e.getMessage());
+                    }
+                }
+                log.debug("⚠️ Creating schema without parameters");
                 // 无参数方法，properties 为空
             } else {
                 // 按 parameterOrder 排序
@@ -355,9 +440,28 @@ public class NacosMcpRegistrationService {
                 }
             }
         } catch (Exception e) {
-            log.error("❌ Error creating inputSchema from database for {}.{}: {}, falling back to mcpToolSchemaGenerator", 
+            log.error("❌ Error creating inputSchema from database for {}.{}: {}, trying EnhancedMcpToolGenerator (reflection)", 
                     interfaceName, methodName, e.getMessage(), e);
-            // 发生错误时，回退到使用 mcpToolSchemaGenerator
+            // 发生错误时，优先尝试使用 EnhancedMcpToolGenerator（反射）
+            if (enhancedMcpToolGenerator != null) {
+                try {
+                    Map<String, Object> enhancedTool = enhancedMcpToolGenerator.generateEnhancedTool(interfaceName, methodName);
+                    if (enhancedTool != null && enhancedTool.containsKey("inputSchema")) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> reflectionSchema = (Map<String, Object>) enhancedTool.get("inputSchema");
+                        if (reflectionSchema != null && reflectionSchema.containsKey("properties")) {
+                            log.info("✅ Successfully generated inputSchema via reflection for {}.{}", 
+                                    interfaceName, methodName);
+                            return reflectionSchema;
+                        }
+                    }
+                } catch (Exception reflectionException) {
+                    log.debug("⚠️ EnhancedMcpToolGenerator also failed for {}.{}: {}, falling back to mcpToolSchemaGenerator", 
+                            interfaceName, methodName, reflectionException.getMessage());
+                }
+            }
+            // 最后回退到使用 mcpToolSchemaGenerator
+            log.debug("⚠️ Falling back to mcpToolSchemaGenerator");
             return mcpToolSchemaGenerator.createInputSchemaFromMethod(interfaceName, methodName);
         }
         
@@ -574,7 +678,26 @@ public class NacosMcpRegistrationService {
         String endpointName = mcpServiceName.replace("virtual-", ""); // 去掉 virtual- 前缀
         String sseEndpoint = "/sse/" + endpointName;
         metadata.put("sseEndpoint", sseEndpoint);
-        metadata.put("sseMessageEndpoint", "/mcp/message");
+        // Message 端点：使用 /mcp/{serviceName}/message 格式（与 SseController 保持一致）
+        // 对于虚拟项目，serviceName 是 virtual-{endpointName}
+        String sseMessageEndpoint = "/mcp/" + mcpServiceName + "/message";
+        metadata.put("sseMessageEndpoint", sseMessageEndpoint);
+        
+        // 添加 context-path 信息（如果存在），供 mcp-router-v3 使用
+        // 注意：context-path 可能在不同环境下不同，这里存储的是配置的默认值
+        // 实际使用时，zkInfo 会根据请求动态构建完整的 URL
+        if (contextPath != null && !contextPath.isEmpty() && !contextPath.equals("/")) {
+            // 规范化 context-path：确保以 / 开头，但不以 / 结尾
+            String normalizedContextPath = contextPath.trim();
+            if (!normalizedContextPath.startsWith("/")) {
+                normalizedContextPath = "/" + normalizedContextPath;
+            }
+            if (normalizedContextPath.endsWith("/") && normalizedContextPath.length() > 1) {
+                normalizedContextPath = normalizedContextPath.substring(0, normalizedContextPath.length() - 1);
+            }
+            metadata.put("contextPath", normalizedContextPath);
+            log.debug("📦 Added context-path to metadata: {} for service: {}", normalizedContextPath, mcpServiceName);
+        }
         
         // 服务标识
         metadata.put("serverName", mcpServiceName);
@@ -699,6 +822,191 @@ public class NacosMcpRegistrationService {
                 throw new RuntimeException("Failed to register instance to Nacos", e);
             }
         }
+    }
+
+    /**
+     * 为所有活跃的 zkInfo 节点注册虚拟项目实例到 Nacos
+     * 
+     * @param mcpServiceName MCP服务名称
+     * @param serviceId 服务ID
+     * @param version 版本
+     * @param tools 工具列表
+     * @param providers 提供者列表
+     * @param application 应用名称
+     * @param ephemeral 是否临时节点
+     */
+    private void registerInstancesToNacosForAllNodes(String mcpServiceName, String serviceId, 
+                                                     String version, List<Map<String, Object>> tools,
+                                                     List<ProviderInfo> providers,
+                                                     String application, boolean ephemeral) {
+        try {
+            // 1. 获取所有活跃的 zkInfo 节点
+            List<ZkInfoNodeDiscoveryService.ZkInfoNode> activeNodes = zkInfoNodeDiscoveryService.getAllActiveZkInfoNodes();
+            
+            if (activeNodes.isEmpty()) {
+                log.warn("⚠️ No active zkInfo nodes found, registering current node only");
+                // 如果没有找到节点，至少注册当前节点
+                registerInstanceToNacos(mcpServiceName, serviceId, version, tools, providers, application, ephemeral);
+                return;
+            }
+            
+            log.info("🚀 Registering virtual project to {} zkInfo nodes: {}", 
+                    activeNodes.size(), 
+                    activeNodes.stream()
+                            .map(ZkInfoNodeDiscoveryService.ZkInfoNode::getAddress)
+                            .collect(java.util.stream.Collectors.joining(", ")));
+            
+            // 2. 为每个节点注册实例
+            int successCount = 0;
+            int failCount = 0;
+            
+            for (ZkInfoNodeDiscoveryService.ZkInfoNode node : activeNodes) {
+                try {
+                    registerInstanceToNacosForNode(mcpServiceName, serviceId, version, tools, providers, 
+                            application, ephemeral, node.getIp(), node.getPort());
+                    successCount++;
+                    log.info("✅ Registered virtual project instance for node: {}:{}", node.getIp(), node.getPort());
+                } catch (Exception e) {
+                    failCount++;
+                    log.error("❌ Failed to register virtual project instance for node: {}:{}, error: {}", 
+                            node.getIp(), node.getPort(), e.getMessage(), e);
+                }
+            }
+            
+            log.info("✅ Completed registering virtual project instances: {} succeeded, {} failed out of {} total nodes", 
+                    successCount, failCount, activeNodes.size());
+            
+        } catch (Exception e) {
+            log.error("❌ Failed to register instances for all nodes, falling back to current node only: {}", e.getMessage(), e);
+            // 如果失败，至少注册当前节点
+            try {
+                registerInstanceToNacos(mcpServiceName, serviceId, version, tools, providers, application, ephemeral);
+            } catch (Exception fallbackError) {
+                log.error("❌ Failed to register current node as fallback: {}", fallbackError.getMessage(), fallbackError);
+                throw new RuntimeException("Failed to register virtual project instances", e);
+            }
+        }
+    }
+
+    /**
+     * 为指定节点注册虚拟项目实例到 Nacos
+     * 
+     * @param mcpServiceName MCP服务名称
+     * @param serviceId 服务ID
+     * @param version 版本
+     * @param tools 工具列表
+     * @param providers 提供者列表
+     * @param application 应用名称
+     * @param ephemeral 是否临时节点
+     * @param nodeIp 节点IP
+     * @param nodePort 节点端口
+     */
+    private void registerInstanceToNacosForNode(String mcpServiceName, String serviceId, 
+                                                String version, List<Map<String, Object>> tools,
+                                                List<ProviderInfo> providers,
+                                                String application, boolean ephemeral,
+                                                String nodeIp, int nodePort) throws NacosException {
+        
+        // 创建实例
+        Instance instance = new Instance();
+        instance.setIp(nodeIp);
+        instance.setPort(nodePort);
+        instance.setHealthy(true);
+        instance.setEnabled(true);
+        instance.setEphemeral(ephemeral);
+        
+        // 设置元数据（与 registerInstanceToNacos 方法相同）
+        Map<String, String> metadata = buildInstanceMetadata(mcpServiceName, serviceId, version, tools, application);
+        
+        instance.setMetadata(metadata);
+        
+        // 注册实例
+        namingService.registerInstance(mcpServiceName, serviceGroup, instance);
+        
+        log.info("✅ Registered instance to Nacos for node {}:{} in group: {} (application: {}, ephemeral: {})", 
+                nodeIp, nodePort, serviceGroup, application != null ? application : "N/A", ephemeral);
+    }
+
+    /**
+     * 构建实例元数据
+     */
+    private Map<String, String> buildInstanceMetadata(String mcpServiceName, String serviceId, 
+                                                      String version, List<Map<String, Object>> tools,
+                                                      String application) {
+        Map<String, String> metadata = new HashMap<>();
+        
+        // 基础信息
+        metadata.put("version", version != null ? version : "1.0.0");
+        metadata.put("protocol", "mcp-sse");
+        metadata.put("scheme", "http");
+        
+        // SSE 端点信息
+        String endpointName = mcpServiceName.replace("virtual-", "");
+        String sseEndpoint = "/sse/" + endpointName;
+        metadata.put("sseEndpoint", sseEndpoint);
+        // Message 端点：使用 /mcp/{serviceName}/message 格式（与 SseController 保持一致）
+        // 对于虚拟项目，serviceName 是 virtual-{endpointName}
+        String sseMessageEndpoint = "/mcp/" + mcpServiceName + "/message";
+        metadata.put("sseMessageEndpoint", sseMessageEndpoint);
+        
+        // 添加 context-path 信息（如果存在），供 mcp-router-v3 使用
+        // 注意：context-path 可能在不同环境下不同，这里存储的是配置的默认值
+        // 实际使用时，zkInfo 会根据请求动态构建完整的 URL
+        if (contextPath != null && !contextPath.isEmpty() && !contextPath.equals("/")) {
+            // 规范化 context-path：确保以 / 开头，但不以 / 结尾
+            String normalizedContextPath = contextPath.trim();
+            if (!normalizedContextPath.startsWith("/")) {
+                normalizedContextPath = "/" + normalizedContextPath;
+            }
+            if (normalizedContextPath.endsWith("/") && normalizedContextPath.length() > 1) {
+                normalizedContextPath = normalizedContextPath.substring(0, normalizedContextPath.length() - 1);
+            }
+            metadata.put("contextPath", normalizedContextPath);
+            log.debug("📦 Added context-path to metadata: {} for service: {}", normalizedContextPath, mcpServiceName);
+        }
+        
+        // 服务标识
+        metadata.put("serverName", mcpServiceName);
+        metadata.put("serverId", serviceId);
+        
+        // 设置application
+        String finalApplication = application != null && !application.isEmpty() ? application : mcpServiceName;
+        metadata.put("application", finalApplication);
+        
+        // 工具数量
+        metadata.put("tools.count", String.valueOf(tools.size()));
+        
+        // 计算server配置的MD5
+        String serverDataId = serviceId + "-" + version + "-mcp-server.json";
+        try {
+            String serverConfig = null;
+            if (useV3Api && nacosV3ApiService != null) {
+                serverConfig = nacosV3ApiService.getConfig(serverDataId, SERVER_GROUP);
+            } else {
+                serverConfig = configService.getConfig(serverDataId, SERVER_GROUP, 5000);
+            }
+            
+            if (serverConfig != null) {
+                String md5 = calculateMd5(serverConfig);
+                metadata.put("server.md5", md5);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to get server config for MD5 calculation", e);
+        }
+        
+        // 检查 metadata 总大小
+        int totalSize = calculateMetadataSize(metadata);
+        if (totalSize > 1024) {
+            log.warn("⚠️ Metadata size ({}) exceeds 1024 bytes, removing optional fields", totalSize);
+            metadata.remove("tools.names");
+            totalSize = calculateMetadataSize(metadata);
+            if (totalSize > 1024) {
+                log.error("❌ Metadata size ({}) still exceeds 1024 bytes after removing optional fields", totalSize);
+                throw new RuntimeException("Metadata size exceeds Nacos limit (1024 bytes): " + totalSize);
+            }
+        }
+        
+        return metadata;
     }
     
     /**
@@ -966,6 +1274,71 @@ public class NacosMcpRegistrationService {
      */
     public String getServiceGroup() {
         return serviceGroup;
+    }
+    
+    /**
+     * 从 Nacos 配置中心获取工具配置
+     * 
+     * @param serviceName 服务名称（如 virtual-{endpointName}）
+     * @param serviceGroup 服务组
+     * @return 工具列表
+     */
+    public List<Map<String, Object>> getToolsFromNacosConfig(String serviceName, String serviceGroup) {
+        try {
+            // 1. 从 Nacos 服务列表查询服务实例，获取 serviceId 和 version
+            List<Instance> instances = namingService.selectInstances(serviceName, serviceGroup, true);
+            if (instances == null || instances.isEmpty()) {
+                log.warn("⚠️ No healthy instances found for service: {} in group: {}", serviceName, serviceGroup);
+                return Collections.emptyList();
+            }
+            
+            // 使用第一个健康实例的 metadata 获取 serviceId 和 version
+            Instance instance = instances.get(0);
+            Map<String, String> metadata = instance.getMetadata();
+            if (metadata == null || metadata.isEmpty()) {
+                log.warn("⚠️ Instance has no metadata for service: {}", serviceName);
+                return Collections.emptyList();
+            }
+            
+            String serviceId = metadata.get("serverId");
+            String version = metadata.get("version");
+            if (serviceId == null || version == null) {
+                log.warn("⚠️ Instance metadata missing serverId or version for service: {}", serviceName);
+                return Collections.emptyList();
+            }
+            
+            log.debug("📦 Found service instance: serviceId={}, version={}", serviceId, version);
+            
+            // 2. 从配置中心获取工具配置
+            // dataId 格式：{serviceId}-{version}-mcp-tools.json
+            String toolsDataId = serviceId + "-" + version + "-mcp-tools.json";
+            String toolsConfig = configService.getConfig(toolsDataId, TOOLS_GROUP, 5000);
+            
+            if (toolsConfig == null || toolsConfig.trim().isEmpty()) {
+                log.warn("⚠️ No tools config found in Nacos: dataId={}, group={}", toolsDataId, TOOLS_GROUP);
+                return Collections.emptyList();
+            }
+            
+            log.debug("✅ Got tools config from Nacos: dataId={}, size={} bytes", toolsDataId, toolsConfig.length());
+            
+            // 3. 解析 JSON 配置
+            Map<String, Object> toolsInfo = objectMapper.readValue(toolsConfig, Map.class);
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> tools = (List<Map<String, Object>>) toolsInfo.get("tools");
+            
+            if (tools == null || tools.isEmpty()) {
+                log.warn("⚠️ Tools list is empty in config: dataId={}", toolsDataId);
+                return Collections.emptyList();
+            }
+            
+            log.info("✅ Parsed {} tools from Nacos config: dataId={}", tools.size(), toolsDataId);
+            return tools;
+            
+        } catch (Exception e) {
+            log.error("❌ Failed to get tools from Nacos config for service: {}, error: {}", 
+                    serviceName, e.getMessage(), e);
+            return Collections.emptyList();
+        }
     }
 
     /**

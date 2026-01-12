@@ -105,7 +105,7 @@ export ZKINFO_URL=http://127.0.0.1:9091
 curl -s -X POST "${ZKINFO_URL}/api/virtual-projects" \
   -H "Content-Type: application/json" \
   -d '{
-    "endpointName": "test-virtual-endpoint251229",
+    "endpointName": "test-virtual-endpoint2512301",
     "description": "Test virtual project",
     "services": [
       {
@@ -117,13 +117,19 @@ curl -s -X POST "${ZKINFO_URL}/api/virtual-projects" \
         "serviceInterface": "com.pajk.provider2.service.ProductService",
         "version": "1.0.0",
         "priority": 0
+      },
+      {
+        "serviceInterface": "com.pajk.provider2.service.UserService",
+        "version": "1.0.0",
+        "priority": 0
       }
     ],
     "autoRegister": true
   }'
 
-
-
+virtual-test-virtual-endpoint2512291
+curl -X DELETE "http://127.0.0.1:8848/nacos/v3/client/ns/instance?serviceName=virtual-test-virtual-endpoint2512291&ip=127.0.0.1&port=9091&groupName=mcp-server&ephemeral=false"
+curl -X DELETE "http://127.0.0.1:8848/nacos/v3/client/ns/instance?serviceName=virtual-test-virtual-endpoint2512292&ip=127.0.0.1&port=9091&groupName=mcp-server&ephemeral=false"
 
 ```
 

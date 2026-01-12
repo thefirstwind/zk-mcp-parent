@@ -49,7 +49,7 @@ public class OrderServiceImpl implements OrderService {
     }
     
     @Override
-    public Order getOrderById(String orderId) {
+    public Order getOrderById(String orderId, String status) {
         log.info("Getting order by id: {}", orderId);
         Order order = orderStorage.get(orderId);
         if (order == null) {
@@ -128,7 +128,7 @@ public class OrderServiceImpl implements OrderService {
     }
     
     @Override
-    public Double calculateOrderTotal(String orderId) {
+    public Double calculateOrderTotal(String orderId, Integer num) {
         log.info("Calculating order total: {}", orderId);
         Order order = orderStorage.get(orderId);
         if (order == null) {

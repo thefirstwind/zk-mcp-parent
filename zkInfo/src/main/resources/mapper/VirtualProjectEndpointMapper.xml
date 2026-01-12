@@ -12,10 +12,11 @@
         <result property="mcpServiceName" column="mcp_service_name"/>
         <result property="description" column="description"/>
         <result property="status" column="status" 
-                typeHandler="org.apache.ibatis.type.EnumTypeHandler"
-                javaType="com.pajk.mcpmetainfo.core.model.VirtualProjectEndpoint$EndpointStatus"/>
-        <result property="createdAt" column="gmt_created"/>
-        <result property="updatedAt" column="gmt_modified"/>
+                typeHandler="com.pajk.mcpmetainfo.persistence.typehandler.EndpointStatusTypeHandler"/>
+        <result property="createdAt" column="gmt_created" 
+                typeHandler="com.pajk.mcpmetainfo.persistence.typehandler.LocalDateTimeTypeHandler"/>
+        <result property="updatedAt" column="gmt_modified" 
+                typeHandler="com.pajk.mcpmetainfo.persistence.typehandler.LocalDateTimeTypeHandler"/>
     </resultMap>
     
     <sql id="endpointColumns">

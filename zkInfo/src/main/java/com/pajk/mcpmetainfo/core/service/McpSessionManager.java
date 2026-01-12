@@ -1,9 +1,12 @@
 package com.pajk.mcpmetainfo.core.service;
 
-import lombok.RequiredArgsConstructor;
+import com.pajk.mcpmetainfo.core.session.SessionInstanceIdProvider;
+import com.pajk.mcpmetainfo.core.session.SessionMeta;
+import com.pajk.mcpmetainfo.core.session.SessionRedisRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 
@@ -14,24 +17,27 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * MCP Session管理器
- * 为每个endpoint管理独立的MCP Server Session
+ * 使用 Redis 管理会话元数据，内存中只保留 SSE 连接对象
+ * 参考 mcp-router-v3 的 McpSessionService 实现
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class McpSessionManager {
     
-    // sessionId -> endpoint映射
-    private final Map<String, String> sessionToEndpointMap = new ConcurrentHashMap<>();
+    private final SessionRedisRepository sessionRepository;
+    private final String instanceId;
     
-    // sessionId -> serviceName映射（参考 mcp-router-v3）
-    private final Map<String, String> sessionToServiceNameMap = new ConcurrentHashMap<>();
-    
-    // sessionId -> SSE Sink映射
+    // sessionId -> SSE Sink映射（WebFlux 模式，内存中保留）
     private final Map<String, Sinks.Many<ServerSentEvent<String>>> sinkMap = new ConcurrentHashMap<>();
     
-    // sessionId -> 最后活跃时间
-    private final Map<String, LocalDateTime> sessionLastActiveTime = new ConcurrentHashMap<>();
+    // sessionId -> WebMVC SseEmitter映射（WebMVC 模式，内存中保留）
+    private final Map<String, org.springframework.web.servlet.mvc.method.annotation.SseEmitter> sseEmitterMap = new ConcurrentHashMap<>();
+    
+    public McpSessionManager(SessionRedisRepository sessionRepository,
+                             SessionInstanceIdProvider instanceIdProvider) {
+        this.sessionRepository = sessionRepository;
+        this.instanceId = instanceIdProvider.getInstanceId();
+    }
     
     /**
      * 获取或创建endpoint的Session（占位符方法）
@@ -47,23 +53,28 @@ public class McpSessionManager {
      * 注册SSE Sink（WebFlux 模式）
      */
     public void registerSink(String sessionId, String endpoint, Sinks.Many<ServerSentEvent<String>> sink) {
+        if (!StringUtils.hasText(sessionId) || sink == null) {
+            return;
+        }
         sinkMap.put(sessionId, sink);
-        sessionToEndpointMap.put(sessionId, endpoint);
-        sessionLastActiveTime.put(sessionId, LocalDateTime.now());
+        // 保存到 Redis
+        SessionMeta meta = new SessionMeta(sessionId, instanceId, null, null, "SSE", endpoint, LocalDateTime.now(), true);
+        sessionRepository.saveSessionMeta(meta);
         log.info("✅ Registered SSE sink: sessionId={}, endpoint={}", sessionId, endpoint);
     }
-    
-    // sessionId -> WebMVC SseEmitter映射（WebMVC 模式）
-    private final Map<String, org.springframework.web.servlet.mvc.method.annotation.SseEmitter> sseEmitterMap = new ConcurrentHashMap<>();
     
     /**
      * 注册 WebMVC SseEmitter（WebMVC 模式）
      * 参考 mcp-router-v3 的 registerSessionService 和 registerSseSink
      */
     public void registerSseEmitter(String sessionId, String endpoint, org.springframework.web.servlet.mvc.method.annotation.SseEmitter emitter) {
+        if (!StringUtils.hasText(sessionId) || emitter == null) {
+            return;
+        }
         sseEmitterMap.put(sessionId, emitter);
-        sessionToEndpointMap.put(sessionId, endpoint);
-        sessionLastActiveTime.put(sessionId, LocalDateTime.now());
+        // 保存到 Redis
+        SessionMeta meta = new SessionMeta(sessionId, instanceId, null, null, "SSE", endpoint, LocalDateTime.now(), true);
+        sessionRepository.saveSessionMeta(meta);
         log.info("✅ Registered SSE emitter: sessionId={}, endpoint={}", sessionId, endpoint);
     }
     
@@ -71,21 +82,47 @@ public class McpSessionManager {
      * 注册 session 的 serviceName（参考 mcp-router-v3 的 registerSessionService）
      */
     public void registerSessionService(String sessionId, String serviceName) {
-        if (sessionId != null && !sessionId.isEmpty() && serviceName != null && !serviceName.isEmpty()) {
-            sessionToServiceNameMap.put(sessionId, serviceName);
-            touch(sessionId); // 更新活跃时间
-            log.info("✅ Registered service for session: sessionId={}, serviceName={}", sessionId, serviceName);
+        if (!StringUtils.hasText(sessionId) || !StringUtils.hasText(serviceName)) {
+            return;
         }
+        // 从 Redis 获取现有 session，更新 serviceName
+        sessionRepository.findSession(sessionId).ifPresentOrElse(
+            meta -> {
+                meta.setServiceName(serviceName);
+                sessionRepository.saveSessionMeta(meta);
+            },
+            () -> {
+                // 如果不存在，创建新的 session
+                SessionMeta meta = new SessionMeta(sessionId, instanceId, serviceName, null, "SSE", null, LocalDateTime.now(), true);
+                sessionRepository.saveSessionMeta(meta);
+            }
+        );
+        touch(sessionId); // 更新活跃时间
+        log.info("✅ Registered service for session: sessionId={}, serviceName={}", sessionId, serviceName);
     }
     
     /**
      * 获取 session 的 serviceName（参考 mcp-router-v3 的 getServiceName）
      */
     public String getServiceName(String sessionId) {
-        if (sessionId == null || sessionId.isEmpty()) {
+        if (!StringUtils.hasText(sessionId)) {
             return null;
         }
-        return sessionToServiceNameMap.get(sessionId);
+        return sessionRepository.findSession(sessionId)
+                .map(SessionMeta::getServiceName)
+                .orElse(null);
+    }
+    
+    /**
+     * 获取 session 的 endpoint
+     */
+    public String getEndpointForSession(String sessionId) {
+        if (!StringUtils.hasText(sessionId)) {
+            return null;
+        }
+        return sessionRepository.findSession(sessionId)
+                .map(SessionMeta::getEndpoint)
+                .orElse(null);
     }
     
     /**
@@ -99,11 +136,11 @@ public class McpSessionManager {
      * 更新会话活跃时间（参考 mcp-router-v3 的 touch）
      */
     public void touch(String sessionId) {
-        if (sessionId != null && !sessionId.isEmpty()) {
-            // 只要 sessionId 存在，就更新活跃时间（不要求 endpoint 存在）
-            sessionLastActiveTime.put(sessionId, LocalDateTime.now());
-            log.debug("💓 Touched session: sessionId={}", sessionId);
+        if (!StringUtils.hasText(sessionId)) {
+            return;
         }
+        sessionRepository.updateLastActive(sessionId);
+//        log.debug("💓 Touched session: sessionId={}", sessionId);
     }
     
     /**
@@ -135,23 +172,20 @@ public class McpSessionManager {
     
     /**
      * 获取endpoint对应的sessionId
+     * 注意：这个方法需要查询 Redis，性能较低，建议避免频繁调用
      */
     public String getSessionIdForEndpoint(String endpoint) {
-        return sessionToEndpointMap.entrySet().stream()
-                .filter(e -> endpoint.equals(e.getValue()))
-                .map(Map.Entry::getKey)
-                .findFirst()
-                .orElse(null);
-    }
-    
-    /**
-     * 根据sessionId获取endpoint
-     */
-    public String getEndpointForSession(String sessionId) {
-        if (sessionId == null) {
+        if (!StringUtils.hasText(endpoint)) {
             return null;
         }
-        return sessionToEndpointMap.get(sessionId);
+        // 查询当前实例的所有 sessions
+        return sessionRepository.findSessionIdsByInstance(instanceId).stream()
+                .filter(sessionId -> {
+                    String sessionEndpoint = getEndpointForSession(sessionId);
+                    return endpoint.equals(sessionEndpoint);
+                })
+                .findFirst()
+                .orElse(null);
     }
     
     /**
@@ -165,14 +199,25 @@ public class McpSessionManager {
      * 清理Session（参考 mcp-router-v3 的 removeSession）
      */
     public void removeSession(String sessionId) {
-        if (sessionId == null || sessionId.isEmpty()) {
+        if (!StringUtils.hasText(sessionId)) {
             return;
         }
+        // 清理内存中的连接对象
         Sinks.Many<ServerSentEvent<String>> sink = sinkMap.remove(sessionId);
         org.springframework.web.servlet.mvc.method.annotation.SseEmitter emitter = sseEmitterMap.remove(sessionId);
-        String endpoint = sessionToEndpointMap.remove(sessionId);
-        String serviceName = sessionToServiceNameMap.remove(sessionId);
-        sessionLastActiveTime.remove(sessionId);
+        
+        // 从 Redis 获取 session 信息用于日志
+        final String[] endpoint = {null};
+        final String[] serviceName = {null};
+        sessionRepository.findSession(sessionId).ifPresent(meta -> {
+            endpoint[0] = meta.getEndpoint();
+            serviceName[0] = meta.getServiceName();
+        });
+        
+        // 从 Redis 删除 session
+        sessionRepository.removeSession(sessionId, instanceId);
+        
+        // 关闭连接
         if (sink != null) {
             sink.tryEmitComplete();
         }
@@ -183,14 +228,14 @@ public class McpSessionManager {
                 log.debug("⚠️ Error completing emitter for session: {}, error={}", sessionId, e.getMessage());
             }
         }
-        log.info("✅ Removed session: sessionId={}, endpoint={}, serviceName={}", sessionId, endpoint, serviceName);
+        log.info("✅ Removed session: sessionId={}, endpoint={}, serviceName={}", sessionId, endpoint[0], serviceName[0]);
     }
     
     /**
-     * 获取所有sessionId
+     * 获取所有sessionId（当前实例）
      */
     public java.util.Set<String> getAllSessionIds() {
-        return new java.util.HashSet<>(sinkMap.keySet());
+        return sessionRepository.findSessionIdsByInstance(instanceId);
     }
 }
 

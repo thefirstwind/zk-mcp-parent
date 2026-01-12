@@ -624,11 +624,14 @@ public class MultiEndpointMcpRouterConfig {
             log.info("📥 Processing tools/list request via SSE: sessionId={}, id={}, endpoint={}", 
                     sessionId, id, endpoint);
             
-            // 获取工具列表
-            Optional<EndpointResolver.EndpointInfo> endpointInfoOpt = endpointResolver.resolveEndpoint(endpoint);
-            Long projectId = endpointInfoOpt.map(EndpointResolver.EndpointInfo::getProjectId).orElse(null);
+            // 获取工具列表（从 Nacos 查询）
+            // 去掉 virtual- 前缀（如果存在）
+            String actualEndpoint = endpoint;
+            if (endpoint.startsWith("virtual-")) {
+                actualEndpoint = endpoint.substring("virtual-".length());
+            }
             
-            List<Map<String, Object>> tools = virtualProjectRegistrationService.getVirtualProjectTools(projectId);
+            List<Map<String, Object>> tools = virtualProjectRegistrationService.getVirtualProjectToolsByEndpointName(actualEndpoint);
             
             // 构建响应
             Map<String, Object> response = new HashMap<>();
@@ -782,13 +785,15 @@ public class MultiEndpointMcpRouterConfig {
         
         return sinkMono
                 .flatMap(sseSink -> {
-                    // 根据 endpoint 获取工具列表
+                    // 根据 endpoint 获取工具列表（从 Nacos 查询）
                     return Mono.fromCallable(() -> {
-                        EndpointResolver.EndpointInfo endpointInfo = endpointResolver.resolveEndpoint(endpoint)
-                                .orElseThrow(() -> new RuntimeException("Endpoint not found: " + endpoint));
+                        // 去掉 virtual- 前缀（如果存在）
+                        String actualEndpoint = endpoint;
+                        if (endpoint.startsWith("virtual-")) {
+                            actualEndpoint = endpoint.substring("virtual-".length());
+                        }
                         
-                        Long projectId = endpointInfo.getProjectId();
-                        List<Map<String, Object>> tools = virtualProjectRegistrationService.getVirtualProjectTools(projectId);
+                        List<Map<String, Object>> tools = virtualProjectRegistrationService.getVirtualProjectToolsByEndpointName(actualEndpoint);
                         
                         // 转换为 MCP 格式
                         Map<String, Object> result = new java.util.HashMap<>();
@@ -971,13 +976,132 @@ public class MultiEndpointMcpRouterConfig {
     
     /**
      * 构建基础URL
+     * 参考 mcp-router-v3 的实现，支持代理头和 context-path
+     * 注意：此方法在 WebFlux 模式下使用，但当前应用使用 WebMVC 模式
      */
     private String buildBaseUrl(ServerRequest request) {
-        String host = request.headers().firstHeader("Host");
-        if (host != null) {
-            return "http://" + host;
+        try {
+            // 提取 context-path
+            String contextPath = extractContextPath(request);
+            
+            // 优先读取代理相关头
+            String forwardedProto = request.headers().firstHeader("X-Forwarded-Proto");
+            if (forwardedProto == null) {
+                forwardedProto = request.headers().firstHeader("x-forwarded-proto");
+            }
+            String forwardedHost = request.headers().firstHeader("X-Forwarded-Host");
+            if (forwardedHost == null) {
+                forwardedHost = request.headers().firstHeader("x-forwarded-host");
+            }
+            String forwardedPort = request.headers().firstHeader("X-Forwarded-Port");
+            if (forwardedPort == null) {
+                forwardedPort = request.headers().firstHeader("x-forwarded-port");
+            }
+            
+            String scheme;
+            String hostPort;
+            
+            log.debug("🔍 Building base URL (WebFlux) - forwardedProto: {}, forwardedHost: {}, forwardedPort: {}, contextPath: {}", 
+                    forwardedProto, forwardedHost, forwardedPort, contextPath);
+            
+            if (forwardedHost != null && !forwardedHost.isEmpty()) {
+                scheme = (forwardedProto != null && !forwardedProto.isEmpty()) ? forwardedProto : "http";
+                hostPort = forwardedHost;
+                // 如果 X-Forwarded-Host 不包含端口，且 X-Forwarded-Port 存在，则添加端口
+                if (!hostPort.contains(":") && forwardedPort != null && !forwardedPort.isEmpty()) {
+                    try {
+                        int port = Integer.parseInt(forwardedPort);
+                        // 只有非标准端口才添加
+                        if (!((scheme.equals("http") && port == 80) || (scheme.equals("https") && port == 443))) {
+                            hostPort = hostPort + ":" + forwardedPort;
+                        }
+                    } catch (NumberFormatException e) {
+                        log.debug("Invalid forwarded port: {}", forwardedPort);
+                    }
+                }
+                String baseUrl = scheme + "://" + hostPort + contextPath;
+                log.info("✅ Built base URL from forwarded headers (WebFlux): {}", baseUrl);
+                return baseUrl;
+            }
+            
+            // 其次使用 Host 头
+            String host = request.headers().firstHeader("Host");
+            if (host != null && !host.isEmpty()) {
+                String reqScheme = request.uri().getScheme();
+                if (reqScheme == null || reqScheme.isEmpty()) {
+                    reqScheme = "http";
+                }
+                // 处理 Host 头中的端口（如果是标准端口，则移除）
+                String hostWithoutPort = host;
+                if (host.contains(":")) {
+                    String[] parts = host.split(":");
+                    if (parts.length == 2) {
+                        try {
+                            int port = Integer.parseInt(parts[1]);
+                            if ((reqScheme.equals("http") && port == 80) || 
+                                (reqScheme.equals("https") && port == 443)) {
+                                hostWithoutPort = parts[0];
+                            }
+                        } catch (NumberFormatException e) {
+                            // 端口号解析失败，保持原样
+                        }
+                    }
+                }
+                String baseUrl = reqScheme + "://" + hostWithoutPort + contextPath;
+                log.info("✅ Built base URL from Host header (WebFlux): {}", baseUrl);
+                return baseUrl;
+            }
+        } catch (Exception e) {
+            log.warn("⚠️ Failed to build base URL from request (WebFlux): {}, falling back to default", e.getMessage());
         }
+        
+        // 回退到默认配置
         return "http://127.0.0.1:9091";
+    }
+    
+    /**
+     * 从请求中提取 context-path（WebFlux 模式）
+     * 参考 mcp-router-v3 的实现
+     */
+    private String extractContextPath(ServerRequest request) {
+        try {
+            // 1. 优先从 X-Forwarded-Prefix 头中获取
+            String forwardedPrefix = request.headers().firstHeader("X-Forwarded-Prefix");
+            if (forwardedPrefix == null || forwardedPrefix.isEmpty()) {
+                forwardedPrefix = request.headers().firstHeader("x-forwarded-prefix");
+            }
+            if (forwardedPrefix != null && !forwardedPrefix.isEmpty()) {
+                String contextPath = forwardedPrefix.trim();
+                if (!contextPath.startsWith("/")) {
+                    contextPath = "/" + contextPath;
+                }
+                if (contextPath.endsWith("/") && contextPath.length() > 1) {
+                    contextPath = contextPath.substring(0, contextPath.length() - 1);
+                }
+                log.info("✅ Extracted context-path from X-Forwarded-Prefix (WebFlux): {}", contextPath);
+                return contextPath;
+            }
+            
+            // 2. 从完整的请求 URI 路径中提取
+            String fullPath = request.uri().getPath();
+            String requestPath = request.path();
+            
+            if (fullPath != null && requestPath != null && 
+                !fullPath.equals(requestPath) && fullPath.startsWith(requestPath)) {
+                String diff = fullPath.substring(0, fullPath.length() - requestPath.length());
+                if (diff.endsWith("/")) {
+                    diff = diff.substring(0, diff.length() - 1);
+                }
+                if (!diff.isEmpty()) {
+                    log.debug("Extracted context-path from URI difference (WebFlux): {}", diff);
+                    return diff;
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Failed to extract context-path (WebFlux): {}", e.getMessage());
+        }
+        
+        return "";
     }
 }
 

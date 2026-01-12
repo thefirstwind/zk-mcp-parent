@@ -137,6 +137,9 @@ public class VirtualProjectService {
                         }
                         log.info("✅ 加载了 {} 个 ProjectService 到项目 {} (projectId={})", 
                                 projectServices.size(), project.getProjectName(), projectId);
+                    } else {
+                        log.warn("⚠️ 项目 {} (projectId={}) 没有 ProjectService，可能服务未正确保存到数据库", 
+                                project.getProjectName(), projectId);
                     }
                 }
                 
@@ -169,7 +172,7 @@ public class VirtualProjectService {
         
         String projectCode = "VIRTUAL_" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
         Project project = Project.builder()
-                .id(System.currentTimeMillis()) // 临时ID生成
+                .id(null) // 不设置ID，让数据库自动生成（使用AUTO_INCREMENT）
                 .projectCode(projectCode)
                 .projectName(projectName)
                 .projectType(Project.ProjectType.VIRTUAL)
@@ -179,11 +182,34 @@ public class VirtualProjectService {
                 .updatedAt(java.time.LocalDateTime.now())
                 .build();
         
+        // 3. 创建Endpoint映射（先创建，但 virtualProjectId 会在持久化后设置）
+        // 注意：mcpServiceName 使用 "virtual-{endpointName}" 格式，与 VirtualProjectRegistrationService 保持一致
+        VirtualProjectEndpoint endpoint = VirtualProjectEndpoint.builder()
+                .virtualProjectId(null) // 先设置为 null，持久化后会更新
+                .endpointName(request.getEndpointName())
+                .endpointPath("/sse/" + request.getEndpointName())
+                .mcpServiceName("virtual-" + request.getEndpointName())
+                .description(request.getDescription())
+                .status(VirtualProjectEndpoint.EndpointStatus.ACTIVE)
+                .createdAt(java.time.LocalDateTime.now())
+                .updatedAt(java.time.LocalDateTime.now())
+                .build();
+        
+        // 4. 先持久化到数据库获取ID（在注册到 Nacos 之前，确保数据已保存）
+        persistVirtualProjectToDatabase(project, endpoint);
+        
+        // 持久化后，project.id 和 endpoint.virtualProjectId 已经被设置
+        // 现在可以安全地放入缓存和创建关联对象
+        
         virtualProjectCache.put(project.getId(), project);
         // 同时存储到ProjectManagementService，以便统一管理
         projectManagementService.createProject(project);
         log.info("Created virtual project: id={}, code={}, name={}", 
                 project.getId(), project.getProjectCode(), project.getProjectName());
+        
+        endpointCache.put(project.getId(), endpoint);
+        log.info("Created virtual project endpoint: endpointName={}, mcpServiceName={}", 
+                endpoint.getEndpointName(), endpoint.getMcpServiceName());
         
         // 2. 关联服务（从不同实际项目中选择）
         // 检查所需服务是否在白名单中（如果配置了白名单）
@@ -202,7 +228,7 @@ public class VirtualProjectService {
                     selection.getServiceInterface(), selection.getVersion(), selection.getGroup());
             
             ProjectService projectService = ProjectService.builder()
-                    .projectId(project.getId())
+                    .projectId(project.getId()) // 此时 project.getId() 已经有值了
                     .serviceInterface(selection.getServiceInterface())
                     .serviceVersion(selection.getVersion())
                     .serviceGroup(selection.getGroup())
@@ -211,33 +237,21 @@ public class VirtualProjectService {
                     .addedAt(java.time.LocalDateTime.now())
                     .build();
             
-            log.info("Created ProjectService: interface={}, version={}, group={}", 
+            log.info("Created ProjectService: interface={}, version={}, group={}, projectId={}", 
                     projectService.getServiceInterface(), 
                     projectService.getServiceVersion(), 
-                    projectService.getServiceGroup());
+                    projectService.getServiceGroup(),
+                    projectService.getProjectId());
             
             projectManagementService.addProjectService(projectService);
+            log.debug("✅ Added ProjectService to ProjectManagementService cache: projectId={}, service={}", 
+                    project.getId(), projectService.buildServiceKey());
         }
         
-        // 3. 创建Endpoint映射
-        // 注意：mcpServiceName 使用 "virtual-{endpointName}" 格式，与 VirtualProjectRegistrationService 保持一致
-        VirtualProjectEndpoint endpoint = VirtualProjectEndpoint.builder()
-                .virtualProjectId(project.getId())
-                .endpointName(request.getEndpointName())
-                .endpointPath("/sse/" + request.getEndpointName())
-                .mcpServiceName("virtual-" + request.getEndpointName())
-                .description(request.getDescription())
-                .status(VirtualProjectEndpoint.EndpointStatus.ACTIVE)
-                .createdAt(java.time.LocalDateTime.now())
-                .updatedAt(java.time.LocalDateTime.now())
-                .build();
-        
-        endpointCache.put(project.getId(), endpoint);
-        log.info("Created virtual project endpoint: endpointName={}, mcpServiceName={}", 
-                endpoint.getEndpointName(), endpoint.getMcpServiceName());
-        
-        // 4. 持久化到数据库（在注册到 Nacos 之前，确保数据已保存）
-        persistVirtualProjectToDatabase(project, endpoint);
+        // 验证服务是否已添加到缓存
+        List<ProjectService> addedServices = projectManagementService.getProjectServices(project.getId());
+        log.info("📋 After adding services, project {} has {} services in cache", 
+                project.getId(), addedServices != null ? addedServices.size() : 0);
         
         // 5. 注册到Nacos（作为独立的MCP服务）
         if (request.isAutoRegister()) {
@@ -397,8 +411,10 @@ public class VirtualProjectService {
     
     /**
      * 根据endpointName获取虚拟项目
+     * 多节点环境下，如果内存缓存中没有，尝试从数据库加载
      */
     public VirtualProjectInfo getVirtualProjectByEndpointName(String endpointName) {
+        // 1. 先从内存缓存中查找
         for (Map.Entry<Long, VirtualProjectEndpoint> entry : endpointCache.entrySet()) {
             if (endpointName.equals(entry.getValue().getEndpointName())) {
                 Project project = virtualProjectCache.get(entry.getKey());
@@ -407,6 +423,40 @@ public class VirtualProjectService {
                 }
             }
         }
+        
+        // 2. 如果内存缓存中没有，尝试从数据库加载（多节点环境下，不同节点的缓存可能不同步）
+        if (virtualProjectEndpointMapper != null) {
+            try {
+                com.pajk.mcpmetainfo.persistence.entity.VirtualProjectEndpointEntity endpointEntity = 
+                        virtualProjectEndpointMapper.findByEndpointName(endpointName);
+                if (endpointEntity != null && endpointEntity.getStatus() == 
+                        com.pajk.mcpmetainfo.core.model.VirtualProjectEndpoint.EndpointStatus.ACTIVE) {
+                    Long projectId = endpointEntity.getVirtualProjectId();
+                    if (projectId != null && projectMapper != null) {
+                        // 从数据库加载项目信息
+                        com.pajk.mcpmetainfo.persistence.entity.ProjectEntity projectEntity = 
+                                projectMapper.findById(projectId);
+                        if (projectEntity != null && projectEntity.getProjectType() == 
+                                com.pajk.mcpmetainfo.core.model.Project.ProjectType.VIRTUAL) {
+                            Project project = projectEntity.toProject();
+                            VirtualProjectEndpoint endpoint = endpointEntity.toVirtualProjectEndpoint();
+                            
+                            // 加载到内存缓存（供后续使用）
+                            virtualProjectCache.put(projectId, project);
+                            endpointCache.put(projectId, endpoint);
+                            
+                            log.info("✅ Loaded virtual project from database: endpointName={}, projectId={}", 
+                                    endpointName, projectId);
+                            return buildVirtualProjectInfo(project, endpoint);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("⚠️ Failed to load virtual project from database for endpoint '{}': {}", 
+                        endpointName, e.getMessage());
+            }
+        }
+        
         return null;
     }
     
@@ -467,17 +517,28 @@ public class VirtualProjectService {
             com.pajk.mcpmetainfo.persistence.entity.ProjectEntity projectEntity = 
                     com.pajk.mcpmetainfo.persistence.entity.ProjectEntity.fromProject(project);
             projectMapper.insert(projectEntity);
-            log.info("✅ Persisted virtual project to database: projectId={}, projectName={}", 
-                    project.getId(), projectName);
+            // 插入后，数据库会自动生成ID并设置到 projectEntity.id 中（useGeneratedKeys=true）
+            // 需要更新 project 对象的 id，以便后续使用
+            if (projectEntity.getId() != null) {
+                project.setId(projectEntity.getId());
+                log.info("✅ Persisted virtual project to database: projectId={}, projectName={}", 
+                        project.getId(), projectName);
+            } else {
+                log.warn("⚠️ Project inserted but ID not generated: projectName={}", projectName);
+            }
             
             // 2. 保存 VirtualProjectEndpoint 到 zk_virtual_project_endpoint 表
+            // 确保 endpoint 的 virtualProjectId 已设置（使用刚才生成的 project.id）
+            if (endpoint.getVirtualProjectId() == null && project.getId() != null) {
+                endpoint.setVirtualProjectId(project.getId());
+            }
             com.pajk.mcpmetainfo.persistence.entity.VirtualProjectEndpointEntity endpointEntity = 
                     com.pajk.mcpmetainfo.persistence.entity.VirtualProjectEndpointEntity.fromVirtualProjectEndpoint(endpoint);
             virtualProjectEndpointMapper.insert(endpointEntity);
-            log.info("✅ Persisted virtual project endpoint to database: endpointName={}", 
-                    endpoint.getEndpointName());
+            log.info("✅ Persisted virtual project endpoint to database: endpointName={}, virtualProjectId={}", 
+                    endpoint.getEndpointName(), endpoint.getVirtualProjectId());
             
-            // 3. 保存 ProjectService 到 zk_project_service 表
+                // 3. 保存 ProjectService 到 zk_project_service 表
             if (projectServiceMapper != null) {
                 // 先删除该项目的所有旧服务关联（避免重复）
                 projectServiceMapper.deleteByProjectId(project.getId());
@@ -485,6 +546,8 @@ public class VirtualProjectService {
                 // 获取项目的所有服务
                 List<ProjectService> projectServices = projectManagementService.getProjectServices(project.getId());
                 if (projectServices != null && !projectServices.isEmpty()) {
+                    log.info("📋 Saving {} ProjectService(s) to database for projectId={}", 
+                            projectServices.size(), project.getId());
                     for (ProjectService projectService : projectServices) {
                         com.pajk.mcpmetainfo.persistence.entity.ProjectServiceEntity serviceEntity = 
                                 com.pajk.mcpmetainfo.persistence.entity.ProjectServiceEntity.fromProjectService(projectService);
@@ -495,7 +558,8 @@ public class VirtualProjectService {
                     log.info("✅ Persisted {} ProjectService(s) to database: projectId={}", 
                             projectServices.size(), project.getId());
                 } else {
-                    log.warn("⚠️ No ProjectService to persist for projectId={}", project.getId());
+                    log.warn("⚠️ No ProjectService to persist for projectId={} (services may not have been added to ProjectManagementService)", 
+                            project.getId());
                 }
             } else {
                 log.warn("⚠️ ProjectServiceMapper is not available, skip persisting ProjectService to database");

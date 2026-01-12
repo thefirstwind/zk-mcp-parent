@@ -73,8 +73,16 @@ public class SseController {
     @GetMapping(value = "/sse", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public ResponseEntity<SseEmitter> sseStandard(
             @RequestParam(required = false) String serviceName,
+            @RequestParam(required = false) String url,  // MCP Inspector 代理模式参数
+            @RequestParam(required = false) String transportType,  // MCP Inspector 代理模式参数
             @RequestHeader(value = "X-Service-Name", required = false) String serviceNameHeader,
             @RequestHeader(value = "Host", required = false) String hostHeader) {
+        
+        // 如果提供了 url 参数（MCP Inspector 代理模式），忽略它，因为这是代理服务器的参数
+        // 我们只需要处理 serviceName
+        if (url != null && !url.isEmpty()) {
+            log.debug("📨 SSE request with url parameter (MCP Inspector proxy mode): url={}, transportType={}", url, transportType);
+        }
         
         String actualServiceName = serviceName != null ? serviceName : serviceNameHeader;
         
@@ -198,7 +206,15 @@ public class SseController {
             endpoint = tryServiceName;
         }
         
-        return handleSse(endpoint);
+        try {
+            return handleSse(endpoint);
+        } catch (Exception e) {
+            log.error("❌ Error in sseStandard for serviceName: {}, endpoint: {}", actualServiceName, endpoint, e);
+            // 返回 500 错误，但提供友好的错误信息
+            return ResponseEntity.status(500)
+                    .header("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+                    .body(null);
+        }
     }
     
     /**
@@ -208,8 +224,10 @@ public class SseController {
     private ResponseEntity<SseEmitter> handleSseWithoutEndpoint() {
         log.info("📡 SSE connection request without explicit endpoint, creating generic connection");
         
-        // 创建 SseEmitter（超时时间 30 分钟）
-        SseEmitter emitter = new SseEmitter(30 * 60 * 1000L);
+        // 创建 SseEmitter（超时时间 10 分钟，与 mcp-router-v3 保持一致）
+        // 注意：实际会话超时由 SessionCleanupService 定期清理，这里设置较长的超时时间以避免过早断开
+        // 但会话在 Redis 中的 TTL 是 10 分钟，超过 10 分钟未活跃会被清理
+        SseEmitter emitter = new SseEmitter(10 * 60 * 1000L);
         String sessionId = UUID.randomUUID().toString();
         
         // 注册 session（使用临时 endpoint）
@@ -218,13 +236,16 @@ public class SseController {
         sessionManager.registerSseEmitter(sessionId, tempEndpoint, emitter);
         
         // 构建消息端点 URL（从请求头动态构建，参考 mcp-router-v3）
-        String baseUrl = buildBaseUrlFromRequest();
+        // 注意：IP 请求时不包含 context-path，域名请求时包含 context-path
+        String baseUrl = buildBaseUrlFromRequestForMessageEndpoint();
         String messageEndpoint = String.format("%s/mcp/message?sessionId=%s", baseUrl, sessionId);
         
         try {
             // 发送 endpoint 事件
+            // 注意：使用 id() 避免空行，确保 SSE 格式正确
             emitter.send(SseEmitter.event()
                     .name("endpoint")
+                    .id(sessionId)
                     .data(messageEndpoint));
             
             // 启动心跳并保存任务引用（传递 sessionId 用于日志和清理）
@@ -283,105 +304,135 @@ public class SseController {
      * 处理 SSE 连接
      */
     private ResponseEntity<SseEmitter> handleSse(String endpoint) {
-        // 解析 endpoint
-        EndpointResolver.EndpointInfo endpointInfo = endpointResolver.resolveEndpoint(endpoint)
-                .orElse(null);
-        
-        String mcpServiceName;
-        if (endpointInfo == null) {
-            log.warn("⚠️ Endpoint not found: {}, but creating SSE connection anyway", endpoint);
-            // 如果无法解析 endpoint，判断是否为虚拟项目，使用 virtual-{endpoint} 格式
-            // 否则使用 endpoint 本身作为 serviceName（支持直接使用 MCP 服务名称如 zk-mcp-*）
-            // 这里无法判断是否为虚拟项目，所以先尝试使用 endpoint 本身
-            mcpServiceName = endpoint;
-        } else {
-            // 使用解析后的 mcpServiceName（虚拟项目会是 virtual-{endpointName} 格式）
-            mcpServiceName = endpointInfo.getMcpServiceName();
-            log.info("✅ Resolved endpoint '{}' to MCP service: {}", endpoint, mcpServiceName);
-        }
-        
-        // 创建 SseEmitter（超时时间 30 分钟）
-        SseEmitter emitter = new SseEmitter(30 * 60 * 1000L);
-        String sessionId = UUID.randomUUID().toString();
-        
-        // 注册 session（WebMVC 模式使用 SseEmitter）
-        // 参考 mcp-router-v3 的 initializeSession：先注册 serviceName，再注册 emitter
-        sseEmitterMap.put(sessionId, emitter);
-        sessionManager.registerSseEmitter(sessionId, endpoint, emitter);
-        
-        // 注册 serviceName（参考 mcp-router-v3 的 registerSessionService）
-        if (mcpServiceName != null && !mcpServiceName.isEmpty()) {
-            sessionManager.registerSessionService(sessionId, mcpServiceName);
-            log.info("✅ Registered serviceName for SSE connection: sessionId={}, serviceName={}", sessionId, mcpServiceName);
-        }
-        
-        // 初始化时调用 touch（参考 mcp-router-v3 的 initializeSession）
+        String sessionId = null;
+        SseEmitter emitter = null;
         try {
-            sessionManager.touch(sessionId);
+            // 解析 endpoint
+            EndpointResolver.EndpointInfo endpointInfo = endpointResolver.resolveEndpoint(endpoint)
+                    .orElse(null);
+            
+            String mcpServiceName;
+            if (endpointInfo == null) {
+                log.warn("⚠️ Endpoint not found: {}, but creating SSE connection anyway", endpoint);
+                // 如果无法解析 endpoint，判断是否为虚拟项目，使用 virtual-{endpoint} 格式
+                // 否则使用 endpoint 本身作为 serviceName（支持直接使用 MCP 服务名称如 zk-mcp-*）
+                // 这里无法判断是否为虚拟项目，所以先尝试使用 endpoint 本身
+                mcpServiceName = endpoint;
+            } else {
+                // 使用解析后的 mcpServiceName（虚拟项目会是 virtual-{endpointName} 格式）
+                mcpServiceName = endpointInfo.getMcpServiceName();
+                log.info("✅ Resolved endpoint '{}' to MCP service: {}", endpoint, mcpServiceName);
+            }
+            
+            // 创建 SseEmitter（超时时间 10 分钟，与 mcp-router-v3 保持一致）
+            // 注意：实际会话超时由 SessionCleanupService 定期清理，这里设置较长的超时时间以避免过早断开
+            // 但会话在 Redis 中的 TTL 是 10 分钟，超过 10 分钟未活跃会被清理
+            emitter = new SseEmitter(10 * 60 * 1000L);
+            sessionId = UUID.randomUUID().toString();
+            
+            // 将 sessionId 和 emitter 声明为 final，以便在 lambda 中使用
+            final String finalSessionId = sessionId;
+            final SseEmitter finalEmitter = emitter;
+            
+            // 注册 session（WebMVC 模式使用 SseEmitter）
+            // 参考 mcp-router-v3 的 initializeSession：先注册 serviceName，再注册 emitter
+            sseEmitterMap.put(finalSessionId, finalEmitter);
+            sessionManager.registerSseEmitter(finalSessionId, endpoint, finalEmitter);
+            
+            // 注册 serviceName（参考 mcp-router-v3 的 registerSessionService）
+            if (mcpServiceName != null && !mcpServiceName.isEmpty()) {
+                sessionManager.registerSessionService(finalSessionId, mcpServiceName);
+                log.info("✅ Registered serviceName for SSE connection: sessionId={}, serviceName={}", finalSessionId, mcpServiceName);
+            }
+            
+            // 初始化时调用 touch（参考 mcp-router-v3 的 initializeSession）
+            try {
+                sessionManager.touch(finalSessionId);
+            } catch (Exception e) {
+                log.warn("⚠️ Failed to touch session during initialization: {}", e.getMessage());
+            }
+            
+            // 构建消息端点 URL（从请求头动态构建，参考 mcp-router-v3）
+            // 如果有 serviceName，使用 /mcp/{serviceName}/message 格式；否则使用 /mcp/message 格式
+            // 注意：IP 请求时不包含 context-path，域名请求时包含 context-path
+            String baseUrl = buildBaseUrlFromRequestForMessageEndpoint();
+            String messageEndpoint;
+            if (mcpServiceName != null && !mcpServiceName.isEmpty()) {
+                // 路径参数方式：/mcp/{serviceName}/message?sessionId={sessionId}
+                messageEndpoint = String.format("%s/mcp/%s/message?sessionId=%s", baseUrl, mcpServiceName, finalSessionId);
+            } else {
+                // 查询参数方式：/mcp/message?sessionId={sessionId}
+                messageEndpoint = String.format("%s/mcp/message?sessionId=%s", baseUrl, finalSessionId);
+            }
+            log.info("📡 Generated message endpoint: serviceName={}, messageEndpoint={}", mcpServiceName, messageEndpoint);
+            
+            try {
+                // 发送 endpoint 事件（客户端收到后会通过 POST /mcp/message 发送 initialize 和 tools/list 请求）
+                // 注意：使用 id() 避免空行，确保 SSE 格式正确
+                finalEmitter.send(SseEmitter.event()
+                        .name("endpoint")
+                        .id(finalSessionId)
+                        .data(messageEndpoint));
+                
+                // 启动心跳并保存任务引用（传递 sessionId 用于日志和清理）
+                java.util.concurrent.ScheduledFuture<?> heartbeatTask = startHeartbeat(finalEmitter, finalSessionId);
+                heartbeatTasks.put(finalSessionId, heartbeatTask);
+                
+                // 设置完成和超时回调
+                finalEmitter.onCompletion(() -> {
+                    log.info("SSE connection completed for session: {}", finalSessionId);
+                    cleanupSession(finalSessionId);
+                });
+                
+                finalEmitter.onTimeout(() -> {
+                    log.warn("SSE connection timeout for session: {}", finalSessionId);
+                    cleanupSession(finalSessionId);
+                });
+                
+                finalEmitter.onError((ex) -> {
+                    // Broken pipe、Connection reset 和 already completed 是正常的客户端断开情况，降级为 DEBUG
+                    String errorMsg = ex.getMessage();
+                    if (ex instanceof IOException && errorMsg != null && 
+                        (errorMsg.contains("Broken pipe") || errorMsg.contains("Connection reset"))) {
+                        log.debug("ℹ️ Client disconnected ({}) for session: {}", errorMsg, finalSessionId);
+                    } else if (ex instanceof IllegalStateException && errorMsg != null && errorMsg.contains("already completed")) {
+                        log.debug("ℹ️ SSE emitter already completed for session: {}", finalSessionId);
+                    } else {
+                        log.error("SSE connection error for session: {}", finalSessionId, ex);
+                    }
+                    cleanupSession(finalSessionId);
+                });
+                
+            } catch (IOException e) {
+                log.error("Failed to send initial SSE event", e);
+                finalEmitter.completeWithError(e);
+                return ResponseEntity.internalServerError().build();
+            }
+            
+            // 设置 SSE 响应头（参考 mcp-router-v3）
+            return ResponseEntity.ok()
+                    .header("Content-Type", MediaType.TEXT_EVENT_STREAM_VALUE)
+                    .header("Cache-Control", "no-cache, no-transform")
+                    .header("Connection", "keep-alive")
+                    .header("X-Accel-Buffering", "no")
+                    .body(finalEmitter);
+                    
         } catch (Exception e) {
-            log.warn("⚠️ Failed to touch session during initialization: {}", e.getMessage());
-        }
-        
-        // 构建消息端点 URL（从请求头动态构建，参考 mcp-router-v3）
-        // 如果有 serviceName，使用 /mcp/{serviceName}/message 格式；否则使用 /mcp/message 格式
-        String baseUrl = buildBaseUrlFromRequest();
-        String messageEndpoint;
-        if (mcpServiceName != null && !mcpServiceName.isEmpty()) {
-            // 路径参数方式：/mcp/{serviceName}/message?sessionId={sessionId}
-            messageEndpoint = String.format("%s/mcp/%s/message?sessionId=%s", baseUrl, mcpServiceName, sessionId);
-        } else {
-            // 查询参数方式：/mcp/message?sessionId={sessionId}
-            messageEndpoint = String.format("%s/mcp/message?sessionId=%s", baseUrl, sessionId);
-        }
-        log.info("📡 Generated message endpoint: serviceName={}, messageEndpoint={}", mcpServiceName, messageEndpoint);
-        
-        try {
-            // 发送 endpoint 事件（客户端收到后会通过 POST /mcp/message 发送 initialize 和 tools/list 请求）
-            emitter.send(SseEmitter.event()
-                    .name("endpoint")
-                    .data(messageEndpoint));
-            
-            // 启动心跳并保存任务引用（传递 sessionId 用于日志和清理）
-            java.util.concurrent.ScheduledFuture<?> heartbeatTask = startHeartbeat(emitter, sessionId);
-            heartbeatTasks.put(sessionId, heartbeatTask);
-            
-            // 设置完成和超时回调
-            emitter.onCompletion(() -> {
-                log.info("SSE connection completed for session: {}", sessionId);
-                cleanupSession(sessionId);
-            });
-            
-            emitter.onTimeout(() -> {
-                log.warn("SSE connection timeout for session: {}", sessionId);
-                cleanupSession(sessionId);
-            });
-            
-            emitter.onError((ex) -> {
-                // Broken pipe、Connection reset 和 already completed 是正常的客户端断开情况，降级为 DEBUG
-                String errorMsg = ex.getMessage();
-                if (ex instanceof IOException && errorMsg != null && 
-                    (errorMsg.contains("Broken pipe") || errorMsg.contains("Connection reset"))) {
-                    log.debug("ℹ️ Client disconnected ({}) for session: {}", errorMsg, sessionId);
-                } else if (ex instanceof IllegalStateException && errorMsg != null && errorMsg.contains("already completed")) {
-                    log.debug("ℹ️ SSE emitter already completed for session: {}", sessionId);
-                } else {
-                    log.error("SSE connection error for session: {}", sessionId, ex);
+            log.error("❌ Error creating SSE connection for endpoint: {}", endpoint, e);
+            // 清理可能已创建的资源
+            if (sessionId != null) {
+                try {
+                    cleanupSession(sessionId);
+                } catch (Exception cleanupEx) {
+                    log.debug("Failed to cleanup session during error handling: {}", cleanupEx.getMessage());
                 }
-                cleanupSession(sessionId);
-            });
-            
-        } catch (IOException e) {
-            log.error("Failed to send initial SSE event", e);
-            emitter.completeWithError(e);
-            return ResponseEntity.internalServerError().build();
+            }
+            // 返回 500 错误，但提供友好的错误信息
+            // 注意：无法返回 SseEmitter，所以返回错误响应
+            return ResponseEntity.status(500)
+                    .header("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+                    .body(null);
         }
-        
-        // 设置 SSE 响应头（参考 mcp-router-v3）
-        return ResponseEntity.ok()
-                .header("Cache-Control", "no-cache, no-transform")
-                .header("Connection", "keep-alive")
-                .header("X-Accel-Buffering", "no")
-                .body(emitter);
     }
     
     /**
@@ -399,14 +450,14 @@ public class SseController {
                     // 心跳的目的是保持连接活跃，通过 touch 更新会话时间即可
                     sessionManager.touch(sessionId);
                     
-                    log.debug("💓 Heartbeat (touch only): sessionId={}", sessionId);
-                } else {
-                    log.debug("💓 Heartbeat skipped: sessionId={} (emitter not found or invalid)", sessionId);
+                    // 移除心跳日志，减少日志输出（只在 trace 级别记录）
+                    log.trace("💓 Heartbeat (touch only): sessionId={}", sessionId);
                 }
+                // 移除无效心跳的日志，减少日志输出
             } catch (Exception e) {
                 // 由于不再发送心跳事件，不会抛出 IOException
-                // 只捕获通用异常，记录日志即可
-                log.warn("⚠️ Heartbeat error: sessionId={}, error={}", sessionId, e.getMessage());
+                // 只捕获通用异常，记录日志即可（降低日志级别）
+                log.debug("⚠️ Heartbeat error: sessionId={}, error={}", sessionId, e.getMessage());
             }
         }, 15, 15, TimeUnit.SECONDS); // 初始延迟15秒，之后每15秒执行一次
     }
@@ -456,13 +507,12 @@ public class SseController {
     }
     
     /**
-     * 从请求头构建 Base URL
-     * 参考 mcp-router-v3 的实现，优先使用代理头（X-Forwarded-Host, X-Forwarded-Proto）
-     * 支持 context-path 和域名配置（生产环境）
+     * 为 message endpoint 构建 Base URL
+     * 根据请求类型（IP vs 域名）决定是否包含 context-path：
+     * - IP 请求：不包含 context-path（如：http://10.138.21.246:8080）
+     * - 域名请求：包含 context-path（如：http://srv.test.pajk.com/mcp-metainfo）
      */
-    private String buildBaseUrlFromRequest() {
-        String contextPath = "";
-        
+    private String buildBaseUrlFromRequestForMessageEndpoint() {
         try {
             org.springframework.web.context.request.RequestAttributes requestAttributes = 
                     org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
@@ -471,30 +521,130 @@ public class SseController {
                         (org.springframework.web.context.request.ServletRequestAttributes) requestAttributes;
                 jakarta.servlet.http.HttpServletRequest request = servletRequestAttributes.getRequest();
                 
-                // 优先从 HttpServletRequest 获取 context-path（最准确）
-                String requestContextPath = request.getContextPath();
-                if (requestContextPath != null && !requestContextPath.isEmpty() && !requestContextPath.equals("/")) {
-                    contextPath = requestContextPath;
-                    // 确保 context-path 不以 / 结尾（除非是根路径）
-                    if (contextPath.endsWith("/") && contextPath.length() > 1) {
-                        contextPath = contextPath.substring(0, contextPath.length() - 1);
-                    }
-                } else {
-                    // 如果从请求中获取不到，则从配置文件读取
-                    contextPath = environment.getProperty("server.servlet.context-path", "");
-                    // 确保 context-path 以 / 开头，但不以 / 结尾（除非是根路径）
-                    if (contextPath != null && !contextPath.isEmpty() && !contextPath.equals("/")) {
-                        if (!contextPath.startsWith("/")) {
-                            contextPath = "/" + contextPath;
-                        }
-                        // 移除末尾的 /（除非是根路径）
+                // 获取 Host（优先使用 X-Forwarded-Host，否则使用 Host 头）
+                String host = request.getHeader("X-Forwarded-Host");
+                if (host == null || host.isEmpty()) {
+                    host = request.getHeader("x-forwarded-host");
+                }
+                if (host == null || host.isEmpty()) {
+                    host = request.getHeader("Host");
+                }
+                
+                // 判断是 IP 还是域名
+                boolean isIpAddress = isIpAddress(host);
+                
+                // IP 请求不包含 context-path，域名请求包含 context-path
+                return buildBaseUrlFromRequest(!isIpAddress);
+            }
+        } catch (Exception e) {
+            log.debug("Failed to detect request type, defaulting to include context-path: {}", e.getMessage());
+        }
+        
+        // 默认包含 context-path（安全起见，假设是域名请求）
+        return buildBaseUrlFromRequest(true);
+    }
+    
+    /**
+     * 判断字符串是否是 IP 地址
+     * 
+     * @param host Host 字符串（可能包含端口，如 "10.138.21.246:8080"）
+     * @return true 如果是 IP 地址，false 如果是域名
+     */
+    private boolean isIpAddress(String host) {
+        if (host == null || host.isEmpty()) {
+            return false;
+        }
+        
+        // 移除端口号
+        String hostWithoutPort = host;
+        if (host.contains(":")) {
+            hostWithoutPort = host.split(":")[0];
+        }
+        
+        // 简单的 IP 地址检测：检查是否匹配 IPv4 格式（xxx.xxx.xxx.xxx）
+        // 注意：这是一个简化的检测，不处理 IPv6
+        return hostWithoutPort.matches("^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$");
+    }
+    
+    /**
+     * 从请求头构建 Base URL
+     * 参考 mcp-router-v3 的实现，优先使用代理头（X-Forwarded-Host, X-Forwarded-Proto）
+     * 支持 context-path 和域名配置（生产环境）
+     * 
+     * @param includeContextPath 是否包含 context-path
+     */
+    private String buildBaseUrlFromRequest(boolean includeContextPath) {
+        String contextPath = "";
+        
+        // 如果不需要包含 context-path，直接跳过 context-path 提取
+        if (!includeContextPath) {
+            contextPath = "";
+        } else {
+            try {
+                org.springframework.web.context.request.RequestAttributes requestAttributes = 
+                        org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+                if (requestAttributes != null) {
+                    org.springframework.web.context.request.ServletRequestAttributes servletRequestAttributes = 
+                            (org.springframework.web.context.request.ServletRequestAttributes) requestAttributes;
+                    jakarta.servlet.http.HttpServletRequest request = servletRequestAttributes.getRequest();
+                    
+                    // 优先从 HttpServletRequest 获取 context-path（最准确）
+                    String requestContextPath = request.getContextPath();
+                    if (requestContextPath != null && !requestContextPath.isEmpty() && !requestContextPath.equals("/")) {
+                        contextPath = requestContextPath;
+                        // 确保 context-path 不以 / 结尾（除非是根路径）
                         if (contextPath.endsWith("/") && contextPath.length() > 1) {
                             contextPath = contextPath.substring(0, contextPath.length() - 1);
                         }
                     } else {
-                        contextPath = "";
+                        // 如果从请求中获取不到，则从配置文件读取
+                        contextPath = environment.getProperty("server.servlet.context-path", "");
+                        // 确保 context-path 以 / 开头，但不以 / 结尾（除非是根路径）
+                        if (contextPath != null && !contextPath.isEmpty() && !contextPath.equals("/")) {
+                            if (!contextPath.startsWith("/")) {
+                                contextPath = "/" + contextPath;
+                            }
+                            // 移除末尾的 /（除非是根路径）
+                            if (contextPath.endsWith("/") && contextPath.length() > 1) {
+                                contextPath = contextPath.substring(0, contextPath.length() - 1);
+                            }
+                        } else {
+                            contextPath = "";
+                        }
+                    }
+                    
+                    // 支持 X-Forwarded-Prefix 来获取 context-path（反向代理环境）
+                    String forwardedPrefix = request.getHeader("X-Forwarded-Prefix");
+                    if (forwardedPrefix == null || forwardedPrefix.isEmpty()) {
+                        forwardedPrefix = request.getHeader("x-forwarded-prefix");
+                    }
+                    // 如果从 X-Forwarded-Prefix 获取到 context-path，优先使用它
+                    if (forwardedPrefix != null && !forwardedPrefix.isEmpty()) {
+                        String prefixContextPath = forwardedPrefix.trim();
+                        // 确保以 / 开头
+                        if (!prefixContextPath.startsWith("/")) {
+                            prefixContextPath = "/" + prefixContextPath;
+                        }
+                        // 移除末尾的斜杠
+                        if (prefixContextPath.endsWith("/") && prefixContextPath.length() > 1) {
+                            prefixContextPath = prefixContextPath.substring(0, prefixContextPath.length() - 1);
+                        }
+                        contextPath = prefixContextPath;
+                        log.info("✅ Extracted context-path from X-Forwarded-Prefix: {}", contextPath);
                     }
                 }
+            } catch (Exception e) {
+                log.debug("Failed to extract context-path: {}", e.getMessage());
+            }
+        }
+        
+        try {
+            org.springframework.web.context.request.RequestAttributes requestAttributes = 
+                    org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+            if (requestAttributes != null) {
+                org.springframework.web.context.request.ServletRequestAttributes servletRequestAttributes = 
+                        (org.springframework.web.context.request.ServletRequestAttributes) requestAttributes;
+                jakarta.servlet.http.HttpServletRequest request = servletRequestAttributes.getRequest();
                 
                 // 优先读取代理相关头（不区分大小写）
                 String forwardedProto = request.getHeader("X-Forwarded-Proto");
@@ -533,7 +683,7 @@ public class SseController {
                         }
                     }
                     String baseUrl = scheme + "://" + hostPort + contextPath;
-                    log.debug("Built base URL from forwarded headers: {}", baseUrl);
+                    log.info("✅ Built base URL from forwarded headers: {}", baseUrl);
                     return baseUrl;
                 }
                 
@@ -562,7 +712,7 @@ public class SseController {
                         }
                     }
                     String baseUrl = reqScheme + "://" + hostWithoutPort + contextPath;
-                    log.debug("Built base URL from Host header: {}", baseUrl);
+                    log.info("✅ Built base URL from Host header: {}", baseUrl);
                     return baseUrl;
                 }
             }
@@ -573,7 +723,7 @@ public class SseController {
         // 回退到默认配置（包含 context-path）
         String defaultPort = environment.getProperty("server.port", "9091");
         String baseUrl = "http://127.0.0.1:" + defaultPort + contextPath;
-        log.debug("Built base URL from default config: {}", baseUrl);
+        log.warn("⚠️ Built base URL from default config (fallback): {}", baseUrl);
         return baseUrl;
     }
     

@@ -9,16 +9,16 @@
         <result property="projectCode" column="project_code"/>
         <result property="projectName" column="project_name"/>
         <result property="projectType" column="project_type" 
-                typeHandler="org.apache.ibatis.type.EnumTypeHandler"
-                javaType="com.pajk.mcpmetainfo.core.model.Project$ProjectType"/>
+                typeHandler="com.pajk.mcpmetainfo.persistence.typehandler.ProjectTypeTypeHandler"/>
         <result property="description" column="description"/>
         <result property="ownerId" column="owner_id"/>
         <result property="ownerName" column="owner_name"/>
         <result property="status" column="status" 
-                typeHandler="org.apache.ibatis.type.EnumTypeHandler"
-                javaType="com.pajk.mcpmetainfo.core.model.Project$ProjectStatus"/>
-        <result property="createdAt" column="gmt_created"/>
-        <result property="updatedAt" column="gmt_modified"/>
+                typeHandler="com.pajk.mcpmetainfo.persistence.typehandler.ProjectStatusTypeHandler"/>
+        <result property="createdAt" column="gmt_created" 
+                typeHandler="com.pajk.mcpmetainfo.persistence.typehandler.LocalDateTimeTypeHandler"/>
+        <result property="updatedAt" column="gmt_modified" 
+                typeHandler="com.pajk.mcpmetainfo.persistence.typehandler.LocalDateTimeTypeHandler"/>
     </resultMap>
     
     <sql id="projectColumns">
@@ -27,18 +27,31 @@
     
     <!-- 插入项目信息 -->
     <insert id="insert" parameterType="com.pajk.mcpmetainfo.persistence.entity.ProjectEntity" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO zk_project (
-            id, project_code, project_name, project_type, description, owner_id, owner_name, status, gmt_created, gmt_modified
-        ) VALUES (
-            #{id}, #{projectCode}, #{projectName}, #{projectType}, #{description}, #{ownerId}, #{ownerName}, #{status}, #{createdAt}, #{updatedAt}
-        )
-        ON DUPLICATE KEY UPDATE
-            project_name = VALUES(project_name),
-            description = VALUES(description),
-            owner_id = VALUES(owner_id),
-            owner_name = VALUES(owner_name),
-            status = VALUES(status),
-            gmt_modified = VALUES(gmt_modified)
+        <choose>
+            <!-- 如果 id 为 null，不插入 id 字段，让数据库自动生成 -->
+            <when test="id == null">
+                INSERT INTO zk_project (
+                    project_code, project_name, project_type, description, owner_id, owner_name, status, gmt_created, gmt_modified
+                ) VALUES (
+                    #{projectCode}, #{projectName}, #{projectType}, #{description}, #{ownerId}, #{ownerName}, #{status}, #{createdAt}, #{updatedAt}
+                )
+            </when>
+            <!-- 如果 id 不为 null，插入 id 字段（用于更新场景） -->
+            <otherwise>
+                INSERT INTO zk_project (
+                    id, project_code, project_name, project_type, description, owner_id, owner_name, status, gmt_created, gmt_modified
+                ) VALUES (
+                    #{id}, #{projectCode}, #{projectName}, #{projectType}, #{description}, #{ownerId}, #{ownerName}, #{status}, #{createdAt}, #{updatedAt}
+                )
+                ON DUPLICATE KEY UPDATE
+                    project_name = VALUES(project_name),
+                    description = VALUES(description),
+                    owner_id = VALUES(owner_id),
+                    owner_name = VALUES(owner_name),
+                    status = VALUES(status),
+                    gmt_modified = VALUES(gmt_modified)
+            </otherwise>
+        </choose>
     </insert>
     
     <!-- 更新项目信息 -->

@@ -40,6 +40,9 @@ public class VirtualProjectRegistrationService {
     private McpToolSchemaGenerator mcpToolSchemaGenerator;
     
     @Autowired(required = false)
+    private com.pajk.mcpmetainfo.core.util.EnhancedMcpToolGenerator enhancedMcpToolGenerator;
+    
+    @Autowired(required = false)
     private InterfaceWhitelistService interfaceWhitelistService;
     
     @Autowired(required = false)
@@ -47,6 +50,7 @@ public class VirtualProjectRegistrationService {
     
     @Autowired(required = false)
     private com.pajk.mcpmetainfo.persistence.mapper.VirtualProjectEndpointMapper virtualProjectEndpointMapper;
+    
     
     @Value("${server.port:9091}")
     private int serverPort;
@@ -339,44 +343,8 @@ public class VirtualProjectRegistrationService {
     }
     
     /**
-     * 获取虚拟项目的工具列表（用于预览）
-     */
-    public List<Map<String, Object>> getVirtualProjectTools(Long virtualProjectId) {
-        // 注意：虚拟项目存储在ProjectManagementService中（通过addProjectService时同步）
-        // 但Project对象可能不在projectCache中，需要从projectServiceCache中获取服务列表
-        log.info("🔍 Getting tools for virtual project: projectId={}", virtualProjectId);
-        
-        List<ProjectService> projectServices = projectManagementService.getProjectServices(virtualProjectId);
-        if (projectServices == null || projectServices.isEmpty()) {
-            log.warn("⚠️ Virtual project {} has no services", virtualProjectId);
-            return Collections.emptyList();
-        }
-        
-        log.info("📋 Virtual project {} has {} services:", virtualProjectId, projectServices.size());
-        for (ProjectService ps : projectServices) {
-            log.info("   - Service: {}:{}:{} (serviceId={}, enabled={})", 
-                    ps.getServiceInterface(), ps.getServiceVersion(), ps.getServiceGroup(),
-                    ps.getServiceId(), ps.getEnabled());
-        }
-        
-        List<com.pajk.mcpmetainfo.core.model.ProviderInfo> providers = aggregateProviders(projectServices);
-        log.info("✅ Aggregated {} providers for virtual project {} (from {} services)", 
-                providers.size(), virtualProjectId, projectServices.size());
-        
-        if (providers.isEmpty()) {
-            log.warn("⚠️ No providers found for virtual project {} (this may indicate: 1) services not in whitelist, 2) no online providers, 3) serviceId mismatch)", virtualProjectId);
-            return Collections.emptyList();
-        }
-        
-        // 生成工具列表（复用NacosMcpRegistrationService的逻辑）
-        List<Map<String, Object>> tools = generateToolsFromProviders(providers);
-        log.info("✅ Generated {} tools for virtual project {}", tools.size(), virtualProjectId);
-        
-        return tools;
-    }
-    
-    /**
-     * 通过 endpointName 获取虚拟项目的工具列表（简化版本，不依赖 projectId）
+     * 获取虚拟项目的工具列表（从 Nacos 查询）
+     * 不再依赖 zk_project 和 zk_project_service，直接从 Nacos 查询工具配置
      */
     public List<Map<String, Object>> getVirtualProjectToolsByEndpointName(String endpointName) {
         if (endpointName == null || endpointName.isEmpty()) {
@@ -390,91 +358,52 @@ public class VirtualProjectRegistrationService {
             actualEndpoint = endpointName.substring("virtual-".length());
         }
         
-        log.info("Getting tools for virtual project by endpointName: {}", actualEndpoint);
+        log.info("🔍 Getting tools for virtual project by endpointName: {}", actualEndpoint);
         
-        // 1. 尝试从 VirtualProjectService 获取虚拟项目信息
-        VirtualProjectService.VirtualProjectInfo virtualProject = 
-                virtualProjectService.getVirtualProjectByEndpointName(actualEndpoint);
-        if (virtualProject != null && virtualProject.getProject() != null) {
-            Long projectId = virtualProject.getProject().getId();
-            log.info("Found virtual project by endpointName: projectId={}, endpointName={}", projectId, actualEndpoint);
-            return getVirtualProjectTools(projectId);
-        }
-        
-        // 2. 如果内存中没有，尝试从所有虚拟项目中查找匹配的 endpoint
-        List<VirtualProjectService.VirtualProjectInfo> allVirtualProjects = virtualProjectService.getAllVirtualProjects();
-        if (allVirtualProjects != null) {
-            for (VirtualProjectService.VirtualProjectInfo vp : allVirtualProjects) {
-                if (vp.getEndpoint() != null && actualEndpoint.equals(vp.getEndpoint().getEndpointName())) {
-                    if (vp.getProject() != null) {
-                        Long projectId = vp.getProject().getId();
-                        log.info("Found virtual project from all projects: projectId={}, endpointName={}", 
-                                projectId, actualEndpoint);
-                        return getVirtualProjectTools(projectId);
-                    }
-                }
-            }
-        }
-        
-        // 3. 如果内存中都没有，尝试通过 ProjectManagementService 查询所有项目，然后匹配 endpoint
-        List<Project> allProjects = projectManagementService.getAllProjects();
-        if (allProjects != null) {
-            for (Project project : allProjects) {
-                if (project.getProjectType() == Project.ProjectType.VIRTUAL) {
-                    // 检查该项目的 endpoint 是否匹配
-                    VirtualProjectEndpoint endpoint = virtualProjectService.getEndpointByProjectId(project.getId());
-                    if (endpoint != null && actualEndpoint.equals(endpoint.getEndpointName())) {
-                        log.info("Found virtual project from ProjectManagementService: projectId={}, endpointName={}", 
-                                project.getId(), actualEndpoint);
-                        return getVirtualProjectTools(project.getId());
-                    }
-                }
-            }
-        }
-        
-        // 4. 如果内存中都没有，尝试从数据库直接查询 virtual_project_id
+        // 1. 验证 endpoint 是否存在（从数据库查询）
         if (virtualProjectEndpointMapper != null) {
             try {
-                Long projectId = queryVirtualProjectIdFromDatabase(actualEndpoint);
-                if (projectId != null) {
-                    log.info("Found virtual project from database: projectId={}, endpointName={}", 
-                            projectId, actualEndpoint);
-                    return getVirtualProjectTools(projectId);
+                com.pajk.mcpmetainfo.persistence.entity.VirtualProjectEndpointEntity entity = 
+                        virtualProjectEndpointMapper.findByEndpointName(actualEndpoint);
+                if (entity == null || entity.getStatus() != com.pajk.mcpmetainfo.core.model.VirtualProjectEndpoint.EndpointStatus.ACTIVE) {
+                    log.warn("⚠️ Virtual project endpoint not found or not active: {}", actualEndpoint);
+                    return Collections.emptyList();
                 }
             } catch (Exception e) {
-                log.warn("Failed to query virtual project from database: endpointName={}, error: {}", 
-                        actualEndpoint, e.getMessage());
+                log.warn("⚠️ Failed to verify endpoint from database: {}, error: {}", actualEndpoint, e.getMessage());
             }
         }
         
-        log.warn("Virtual project not found by endpointName: {} (memory cache may be empty after restart)", actualEndpoint);
-        return Collections.emptyList();
-    }
-    
-    /**
-     * 从数据库查询虚拟项目的 projectId（通过 endpointName）
-     * 使用 MyBatis Mapper 查询，只返回状态为 ACTIVE 的 endpoint
-     */
-    private Long queryVirtualProjectIdFromDatabase(String endpointName) {
-        if (virtualProjectEndpointMapper == null) {
-            return null;
-        }
+        // 2. 从 Nacos 查询工具配置
+        // 服务名格式：virtual-{endpointName}
+        String serviceName = "virtual-" + actualEndpoint;
+        String serviceGroup = nacosMcpRegistrationService.getServiceGroup();
+        
+        log.info("📦 Querying tools from Nacos: serviceName={}, serviceGroup={}", serviceName, serviceGroup);
         
         try {
-            com.pajk.mcpmetainfo.persistence.entity.VirtualProjectEndpointEntity entity = 
-                    virtualProjectEndpointMapper.findByEndpointName(endpointName);
-            if (entity != null && entity.getStatus() == com.pajk.mcpmetainfo.core.model.VirtualProjectEndpoint.EndpointStatus.ACTIVE) {
-                return entity.getVirtualProjectId();
+            // 从 Nacos 配置中心获取工具配置
+            List<Map<String, Object>> tools = nacosMcpRegistrationService.getToolsFromNacosConfig(serviceName, serviceGroup);
+            if (tools != null && !tools.isEmpty()) {
+                log.info("✅ Got {} tools from Nacos for virtual project: {}", tools.size(), actualEndpoint);
+                return tools;
             }
+            
+            log.warn("⚠️ No tools found in Nacos config for service: {}", serviceName);
+            return Collections.emptyList();
+            
         } catch (Exception e) {
-            log.error("Failed to query virtual project from database: endpointName={}", endpointName, e);
+            log.error("❌ Failed to get tools from Nacos for service: {}, error: {}", serviceName, e.getMessage(), e);
+            return Collections.emptyList();
         }
-        return null;
     }
+    
+    
     
     /**
      * 从Provider生成工具列表
-     * 根据实际方法参数生成 inputSchema，而不是固定需要 args 和 timeout
+     * 使用增强版工具生成器，生成更精准的 tools 定义
+     * 参考 zk_dubbo_method_parameter 表的详细信息，确保参数描述清晰、精准
      */
     private List<Map<String, Object>> generateToolsFromProviders(List<com.pajk.mcpmetainfo.core.model.ProviderInfo> providers) {
         List<Map<String, Object>> tools = new ArrayList<>();
@@ -487,7 +416,6 @@ public class VirtualProjectRegistrationService {
                     if (methodName.isEmpty()) {
                         continue;
                     }
-                    
                     Map<String, Object> tool = new HashMap<>();
                     
                     // 工具名称：接口名.方法名
@@ -506,6 +434,40 @@ public class VirtualProjectRegistrationService {
                     tool.put("inputSchema", inputSchema);
                     
                     tools.add(tool);
+//                    try {
+//                        // 优先使用增强版工具生成器（使用数据库中的详细信息）
+//                        Map<String, Object> tool;
+//                        if (enhancedMcpToolGenerator != null) {
+//                            tool = enhancedMcpToolGenerator.generateEnhancedTool(
+//                                    provider.getInterfaceName(), methodName);
+//                            log.debug("✅ Generated enhanced tool for {}.{}", provider.getInterfaceName(), methodName);
+//                        } else {
+//                            // 回退到基础生成器
+//                            log.debug("⚠️ EnhancedMcpToolGenerator not available, using basic generator");
+//                            tool = new HashMap<>();
+//                            String toolName = provider.getInterfaceName() + "." + methodName;
+//                            tool.put("name", toolName);
+//                            tool.put("description", String.format("调用 %s 服务的 %s 方法",
+//                                    provider.getInterfaceName(), methodName));
+//                            Map<String, Object> inputSchema = mcpToolSchemaGenerator.createInputSchemaFromMethod(
+//                                    provider.getInterfaceName(), methodName);
+//                            tool.put("inputSchema", inputSchema);
+//                        }
+//                        tools.add(tool);
+//                    } catch (Exception e) {
+//                        log.warn("⚠️ Failed to generate tool for {}.{}, error: {}",
+//                                provider.getInterfaceName(), methodName, e.getMessage());
+//                        // 发生错误时，使用基础生成器
+//                        Map<String, Object> tool = new HashMap<>();
+//                        String toolName = provider.getInterfaceName() + "." + methodName;
+//                        tool.put("name", toolName);
+//                        tool.put("description", String.format("调用 %s 服务的 %s 方法",
+//                                provider.getInterfaceName(), methodName));
+//                        Map<String, Object> inputSchema = mcpToolSchemaGenerator.createInputSchemaFromMethod(
+//                                provider.getInterfaceName(), methodName);
+//                        tool.put("inputSchema", inputSchema);
+//                        tools.add(tool);
+//                    }
                 }
             }
         }

@@ -36,11 +36,44 @@ spring:
     base-path: /
     # 启用 WebFlux 的 DispatcherHandler，即使使用 servlet 模式
     enabled: true
+  # Content Negotiation 配置，确保正确处理 Accept 头
+  mvc:
+    contentnegotiation:
+      favor-parameter: false
+      favor-path-extension: false
+      # 不忽略 Accept 头，让 @RequestMapping 的 produces 属性生效（SSE 端点需要 text/event-stream）
+      media-types:
+        json: application/json
+      default-content-type: application/json
 
 # MCP持久化配置
 mcp:
   persistence:
     enabled: true  # 启用持久化功能
+  session:
+    redis-prefix: zkinfo
+    ttl: PT10M  # 10分钟，与 mcp-router-v3 保持一致（SSE 会话超时时间）
+    # Redis 客户端类型: local (使用 Jedis) 或 production (使用 PajkJedisClient)
+    # 默认使用 local，适合本地开发环境
+    redis:
+      type: local  # local 或 production
+      # 本地环境配置（type=local 时使用）
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+      timeout: ${REDIS_TIMEOUT:2000}
+      pool:
+        max-total: ${REDIS_POOL_MAX_TOTAL:20}
+        max-idle: ${REDIS_POOL_MAX_IDLE:10}
+        min-idle: ${REDIS_POOL_MIN_IDLE:5}
+      # 生产环境配置（type=production 时使用）
+      production:
+        cluster-name: ${REDIS_CLUSTER_NAME:zkinfo}
+        category: ${REDIS_CATEGORY:MCP}
+        app-name: ${REDIS_APP_NAME:zk-info}
+    # 可选：显式指定实例 ID（用于多实例部署）
+    # instance-id: zkinfo-instance-1
 
 # MyBatis配置
 mybatis:

@@ -161,15 +161,25 @@ public class VirtualProjectController {
     
     /**
      * 获取虚拟项目的工具列表（预览）
+     * 通过 endpointName 从 Nacos 查询工具配置
      */
     @GetMapping("/{virtualProjectId}/tools")
     public ResponseEntity<Map<String, Object>> getVirtualProjectTools(
             @PathVariable Long virtualProjectId) {
         try {
-            List<Map<String, Object>> tools = registrationService.getVirtualProjectTools(virtualProjectId);
+            // 从 projectId 获取 endpointName
+            VirtualProjectService.VirtualProjectInfo virtualProject = 
+                    virtualProjectService.getVirtualProject(virtualProjectId);
+            if (virtualProject == null || virtualProject.getEndpoint() == null) {
+                return ResponseEntity.notFound().build();
+            }
+            
+            String endpointName = virtualProject.getEndpoint().getEndpointName();
+            List<Map<String, Object>> tools = registrationService.getVirtualProjectToolsByEndpointName(endpointName);
             
             Map<String, Object> response = new HashMap<>();
             response.put("virtualProjectId", virtualProjectId);
+            response.put("endpointName", endpointName);
             response.put("tools", tools);
             response.put("toolCount", tools.size());
             

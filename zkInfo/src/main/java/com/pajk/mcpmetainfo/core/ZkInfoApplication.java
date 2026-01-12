@@ -1,5 +1,6 @@
 package com.pajk.mcpmetainfo.core;
 
+import com.pajk.mcpmetainfo.core.config.McpSessionProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.mcp.server.autoconfigure.McpWebFluxServerAutoConfiguration;
 import org.springframework.boot.SpringApplication;
@@ -17,7 +18,7 @@ import org.mybatis.spring.boot.autoconfigure.MybatisAutoConfiguration;
 @SpringBootApplication(exclude = {McpWebFluxServerAutoConfiguration.class,MybatisAutoConfiguration.class})
 @EnableScheduling
 @EnableAsync
-@EnableConfigurationProperties
+@EnableConfigurationProperties(McpSessionProperties.class)
 @ComponentScan(basePackages = {
     "com.pajk.mcpmetainfo.core",
     "com.pajk.mcpmetainfo.persistence"

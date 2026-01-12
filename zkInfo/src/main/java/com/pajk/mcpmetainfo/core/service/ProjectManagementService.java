@@ -46,15 +46,22 @@ public class ProjectManagementService {
     
     /**
      * 创建项目
+     * 注意：如果 project.id 为 null，不会自动生成ID，应该由数据库 AUTO_INCREMENT 生成
      */
     public Project createProject(Project project) {
-        if (project.getId() == null) {
-            project.setId(System.currentTimeMillis()); // 临时ID生成
+        // 不再手动生成ID，让数据库自动生成（使用AUTO_INCREMENT）
+        // 如果 project.id 为 null，说明是新项目，需要先持久化到数据库获取ID
+        // 如果 project.id 不为 null，说明已经有ID（可能是从数据库加载的）
+        if (project.getId() != null) {
+            projectCache.put(project.getId(), project);
+            log.info("Created project: id={}, code={}, name={}", 
+                    project.getId(), project.getProjectCode(), project.getProjectName());
+        } else {
+            // ID 为 null，需要先持久化到数据库获取ID
+            // 这里只缓存，不生成临时ID
+            log.debug("Project created without ID, will be persisted to database: code={}, name={}", 
+                    project.getProjectCode(), project.getProjectName());
         }
-        
-        projectCache.put(project.getId(), project);
-        log.info("Created project: id={}, code={}, name={}", 
-                project.getId(), project.getProjectCode(), project.getProjectName());
         
         return project;
     }

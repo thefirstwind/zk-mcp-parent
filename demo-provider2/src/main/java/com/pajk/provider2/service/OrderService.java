@@ -13,7 +13,7 @@ public interface OrderService {
      * @param orderId 订单ID
      * @return 订单信息
      */
-    Order getOrderById(String orderId);
+    Order getOrderById(String orderId, String status);
     
     /**
      * 根据用户ID获取订单列表
@@ -49,7 +49,7 @@ public interface OrderService {
      * @param orderId 订单ID
      * @return 订单总金额
      */
-    Double calculateOrderTotal(String orderId);
+    Double calculateOrderTotal(String orderId, Integer num);
 
 }
 
