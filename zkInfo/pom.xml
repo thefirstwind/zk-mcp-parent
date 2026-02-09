@@ -212,10 +212,18 @@
         </dependency>
 
         <!-- Nacos Client for Service Registration -->
+        <!-- Nacos Client for Service Registration -->
         <dependency>
             <groupId>com.alibaba.nacos</groupId>
             <artifactId>nacos-client</artifactId>
-            <version>2.3.0</version>
+            <version>3.0.1</version>
+        </dependency>
+        
+        <!-- Nacos Maintainer Client for AI Metadata (Required for Nacos MCP) -->
+        <dependency>
+            <groupId>com.alibaba.nacos</groupId>
+            <artifactId>nacos-maintainer-client</artifactId>
+            <version>3.0.1</version>
         </dependency>
 
         <!-- Jedis for Redis Session Management -->

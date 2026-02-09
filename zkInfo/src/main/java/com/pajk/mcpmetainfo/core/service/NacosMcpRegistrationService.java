@@ -20,9 +20,22 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
 import com.pajk.mcpmetainfo.core.util.McpToolSchemaGenerator;
+import com.alibaba.nacos.maintainer.client.ai.AiMaintainerFactory;
+import com.alibaba.nacos.maintainer.client.ai.AiMaintainerService;
+import com.alibaba.nacos.api.ai.model.mcp.McpEndpointSpec;
+import com.alibaba.nacos.api.ai.model.mcp.McpServerBasicInfo;
+import com.alibaba.nacos.api.ai.model.mcp.McpServerRemoteServiceConfig;
+import com.alibaba.nacos.api.ai.model.mcp.McpTool;
+import com.alibaba.nacos.api.ai.model.mcp.McpToolSpecification;
+import com.alibaba.nacos.api.ai.model.mcp.McpServiceRef;
+import com.alibaba.nacos.api.ai.model.mcp.registry.ServerVersionDetail;
+import com.alibaba.nacos.api.PropertyKeyConst;
+import com.alibaba.nacos.api.ai.constant.AiConstants;
+
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.Comparator;
+import javax.annotation.PostConstruct;
 
 /**
  * Nacos MCP服务注册服务
@@ -40,8 +53,22 @@ public class NacosMcpRegistrationService {
     private final ZkInfoNodeDiscoveryService zkInfoNodeDiscoveryService; // zkInfo 节点发现服务
     private final ObjectMapper objectMapper = new ObjectMapper();
     
+    private AiMaintainerService aiMaintainerService; // Nacos AI 维护服务
+
     @Value("${nacos.v3.api.enabled:true}")
     private boolean useV3Api; // 是否使用 v3 API
+    
+    @Value("${spring.cloud.nacos.discovery.server-addr:127.0.0.1:8848}")
+    private String nacosServerAddr;
+    
+    @Value("${spring.cloud.nacos.discovery.username:}")
+    private String nacosUsername;
+    
+    @Value("${spring.cloud.nacos.discovery.password:}")
+    private String nacosPassword;
+    
+    @Value("${spring.cloud.nacos.discovery.namespace:public}")
+    private String nacosNamespace;
     
     @org.springframework.beans.factory.annotation.Autowired
     private com.pajk.mcpmetainfo.core.util.McpToolSchemaGenerator mcpToolSchemaGenerator;
@@ -71,6 +98,31 @@ public class NacosMcpRegistrationService {
     private static final String SERVER_GROUP = "mcp-server";
     private static final String TOOLS_GROUP = "mcp-tools";
     private static final String VERSIONS_GROUP = "mcp-server-versions";
+    
+    @PostConstruct
+    public void init() {
+        if (!registryEnabled) {
+            return;
+        }
+        try {
+            Properties properties = new Properties();
+            properties.setProperty(PropertyKeyConst.SERVER_ADDR, nacosServerAddr);
+            if (nacosNamespace != null && !nacosNamespace.isEmpty()) {
+                properties.setProperty(PropertyKeyConst.NAMESPACE, nacosNamespace);
+            }
+            if (nacosUsername != null && !nacosUsername.isEmpty()) {
+                properties.setProperty(PropertyKeyConst.USERNAME, nacosUsername);
+                properties.setProperty(PropertyKeyConst.PASSWORD, nacosPassword);
+            }
+            
+            // 初始化 AiMaintainerService
+            this.aiMaintainerService = AiMaintainerFactory.createAiMaintainerService(properties);
+            log.info("✅ AiMaintainerService initialized successfully");
+        } catch (Exception e) {
+            log.error("❌ Failed to initialize AiMaintainerService", e);
+            // 不抛出异常，以免阻塞应用启动，降级为使用 ConfigService
+        }
+    }
 
     /**
      * 将Dubbo服务注册为MCP服务到Nacos
@@ -98,14 +150,26 @@ public class NacosMcpRegistrationService {
             // 3. 生成工具列表（从Dubbo方法转换为MCP工具）
             List<Map<String, Object>> tools = generateMcpTools(providers);
             
-            // 4. 创建并发布配置到Nacos配置中心
-            publishConfigsToNacos(serviceId, mcpServiceName, version, tools);
+            // 4. 发布配置到Nacos
+            String serverContent = null;
+            boolean useMaintainer = false;
             
-            // 5. 注册服务实例到Nacos服务列表（普通Dubbo服务，application从providers中提取）
-            // 普通Dubbo服务使用临时节点（ephemeral=true），需要心跳机制
-            registerInstanceToNacos(mcpServiceName, serviceId, version, tools, providers, null, true);
+            // 优先尝试使用 AiMaintainerService
+            if (aiMaintainerService != null) {
+                useMaintainer = publishMcpServerToNacosUsingMaintainerService(serviceId, mcpServiceName, version, tools);
+            }
             
-            log.info("✅ Successfully registered MCP service: {} to Nacos", mcpServiceName);
+            // 如果 AiMaintainerService 不可用或失败，回退到 ConfigService
+            if (!useMaintainer) {
+                serverContent = publishConfigsToNacos(serviceId, mcpServiceName, version, tools);
+            }
+            
+            // 5. 注册服务实例到Nacos服务列表
+            // 如果使用了 Maintainer，serverContent 为 null，registerInstanceToNacos 会跳过 MD5 计算
+            registerInstanceToNacos(mcpServiceName, serviceId, version, tools, providers, null, true, serverContent);
+            
+            log.info("✅ Successfully registered MCP service: {} to Nacos (via {})", 
+                    mcpServiceName, useMaintainer ? "AiMaintainerService" : "ConfigService");
             
         } catch (Exception e) {
             log.error("❌ Failed to register MCP service: {}", serviceInterface, e);
@@ -139,21 +203,63 @@ public class NacosMcpRegistrationService {
             // 2. 生成工具列表（从Dubbo方法转换为MCP工具）
             List<Map<String, Object>> tools = generateMcpTools(providers);
             
-            // 3. 创建并发布配置到Nacos配置中心
-            publishConfigsToNacos(serviceId, mcpServiceName, version, tools);
+            // 3. 发布配置到Nacos
+            String serverContent = null;
+            boolean useMaintainer = false;
+            
+            // 优先尝试使用 AiMaintainerService
+            if (aiMaintainerService != null) {
+                useMaintainer = publishMcpServerToNacosUsingMaintainerService(serviceId, mcpServiceName, version, tools);
+            }
+            
+            // 如果 AiMaintainerService 不可用或失败，回退到 ConfigService
+            if (!useMaintainer) {
+                serverContent = publishConfigsToNacos(serviceId, mcpServiceName, version, tools);
+            }
             
             // 4. 注册服务实例到Nacos服务列表（使用虚拟项目名称作为 application）
-            // 虚拟项目使用永久节点（ephemeral=false），即使 zkInfo 停止也不会自动删除
-            // 需要手动删除或通过 API 删除
-            // 注册所有活跃的 zkInfo 节点
-            registerInstancesToNacosForAllNodes(mcpServiceName, serviceId, version, tools, providers, virtualProjectName, false);
+            registerInstancesToNacosForAllNodes(mcpServiceName, serviceId, version, tools, providers, virtualProjectName, false, serverContent);
             
-            log.info("✅ Successfully registered virtual project MCP service: {} to Nacos (application: {})", 
-                    mcpServiceName, virtualProjectName);
+            log.info("✅ Successfully registered virtual project MCP service: {} to Nacos (via {})", 
+                    mcpServiceName, useMaintainer ? "AiMaintainerService" : "ConfigService");
             
         } catch (Exception e) {
             log.error("❌ Failed to register virtual project MCP service: {}", mcpServiceName, e);
             throw new RuntimeException("Failed to register virtual project MCP service to Nacos", e);
+        }
+    }
+
+    /**
+     * 更新服务状态
+     * 
+     * @param serviceInterface 服务接口名
+     * @param version 服务版本
+     * @param isOnline 是否在线
+     */
+    public void updateServiceStatus(String serviceInterface, String version, boolean isOnline) {
+        if (!registryEnabled) {
+            return;
+        }
+
+        try {
+            String mcpServiceName = buildMcpServiceName(serviceInterface, version);
+            
+            // 获取本机IP
+            String localIp = getLocalIp();
+            
+            // 查找并更新实例
+            List<Instance> instances = namingService.getAllInstances(mcpServiceName, serviceGroup);
+            for (Instance instance : instances) {
+                if (instance.getIp().equals(localIp) && instance.getPort() == serverPort) {
+                    instance.setEnabled(isOnline);
+                    instance.setHealthy(isOnline);
+                    namingService.registerInstance(mcpServiceName, serviceGroup, instance);
+                    log.info("Updated service status: {} -> online={}", mcpServiceName, isOnline);
+                    break;
+                }
+            }
+        } catch (Exception e) {
+            log.error("Failed to update service status: {}", serviceInterface, e);
         }
     }
 
@@ -521,8 +627,10 @@ public class NacosMcpRegistrationService {
     /**
      * 发布配置到Nacos配置中心
      * 需要创建3个配置：tools, versions, server
+     * 
+     * @return 服务器配置内容（用于计算 MD5）
      */
-    private void publishConfigsToNacos(String serviceId, String mcpServiceName, 
+    private String publishConfigsToNacos(String serviceId, String mcpServiceName, 
                                        String version, List<Map<String, Object>> tools) 
             throws NacosException {
         
@@ -545,6 +653,8 @@ public class NacosMcpRegistrationService {
         String serverContent = createServerConfig(serviceId, mcpServiceName, version, toolsDataId);
         configService.publishConfig(serverDataId, SERVER_GROUP, serverContent);
         log.info("📝 Published server config: {} (format: JSON, determined by .json suffix)", serverDataId);
+        
+        return serverContent;
     }
 
     /**
@@ -562,6 +672,114 @@ public class NacosMcpRegistrationService {
         }
     }
 
+    /**
+     * 使用 AiMaintainerService 注册 MCP Server 信息
+     * 这是 Nacos AI 推荐的注册方式
+     */
+    private boolean publishMcpServerToNacosUsingMaintainerService(String serviceId, String mcpServiceName, 
+                                                               String version, List<Map<String, Object>> tools) {
+        if (aiMaintainerService == null) {
+            return false;
+        }
+        
+        try {
+            log.info("🚀 Publishing MCP server meta to Nacos using AiMaintainerService: {}", mcpServiceName);
+            
+            // 1. 构建 McpElement
+            McpServerBasicInfo serverBasicInfo = new McpServerBasicInfo();
+            serverBasicInfo.setName(mcpServiceName);
+            serverBasicInfo.setProtocol(AiConstants.Mcp.MCP_PROTOCOL_SSE);
+            serverBasicInfo.setFrontProtocol(AiConstants.Mcp.MCP_PROTOCOL_SSE); // 前端协议通常也是 SSE
+            serverBasicInfo.setDescription("Dubbo service converted to MCP: " + mcpServiceName);
+            
+            // 设置版本详情
+            ServerVersionDetail serverVersionDetail = new ServerVersionDetail();
+            serverVersionDetail.setVersion(version);
+            serverBasicInfo.setVersionDetail(serverVersionDetail);
+            
+            // 设置远程服务配置
+            McpServerRemoteServiceConfig remoteServerConfig = new McpServerRemoteServiceConfig();
+            remoteServerConfig.setExportPath("/sse"); // SSE 导出路径
+            
+            McpServiceRef serviceRef = new McpServiceRef();
+            serviceRef.setNamespaceId(nacosNamespace != null ? nacosNamespace : "public");
+            serviceRef.setGroupName(serviceGroup);
+            serviceRef.setServiceName(mcpServiceName);
+            remoteServerConfig.setServiceRef(serviceRef);
+            
+            serverBasicInfo.setRemoteServerConfig(remoteServerConfig);
+            
+            // 2. 构建 McpToolSpecification
+            McpToolSpecification mcpToolSpec = new McpToolSpecification();
+            List<McpTool> mcpTools = createMcpToolList(tools);
+            mcpToolSpec.setTools(mcpTools);
+            
+            // 3. 构建 McpEndpointSpec
+            McpEndpointSpec endpointSpec = new McpEndpointSpec();
+            endpointSpec.setType(AiConstants.Mcp.MCP_ENDPOINT_TYPE_REF); // 引用类型，指向具体的 Nacos 服务
+            Map<String, String> endpointData = new HashMap<>();
+            endpointData.put("namespaceId", nacosNamespace != null ? nacosNamespace : "public");
+            endpointData.put("groupName", serviceGroup);
+            endpointData.put("serviceName", mcpServiceName);
+            endpointSpec.setData(endpointData);
+            
+            // 4. 调用 AiMaintainerService 创建 MCP Server
+            // createMcpServer(String namespaceId, String serviceName, McpServerBasicInfo basicInfo, McpToolSpecification toolSpec, McpEndpointSpec endpointSpec)
+            // 注意：namespaceId 参数
+            String namespaceId = nacosNamespace != null ? nacosNamespace : "public";
+            boolean result = aiMaintainerService.createMcpServer(namespaceId, mcpServiceName, serverBasicInfo, mcpToolSpec, endpointSpec);
+            
+            if (result) {
+                log.info("✅ Successfully published MCP server meta using AiMaintainerService: {}", mcpServiceName);
+            } else {
+                log.warn("⚠️ Failed to publish MCP server meta using AiMaintainerService: {}", mcpServiceName);
+            }
+            return result;
+            
+        } catch (Exception e) {
+            log.error("❌ Error publishing MCP server meta using AiMaintainerService", e);
+            return false;
+        }
+    }
+
+    /**
+     * 将 Map<String, Object> 形式的工具列表转换为 McpTool 对象列表
+     */
+    private List<McpTool> createMcpToolList(List<Map<String, Object>> toolsMapList) {
+        List<McpTool> mcpTools = new ArrayList<>();
+        if (toolsMapList == null || toolsMapList.isEmpty()) {
+            return mcpTools;
+        }
+        
+        for (Map<String, Object> toolMap : toolsMapList) {
+            try {
+                McpTool tool = new McpTool();
+                tool.setName((String) toolMap.get("name"));
+                tool.setDescription((String) toolMap.get("description"));
+                
+                // inputSchema 是 Map，需要根据 McpTool 定义处理
+                // McpTool 的 inputSchema 字段通常是一个 JsonNode 或 Map
+                // 在 Nacos SDK 中，McpTool.setInputSchema() 的参数类型取决于 SDK 版本
+                // 假设是 Object 或 Map<String, Object>
+                // 如果 SDK 要求特定类型，可能需要转换
+                // McpTool.setInputSchema() requires Map<String, Object> in Nacos 3.x
+                Object inputSchema = toolMap.get("inputSchema");
+                if (inputSchema instanceof Map) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> inputSchemaMap = (Map<String, Object>) inputSchema;
+                    tool.setInputSchema(inputSchemaMap);
+                } else if (inputSchema != null) {
+                    log.warn("Expected inputSchema to be Map but got: {}", inputSchema.getClass().getName());
+                }
+                
+                mcpTools.add(tool);
+            } catch (Exception e) {
+                log.warn("Failed to convert tool map to McpTool: {}", toolMap, e);
+            }
+        }
+        return mcpTools;
+    }
+    
     /**
      * 创建版本配置JSON
      */
@@ -643,7 +861,7 @@ public class NacosMcpRegistrationService {
     private void registerInstanceToNacos(String mcpServiceName, String serviceId, 
                                         String version, List<Map<String, Object>> tools,
                                         List<ProviderInfo> providers,
-                                        String application, boolean ephemeral) 
+                                        String application, boolean ephemeral, String serverConfigContent) 
             throws NacosException {
         
         // 获取本机IP
@@ -743,23 +961,14 @@ public class NacosMcpRegistrationService {
                 metadata.get("tools.count"));
         
         // 计算server配置的MD5
-        String serverDataId = serviceId + "-" + version + "-mcp-server.json";
-        try {
-            String serverConfig = null;
-            if (useV3Api && nacosV3ApiService != null) {
-                // 使用 v3 API 获取配置
-                serverConfig = nacosV3ApiService.getConfig(serverDataId, SERVER_GROUP);
-            } else {
-                // 使用 SDK 获取配置（向后兼容）
-                serverConfig = configService.getConfig(serverDataId, SERVER_GROUP, 5000);
-            }
-            
-            if (serverConfig != null) {
-                String md5 = calculateMd5(serverConfig);
-                metadata.put("server.md5", md5);
-            }
-        } catch (Exception e) {
-            log.warn("Failed to get server config for MD5 calculation", e);
+        if (serverConfigContent != null && !serverConfigContent.isEmpty()) {
+            String md5 = calculateMd5(serverConfigContent);
+            metadata.put("server.md5", md5);
+            log.debug("📦 Calculated MD5 from provided content for {}: {}", mcpServiceName, md5);
+        } else {
+            // 如果 content 为空（例如通过 AiMaintainerService 注册），则跳过 MD5 计算
+            // 或者如果之前就没有发布 Config，那么也不应该计算 MD5
+            log.debug("⚠️ Skipping server.md5 calculation for {} as serverConfigContent is null (likely using AiMaintainerService)", mcpServiceName);
         }
         
         // 确保 metadata 不为空
@@ -838,7 +1047,7 @@ public class NacosMcpRegistrationService {
     private void registerInstancesToNacosForAllNodes(String mcpServiceName, String serviceId, 
                                                      String version, List<Map<String, Object>> tools,
                                                      List<ProviderInfo> providers,
-                                                     String application, boolean ephemeral) {
+                                                     String application, boolean ephemeral, String serverConfigContent) {
         try {
             // 1. 获取所有活跃的 zkInfo 节点
             List<ZkInfoNodeDiscoveryService.ZkInfoNode> activeNodes = zkInfoNodeDiscoveryService.getAllActiveZkInfoNodes();
@@ -846,7 +1055,7 @@ public class NacosMcpRegistrationService {
             if (activeNodes.isEmpty()) {
                 log.warn("⚠️ No active zkInfo nodes found, registering current node only");
                 // 如果没有找到节点，至少注册当前节点
-                registerInstanceToNacos(mcpServiceName, serviceId, version, tools, providers, application, ephemeral);
+                registerInstanceToNacos(mcpServiceName, serviceId, version, tools, providers, application, ephemeral, serverConfigContent);
                 return;
             }
             
@@ -863,7 +1072,7 @@ public class NacosMcpRegistrationService {
             for (ZkInfoNodeDiscoveryService.ZkInfoNode node : activeNodes) {
                 try {
                     registerInstanceToNacosForNode(mcpServiceName, serviceId, version, tools, providers, 
-                            application, ephemeral, node.getIp(), node.getPort());
+                            application, ephemeral, node.getIp(), node.getPort(), serverConfigContent);
                     successCount++;
                     log.info("✅ Registered virtual project instance for node: {}:{}", node.getIp(), node.getPort());
                 } catch (Exception e) {
@@ -880,7 +1089,7 @@ public class NacosMcpRegistrationService {
             log.error("❌ Failed to register instances for all nodes, falling back to current node only: {}", e.getMessage(), e);
             // 如果失败，至少注册当前节点
             try {
-                registerInstanceToNacos(mcpServiceName, serviceId, version, tools, providers, application, ephemeral);
+                registerInstanceToNacos(mcpServiceName, serviceId, version, tools, providers, application, ephemeral, serverConfigContent);
             } catch (Exception fallbackError) {
                 log.error("❌ Failed to register current node as fallback: {}", fallbackError.getMessage(), fallbackError);
                 throw new RuntimeException("Failed to register virtual project instances", e);
@@ -905,7 +1114,7 @@ public class NacosMcpRegistrationService {
                                                 String version, List<Map<String, Object>> tools,
                                                 List<ProviderInfo> providers,
                                                 String application, boolean ephemeral,
-                                                String nodeIp, int nodePort) throws NacosException {
+                                                String nodeIp, int nodePort, String serverConfigContent) throws NacosException {
         
         // 创建实例
         Instance instance = new Instance();
@@ -915,8 +1124,13 @@ public class NacosMcpRegistrationService {
         instance.setEnabled(true);
         instance.setEphemeral(ephemeral);
         
-        // 设置元数据（与 registerInstanceToNacos 方法相同）
-        Map<String, String> metadata = buildInstanceMetadata(mcpServiceName, serviceId, version, tools, application);
+        // 设置元数据
+        Map<String, String> metadata = buildInstanceMetadata(mcpServiceName, serviceId, version, tools, application, serverConfigContent);
+        
+        if (metadata == null || metadata.isEmpty()) {
+            log.error("❌ Metadata is empty! Cannot register instance for node {}:{} without metadata.", nodeIp, nodePort);
+            throw new RuntimeException("Metadata is required for MCP service registration");
+        }
         
         instance.setMetadata(metadata);
         
@@ -932,7 +1146,7 @@ public class NacosMcpRegistrationService {
      */
     private Map<String, String> buildInstanceMetadata(String mcpServiceName, String serviceId, 
                                                       String version, List<Map<String, Object>> tools,
-                                                      String application) {
+                                                      String application, String serverConfigContent) {
         Map<String, String> metadata = new HashMap<>();
         
         // 基础信息
@@ -976,22 +1190,13 @@ public class NacosMcpRegistrationService {
         // 工具数量
         metadata.put("tools.count", String.valueOf(tools.size()));
         
-        // 计算server配置的MD5
-        String serverDataId = serviceId + "-" + version + "-mcp-server.json";
-        try {
-            String serverConfig = null;
-            if (useV3Api && nacosV3ApiService != null) {
-                serverConfig = nacosV3ApiService.getConfig(serverDataId, SERVER_GROUP);
-            } else {
-                serverConfig = configService.getConfig(serverDataId, SERVER_GROUP, 5000);
-            }
-            
-            if (serverConfig != null) {
-                String md5 = calculateMd5(serverConfig);
-                metadata.put("server.md5", md5);
-            }
-        } catch (Exception e) {
-            log.warn("Failed to get server config for MD5 calculation", e);
+        // 计算server配置的MD5（使用传入的内容，不再请求Nacos）
+        if (serverConfigContent != null && !serverConfigContent.isEmpty()) {
+            String md5 = calculateMd5(serverConfigContent);
+            metadata.put("server.md5", md5);
+            log.debug("📦 Calculated MD5 from content: {}", md5);
+        } else {
+            log.warn("⚠️ Server config content is empty, cannot calculate MD5");
         }
         
         // 检查 metadata 总大小
