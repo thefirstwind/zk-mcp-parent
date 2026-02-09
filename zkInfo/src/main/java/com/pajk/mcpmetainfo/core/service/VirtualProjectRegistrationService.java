@@ -8,7 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import com.pajk.mcpmetainfo.core.util.McpToolSchemaGenerator;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -36,11 +36,7 @@ public class VirtualProjectRegistrationService {
     @Autowired
     private VirtualProjectService virtualProjectService; // 使用字段注入避免循环依赖
     
-    @Autowired
-    private McpToolSchemaGenerator mcpToolSchemaGenerator;
-    
-    @Autowired(required = false)
-    private com.pajk.mcpmetainfo.core.util.EnhancedMcpToolGenerator enhancedMcpToolGenerator;
+
     
     @Autowired(required = false)
     private InterfaceWhitelistService interfaceWhitelistService;
@@ -149,6 +145,36 @@ public class VirtualProjectRegistrationService {
         } catch (Exception e) {
             log.error("❌ Failed to deregister virtual project from Nacos by serviceName: {}", serviceName, e);
             throw new RuntimeException("Failed to deregister virtual project from Nacos", e);
+        }
+    }
+    
+    /**
+     * 当 Dubbo 服务提供者发生变化时，刷新所有包含该服务的虚拟项目
+     * 
+     * @param serviceInterface 接口名
+     * @param version 版本
+     */
+    public void refreshVirtualProjectsByService(String serviceInterface, String version) {
+        log.info("🔄 Refreshing virtual projects containing service: {}:{}", serviceInterface, version);
+        
+        // 1. 查找包含该服务的所有项目
+        List<Project> projects = projectManagementService.getProjectsByService(serviceInterface, version);
+        
+        if (projects.isEmpty()) {
+            log.debug("No virtual projects found containing service: {}:{}", serviceInterface, version);
+            return;
+        }
+        
+        // 2. 对每个项目，重新注册到 Nacos（更新 metadata 和 tools）
+        for (Project project : projects) {
+            if (project.getProjectType() == Project.ProjectType.VIRTUAL) {
+                VirtualProjectEndpoint endpoint = virtualProjectService.getEndpointByProjectId(project.getId());
+                if (endpoint != null) {
+                    log.info("🔄 Re-registering virtual project due to service update: {}", project.getProjectName());
+                    // 直接调用注册逻辑
+                    registerVirtualProjectToNacos(project, endpoint);
+                }
+            }
         }
     }
     
@@ -400,80 +426,6 @@ public class VirtualProjectRegistrationService {
     
     
     
-    /**
-     * 从Provider生成工具列表
-     * 使用增强版工具生成器，生成更精准的 tools 定义
-     * 参考 zk_dubbo_method_parameter 表的详细信息，确保参数描述清晰、精准
-     */
-    private List<Map<String, Object>> generateToolsFromProviders(List<com.pajk.mcpmetainfo.core.model.ProviderInfo> providers) {
-        List<Map<String, Object>> tools = new ArrayList<>();
-        
-        for (com.pajk.mcpmetainfo.core.model.ProviderInfo provider : providers) {
-            if (provider.getMethods() != null && !provider.getMethods().isEmpty()) {
-                String[] methods = provider.getMethods().split(",");
-                for (String methodName : methods) {
-                    methodName = methodName.trim();
-                    if (methodName.isEmpty()) {
-                        continue;
-                    }
-                    Map<String, Object> tool = new HashMap<>();
-                    
-                    // 工具名称：接口名.方法名
-                    String toolName = provider.getInterfaceName() + "." + methodName;
-                    tool.put("name", toolName);
-                    
-                    // 工具描述
-                    String dbDesc = mcpToolSchemaGenerator.getMethodDescriptionFromDb(provider.getInterfaceName(), methodName);
-                    tool.put("description", (dbDesc != null && !dbDesc.isBlank())
-                            ? dbDesc
-                            : String.format("调用 %s 服务的 %s 方法", provider.getInterfaceName(), methodName));
-                    
-                    // 根据实际方法参数生成 inputSchema
-                    Map<String, Object> inputSchema = mcpToolSchemaGenerator.createInputSchemaFromMethod(
-                            provider.getInterfaceName(), methodName);
-                    tool.put("inputSchema", inputSchema);
-                    
-                    tools.add(tool);
-//                    try {
-//                        // 优先使用增强版工具生成器（使用数据库中的详细信息）
-//                        Map<String, Object> tool;
-//                        if (enhancedMcpToolGenerator != null) {
-//                            tool = enhancedMcpToolGenerator.generateEnhancedTool(
-//                                    provider.getInterfaceName(), methodName);
-//                            log.debug("✅ Generated enhanced tool for {}.{}", provider.getInterfaceName(), methodName);
-//                        } else {
-//                            // 回退到基础生成器
-//                            log.debug("⚠️ EnhancedMcpToolGenerator not available, using basic generator");
-//                            tool = new HashMap<>();
-//                            String toolName = provider.getInterfaceName() + "." + methodName;
-//                            tool.put("name", toolName);
-//                            tool.put("description", String.format("调用 %s 服务的 %s 方法",
-//                                    provider.getInterfaceName(), methodName));
-//                            Map<String, Object> inputSchema = mcpToolSchemaGenerator.createInputSchemaFromMethod(
-//                                    provider.getInterfaceName(), methodName);
-//                            tool.put("inputSchema", inputSchema);
-//                        }
-//                        tools.add(tool);
-//                    } catch (Exception e) {
-//                        log.warn("⚠️ Failed to generate tool for {}.{}, error: {}",
-//                                provider.getInterfaceName(), methodName, e.getMessage());
-//                        // 发生错误时，使用基础生成器
-//                        Map<String, Object> tool = new HashMap<>();
-//                        String toolName = provider.getInterfaceName() + "." + methodName;
-//                        tool.put("name", toolName);
-//                        tool.put("description", String.format("调用 %s 服务的 %s 方法",
-//                                provider.getInterfaceName(), methodName));
-//                        Map<String, Object> inputSchema = mcpToolSchemaGenerator.createInputSchemaFromMethod(
-//                                provider.getInterfaceName(), methodName);
-//                        tool.put("inputSchema", inputSchema);
-//                        tools.add(tool);
-//                    }
-                }
-            }
-        }
-        
-        return tools;
-    }
     
 }
 

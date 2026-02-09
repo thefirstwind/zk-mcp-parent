@@ -7,6 +7,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -37,6 +39,10 @@ public class DubboToMcpAutoRegistrationService {
     private final ProviderService providerService;
     private final NacosMcpRegistrationService nacosMcpRegistrationService;
     private final ServiceCollectionFilterService filterService;
+    
+    @Autowired(required = false)
+    @Lazy
+    private VirtualProjectRegistrationService virtualProjectRegistrationService;
     
     @Value("${nacos.registry.auto-register:true}")
     private boolean autoRegisterEnabled;
@@ -130,6 +136,14 @@ public class DubboToMcpAutoRegistrationService {
             log.info("✅ Auto registered service to Nacos: {}:{}", 
                     providerInfo.getInterfaceName(), version);
             
+            // 同步刷新包含该服务的虚拟项目
+            if (virtualProjectRegistrationService != null) {
+                virtualProjectRegistrationService.refreshVirtualProjectsByService(
+                        providerInfo.getInterfaceName(),
+                        version
+                );
+            }
+            
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.warn("Registration interrupted: {}", providerInfo.getInterfaceName());
@@ -160,8 +174,14 @@ public class DubboToMcpAutoRegistrationService {
             
             if (remainingProviders.isEmpty()) {
                 // 没有其他Provider了，标记服务为不可用（但不注销，等待审批流程）
-                log.warn("⚠️ All providers removed for registered service: {}, marking as unavailable", serviceKey);
-                // TODO: 更新服务状态为不可用，但不注销
+                log.warn("⚠️ All providers removed for registered service: {}, marking as offline in Nacos", serviceKey);
+                // 更新Nacos中的服务状态为不健康/下线
+                String version = providerInfo.getVersion() != null ? providerInfo.getVersion() : "1.0.0";
+                nacosMcpRegistrationService.updateServiceStatus(
+                    providerInfo.getInterfaceName(),
+                    version,
+                    false // set online = false
+                );
             } else {
                 // 还有Provider，更新服务信息
                 checkAndUpdateService(providerInfo);
@@ -330,6 +350,14 @@ public class DubboToMcpAutoRegistrationService {
             
             log.info("✅ Updated registered service: {}:{}", 
                     providerInfo.getInterfaceName(), version);
+            
+            // 同步刷新包含该服务的虚拟项目
+            if (virtualProjectRegistrationService != null) {
+                virtualProjectRegistrationService.refreshVirtualProjectsByService(
+                        providerInfo.getInterfaceName(),
+                        version
+                );
+            }
             
         } catch (Exception e) {
             log.error("Failed to update service: {}", providerInfo.getInterfaceName(), e);

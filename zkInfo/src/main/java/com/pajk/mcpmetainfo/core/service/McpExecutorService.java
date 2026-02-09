@@ -596,6 +596,14 @@ public class McpExecutorService {
     private String detectDubboVersion(ProviderInfo provider) {
         // 方式1: 从 parameters 获取具体版本号
         if (provider.getParameters() != null) {
+            // 优先检查 release 参数（Dubbo 2.7+ 会带上 release 版本号）
+            String release = provider.getParameters().get("release");
+            if (release != null && !release.isEmpty()) {
+                if (release.startsWith("3")) return "3.x";
+                if (release.startsWith("2.7")) return "2.7.x";
+                if (release.startsWith("2.6")) return "2.6.x";
+            }
+            
             String dubboVersion = provider.getParameters().get("dubbo");
             if (dubboVersion != null && !dubboVersion.isEmpty()) {
                 // 如果版本号以 3 开头，返回 "3.x"
@@ -609,6 +617,12 @@ public class McpExecutorService {
                 // 如果版本号以 2.6 开头，返回 "2.6.x"
                 if (dubboVersion.startsWith("2.6")) {
                     return "2.6.x";
+                }
+                // 注意：Dubbo 2.0.2 可能是协议版本号而不是框架版本号
+                // 如果是 2.0.2 且同时存在 release 参数，已经在上面处理了
+                // 如果只有 2.0.2，且 provider 带有 group，则极有可能是 2.6+
+                if ("2.0.2".equals(dubboVersion) && provider.getGroup() != null && !provider.getGroup().isEmpty()) {
+                    return "2.6.x"; // 至少是 2.6
                 }
                 // 如果版本号以 2.5 开头，返回 "2.5.x"
                 if (dubboVersion.startsWith("2.5")) {
@@ -638,7 +652,13 @@ public class McpExecutorService {
      * @param dubboVersion 版本字符串
      * @return true 如果版本 >= 2.6，false 否则（2.5 及更早版本不支持 group）
      */
-    private boolean isGroupSupported(String dubboVersion) {
+    private boolean isGroupSupported(String dubboVersion, ProviderInfo provider) {
+        // 如果 Provider 信息中已经明确包含了 Group（且不是默认值），则肯定支持 Group
+        if (provider != null && provider.getGroup() != null && !provider.getGroup().isEmpty() && !"default".equals(provider.getGroup())) {
+            log.debug("✅ Provider 显式包含 Group {}, 判定为支持 Group", provider.getGroup());
+            return true;
+        }
+        
         if (dubboVersion == null || dubboVersion.isEmpty()) {
             return false; // 未知版本，保守策略：不支持 group
         }
@@ -1344,7 +1364,7 @@ public class McpExecutorService {
         }
         
         // 常见的方法名前缀
-        String[] prefixes = {"create", "update", "save", "add", "set", "put"};
+        String[] prefixes = {"create", "update", "save", "add", "set", "put", "process", "handle", "submit"};
         String entityName = null;
         
         // 尝试从方法名提取实体名
@@ -1358,12 +1378,25 @@ public class McpExecutorService {
             }
         }
         
+        // 简单的单复数处理：如果以s结尾且不是ss/us结尾，尝试去掉s
+        if (entityName != null && entityName.endsWith("s") && entityName.length() > 3 && 
+            !entityName.endsWith("ss") && !entityName.endsWith("us")) {
+            entityName = entityName.substring(0, entityName.length() - 1);
+        }
+        
         // 如果无法从前缀提取，尝试从接口名提取
         if (entityName == null && interfaceName != null && interfaceName.contains(".")) {
             String simpleInterfaceName = interfaceName.substring(interfaceName.lastIndexOf(".") + 1);
-            // 例如：UserService -> User
-            if (simpleInterfaceName.endsWith("Service")) {
-                entityName = simpleInterfaceName.substring(0, simpleInterfaceName.length() - "Service".length());
+            // 移除常见的 Service/Manager/Facade 后缀
+            String[] commonSuffixes = {"Service", "Manager", "Facade", "Controller", "Provider"};
+            for (String s : commonSuffixes) {
+                if (simpleInterfaceName.endsWith(s)) {
+                    entityName = simpleInterfaceName.substring(0, simpleInterfaceName.length() - s.length());
+                    break;
+                }
+            }
+            if (entityName == null) {
+                entityName = simpleInterfaceName;
             }
         }
         
@@ -1377,23 +1410,32 @@ public class McpExecutorService {
             "com.pajk.provider2.model",
             "com.pajk.provider2.entity",
             "com.pajk.provider2.domain",
+            "com.pajk.provider2.dto",
+            "com.pajk.provider1.model",
+            "com.pajk.provider1.entity",
             "com.zkinfo.demo.model",
             "com.zkinfo.demo.entity",
-            "com.zkinfo.demo.domain"
+            "com.zkinfo.demo.dto"
         };
         
         // 如果接口名包含包路径，尝试从接口包路径推断
         if (interfaceName.contains(".")) {
             String interfacePackage = interfaceName.substring(0, interfaceName.lastIndexOf("."));
-            // 尝试将 service 替换为 model/entity/domain
-            String[] replacements = {"model", "entity", "domain"};
-            for (String replacement : replacements) {
-                String possiblePackage = interfacePackage.replace(".service", "." + replacement);
-                if (!possiblePackage.equals(interfacePackage)) {
-                    String possibleType = possiblePackage + "." + entityName;
-                    log.debug("尝试推断类型: {}", possibleType);
-                    // 这里不验证类是否存在，因为泛化调用不需要类在 classpath 中
-                    return possibleType;
+            // 尝试将 service/api/core 替换为 model/entity/domain/dto/vo/pojo/request
+            String[] replacements = {"model", "entity", "domain", "dto", "vo", "pojo", "request", "param"};
+            String[] sourcePackages = {".service", ".api", ".core", ".facade"};
+            
+            for (String source : sourcePackages) {
+                if (interfacePackage.contains(source)) {
+                    for (String replacement : replacements) {
+                        String possiblePackage = interfacePackage.replace(source, "." + replacement);
+                        if (!possiblePackage.equals(interfacePackage)) {
+                            String possibleType = possiblePackage + "." + entityName;
+                            log.debug("尝试推断类型: {}", possibleType);
+                            // 这里可以链式尝试多个，但在没找到类加载器验证的情况下，返回第一个比较通用的
+                            return possibleType;
+                        }
+                    }
                 }
             }
         }
@@ -1642,7 +1684,7 @@ public class McpExecutorService {
         // 检测 Dubbo 版本，判断是否支持 group（在方法开始处定义，供后续使用）
         // 对于不支持 group 的版本（如 2.5），cacheKey 不应该包含 group
         final String dubboVersion = detectDubboVersion(provider);
-        final boolean groupSupported = isGroupSupported(dubboVersion);
+        final boolean groupSupported = isGroupSupported(dubboVersion, provider);
         
         // 构建 cacheKey：如果版本不支持 group，则不包含 group
         String cacheKey;
