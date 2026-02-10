@@ -158,6 +158,7 @@ public class ProjectManagementService {
         List<ProjectService> services = projectServiceCache.get(projectId);
         if (services != null) {
             services.removeIf(ps -> 
+                    ps.getServiceInterface() != null &&
                     ps.getServiceInterface().equals(serviceInterface) &&
                     Objects.equals(ps.getServiceVersion(), version));
         }

@@ -23,9 +23,11 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.bind.annotation.RequestMethod;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import com.pajk.mcpmetainfo.core.service.McpLoggingService;
 
 /**
  * MCP 消息处理 Controller（WebMVC 模式）
@@ -49,6 +51,7 @@ public class McpMessageController {
     private final McpPromptsService mcpPromptsService;
     private final McpToolSchemaGenerator mcpToolSchemaGenerator;
     private final VirtualProjectService virtualProjectService;
+    private final McpLoggingService mcpLoggingService;
     
     /**
      * 处理 MCP 消息：POST /mcp/{serviceName}/message?sessionId=xxx（路径参数方式，参考 mcp-router-v3）
@@ -64,16 +67,9 @@ public class McpMessageController {
         log.info("📨 MCP message request (path): serviceName={}, sessionId={}, method={}", 
                 serviceName, sessionId, request.get("method"));
         
-        // 如果 serviceName 以 virtual- 开头，去掉前缀
+        // 保持原始 serviceName 作为 endpoint，不再强制剥离前缀
         String endpoint = serviceName;
-        if (serviceName.startsWith("virtual-")) {
-            endpoint = serviceName.substring("virtual-".length());
-            log.debug("🔍 ServiceName '{}' starts with virtual-, using '{}' for endpoint lookup", serviceName, endpoint);
-        } else if (serviceName.startsWith("mcp-")) {
-            // 向后兼容：如果以 mcp- 开头，也去掉前缀
-            endpoint = serviceName.substring("mcp-".length());
-            log.debug("🔍 ServiceName '{}' starts with mcp-, using '{}' for endpoint lookup", serviceName, endpoint);
-        }
+        log.debug("🔍 Using serviceName '{}' as endpoint", serviceName);
         
         // 调用统一的处理逻辑
         return handleMessage(sessionId, endpoint, request, serviceName);
@@ -236,14 +232,18 @@ public class McpMessageController {
         String id = request.get("id") != null ? request.get("id").toString() : null;
         
         try {
-            // JSON-RPC 通知（无 id）应不产生响应，直接忽略（参考 mcp-router-v3）
+            // JSON-RPC 通知（无 id）应不产生响应，直接忽略（参考 mcp-sdk）
             if (id == null && method != null && method.startsWith("notifications/")) {
-                log.info("ℹ️ Received JSON-RPC notification '{}', ignoring as per spec", method);
+                if ("notifications/initialized".equals(method)) {
+                    log.info("🚀 Client connection initialized: sessionId={}", sessionId);
+                } else {
+                    log.info("ℹ️ Received JSON-RPC notification '{}', ignoring as per spec", method);
+                }
                 // 不通过 SSE 发送任何数据，直接返回 202 Accepted
                 return ResponseEntity.accepted()
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                         .body(Map.of("status", "accepted", 
-                                "message", "Notification ignored"));
+                                "message", "Notification processed"));
             }
 
             // 如果是直接 HTTP 调用（没有 SSE emitter），直接返回 JSON 响应
@@ -257,16 +257,26 @@ public class McpMessageController {
                     method, sessionId, endpoint, id);
             if ("initialize".equals(method)) {
                 handleInitialize(emitter, request, id, sessionId);
-            } else if ("prompts/list".equals(method)) {
-                handlePromptsList(emitter, endpoint, id, sessionId);
             } else if ("tools/list".equals(method)) {
-                log.info("🔧 Calling handleToolsList: endpoint={}, id={}, sessionId={}", endpoint, id, sessionId);
                 handleToolsList(emitter, endpoint, id, sessionId);
-                log.info("✅ handleToolsList completed: endpoint={}, sessionId={}", endpoint, sessionId);
             } else if ("tools/call".equals(method)) {
                 handleToolCall(emitter, request, endpoint, id, sessionId);
             } else if ("resources/list".equals(method)) {
                 handleResourcesList(emitter, endpoint, id, sessionId);
+            } else if ("resources/read".equals(method)) {
+                handleResourceRead(emitter, request, id, sessionId);
+            } else if ("resources/subscribe".equals(method)) {
+                handleSubscribeResource(emitter, request, id, sessionId);
+            } else if ("resources/unsubscribe".equals(method)) {
+                handleUnsubscribeResource(emitter, request, id, sessionId);
+            } else if ("prompts/list".equals(method)) {
+                handlePromptsList(emitter, endpoint, id, sessionId);
+            } else if ("prompts/get".equals(method)) {
+                handlePromptGet(emitter, request, id, sessionId);
+            } else if ("logging/log".equals(method)) {
+                handleLogMessage(emitter, request, id, sessionId);
+            } else if ("ping".equals(method)) {
+                handlePing(emitter, id, sessionId);
             } else {
                 sendErrorResponseSafe(emitter, id, -32601, "Method not found: " + method, sessionId);
             }
@@ -327,9 +337,9 @@ public class McpMessageController {
         toolsCap.put("listChanged", true);
         capabilities.put("tools", toolsCap);
         
-        // 设置 resources 能力（listChanged = true 会触发客户端自动调用 resources/list）
+        // 设置 resources 能力（subscribe = true 表示支持资源订阅）
         Map<String, Object> resourcesCap = new java.util.LinkedHashMap<>();
-        resourcesCap.put("subscribe", false);
+        resourcesCap.put("subscribe", true);
         resourcesCap.put("listChanged", true);
         capabilities.put("resources", resourcesCap);
         
@@ -337,12 +347,20 @@ public class McpMessageController {
         Map<String, Object> promptsCap = new java.util.LinkedHashMap<>();
         promptsCap.put("listChanged", true);
         capabilities.put("prompts", promptsCap);
+
+        // 设置 logging 能力
+        capabilities.put("logging", new java.util.HashMap<>());
         
         result.put("capabilities", capabilities);
         
         Map<String, Object> serverInfo = new java.util.LinkedHashMap<>();
         serverInfo.put("name", serviceName);
         serverInfo.put("version", "1.0.0");
+        serverInfo.put("description", "Dubbo MCP Service Adapter (zkInfo)");
+        
+        // 添加 capabilities 到 serverInfo (有些客户端在这里寻找)
+        serverInfo.put("capabilities", Arrays.asList("tools", "resources", "prompts", "logging"));
+        
         result.put("serverInfo", serverInfo);
         
         Map<String, Object> response = new java.util.LinkedHashMap<>();
@@ -364,6 +382,85 @@ public class McpMessageController {
                     sessionId, id, e);
             throw e;
         }
+    }
+    
+    /**
+     * 处理 ping 请求
+     */
+    private void handlePing(SseEmitter emitter, String id, String sessionId) throws IOException {
+        log.info("📨 Handling ping request: sessionId={}, id={}", sessionId, id);
+        
+        Map<String, Object> response = new java.util.LinkedHashMap<>();
+        response.put("jsonrpc", "2.0");
+        response.put("id", id != null ? id : "null");
+        response.put("result", new java.util.HashMap<>());
+        
+        String responseJson = objectMapper.writeValueAsString(response);
+        sendSseEventSafe(emitter, responseJson, "ping", sessionId);
+        log.info("✅ Ping response sent via SSE: sessionId={}, id={}", sessionId, id);
+    }
+    
+    /**
+     * 处理 resources/read 请求
+     */
+    private void handleResourceRead(SseEmitter emitter, Map<String, Object> request, String id, String sessionId) throws IOException {
+        log.info("📨 Handling resources/read request: sessionId={}, id={}", sessionId, id);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> params = (Map<String, Object>) request.get("params");
+        String uri = (String) params.get("uri");
+        
+        McpProtocol.ReadResourceParams readParams = McpProtocol.ReadResourceParams.builder()
+                .uri(uri)
+                .build();
+        
+        mcpResourcesService.readResource(readParams)
+                .subscribe(result -> {
+                    try {
+                        Map<String, Object> response = new java.util.LinkedHashMap<>();
+                        response.put("jsonrpc", "2.0");
+                        response.put("id", id != null ? id : "null");
+                        response.put("result", result);
+                        
+                        String responseJson = objectMapper.writeValueAsString(response);
+                        sendSseEventSafe(emitter, responseJson, "resources/read", sessionId);
+                        log.info("✅ Resources/read response sent: uri={}", uri);
+                    } catch (Exception e) {
+                        log.error("❌ Error sending resource result", e);
+                    }
+                });
+    }
+
+    /**
+     * 处理 prompts/get 请求
+     */
+    private void handlePromptGet(SseEmitter emitter, Map<String, Object> request, String id, String sessionId) throws IOException {
+        log.info("📨 Handling prompts/get request: sessionId={}, id={}", sessionId, id);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> params = (Map<String, Object>) request.get("params");
+        String name = (String) params.get("name");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> arguments = (Map<String, Object>) params.get("arguments");
+        
+        McpProtocol.GetPromptParams getParams = McpProtocol.GetPromptParams.builder()
+                .name(name)
+                .arguments(arguments)
+                .build();
+        
+        mcpPromptsService.getPrompt(getParams)
+                .subscribe(result -> {
+                    try {
+                        Map<String, Object> response = new java.util.LinkedHashMap<>();
+                        response.put("jsonrpc", "2.0");
+                        response.put("id", id != null ? id : "null");
+                        response.put("result", result);
+                        
+                        String responseJson = objectMapper.writeValueAsString(response);
+                        sendSseEventSafe(emitter, responseJson, "prompts/get", sessionId);
+                        log.info("✅ Prompts/get response sent: name={}", name);
+                    } catch (Exception e) {
+                        log.error("❌ Error sending prompt result", e);
+                    }
+                });
     }
 
     /**
@@ -391,12 +488,8 @@ public class McpMessageController {
                 }
             }
             
-            // 如果 endpoint 以 mcp- 开头，去掉前缀再解析（因为注册时不添加 mcp- 前缀）
+            // 保持原始 endpoint，由 resolver 决定如何查找
             String actualEndpoint = endpoint;
-            if (endpoint != null && endpoint.startsWith("mcp-")) {
-                actualEndpoint = endpoint.substring("mcp-".length());
-                log.info("📝 Endpoint '{}' starts with mcp-, using '{}' for lookup", endpoint, actualEndpoint);
-            }
             
             java.util.Optional<EndpointResolver.EndpointInfo> endpointInfoOpt = endpointResolver.resolveEndpoint(actualEndpoint);
             if (endpointInfoOpt.isPresent()) {
@@ -561,17 +654,7 @@ public class McpMessageController {
             }
         }
         
-        // 如果 endpoint 以 virtual- 或 mcp- 开头，去掉前缀再解析
-        if (actualEndpoint != null) {
-            if (actualEndpoint.startsWith("virtual-")) {
-                actualEndpoint = actualEndpoint.substring("virtual-".length());
-                log.info("📝 Endpoint '{}' starts with virtual-, using '{}' for lookup", endpoint, actualEndpoint);
-            } else if (actualEndpoint.startsWith("mcp-")) {
-                actualEndpoint = actualEndpoint.substring("mcp-".length());
-                log.info("📝 Endpoint '{}' starts with mcp-, using '{}' for lookup", endpoint, actualEndpoint);
-            }
-        }
-        
+        // 保持原始名称，不再强制剥离前缀。后续 resolver 会根据全名查找。
         log.info("🔍 Using endpoint for tools/list: {}", actualEndpoint);
         List<Map<String, Object>> tools = getToolsForEndpointInternal(actualEndpoint);
         log.info("✅ Got {} tools for endpoint: {}", tools.size(), actualEndpoint);
@@ -647,18 +730,10 @@ public class McpMessageController {
             }
         }
         
-        // 如果 endpoint 以 virtual- 或 mcp- 开头，去掉前缀再解析
-        if (actualEndpoint != null) {
-            if (actualEndpoint.startsWith("virtual-")) {
-                actualEndpoint = actualEndpoint.substring("virtual-".length());
-                log.info("📝 Endpoint '{}' starts with virtual-, using '{}' for lookup", endpoint, actualEndpoint);
-            } else if (actualEndpoint.startsWith("mcp-")) {
-                actualEndpoint = actualEndpoint.substring("mcp-".length());
-                log.info("📝 Endpoint '{}' starts with mcp-, using '{}' for lookup", endpoint, actualEndpoint);
-            }
-        }
+        // 保持原始名称，不再强制剥离前缀
+        log.debug("🔍 Tool call for actualEndpoint: {}", actualEndpoint);
         
-        // 尝试解析 endpoint（但即使解析失败也继续执行，因为 McpExecutorService 会根据 toolName 自动查找服务）
+        // 尝试解析 endpoint
         if (actualEndpoint != null && !actualEndpoint.isEmpty()) {
             java.util.Optional<EndpointResolver.EndpointInfo> endpointInfoOpt = endpointResolver.resolveEndpoint(actualEndpoint);
             if (!endpointInfoOpt.isPresent()) {
@@ -1273,5 +1348,91 @@ public class McpMessageController {
         }
     }
     
+    /**
+     * 处理 resources/subscribe 请求
+     */
+    private void handleSubscribeResource(SseEmitter emitter, Map<String, Object> request, String id, String sessionId) throws IOException {
+        log.info("📨 Handling resources/subscribe request: sessionId={}, id={}", sessionId, id);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> params = (Map<String, Object>) request.get("params");
+        String uri = (String) params.get("uri");
+        
+        McpProtocol.SubscribeResourceParams subscribeParams = McpProtocol.SubscribeResourceParams.builder()
+                .uri(uri)
+                .build();
+        
+        mcpResourcesService.subscribeResource(sessionId, subscribeParams)
+                .subscribe(v -> {
+                    try {
+                        Map<String, Object> response = new java.util.LinkedHashMap<>();
+                        response.put("jsonrpc", "2.0");
+                        response.put("id", id != null ? id : "null");
+                        response.put("result", Map.of("subscribed", true));
+                        
+                        String responseJson = objectMapper.writeValueAsString(response);
+                        sendSseEventSafe(emitter, responseJson, "resources/subscribe", sessionId);
+                        log.info("✅ Resources/subscribe response sent: uri={}", uri);
+                    } catch (Exception e) {
+                        log.error("❌ Error sending subscribe result", e);
+                    }
+                });
+    }
+
+    /**
+     * 处理 resources/unsubscribe 请求
+     */
+    private void handleUnsubscribeResource(SseEmitter emitter, Map<String, Object> request, String id, String sessionId) throws IOException {
+        log.info("📨 Handling resources/unsubscribe request: sessionId={}, id={}", sessionId, id);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> params = (Map<String, Object>) request.get("params");
+        String uri = (String) params.get("uri");
+        
+        McpProtocol.UnsubscribeResourceParams unsubscribeParams = McpProtocol.UnsubscribeResourceParams.builder()
+                .uri(uri)
+                .build();
+        
+        mcpResourcesService.unsubscribeResource(sessionId, unsubscribeParams)
+                .subscribe(v -> {
+                    try {
+                        Map<String, Object> response = new java.util.LinkedHashMap<>();
+                        response.put("jsonrpc", "2.0");
+                        response.put("id", id != null ? id : "null");
+                        response.put("result", Map.of("unsubscribed", true));
+                        
+                        String responseJson = objectMapper.writeValueAsString(response);
+                        sendSseEventSafe(emitter, responseJson, "resources/unsubscribe", sessionId);
+                        log.info("✅ Resources/unsubscribe response sent: uri={}", uri);
+                    } catch (Exception e) {
+                        log.error("❌ Error sending unsubscribe result", e);
+                    }
+                });
+    }
+
+    /**
+     * 处理 logging/log 请求
+     */
+    private void handleLogMessage(SseEmitter emitter, Map<String, Object> request, String id, String sessionId) throws IOException {
+        log.info("📨 Handling logging/log request: sessionId={}, id={}", sessionId, id);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> params = (Map<String, Object>) request.get("params");
+        
+        McpProtocol.LogMessageParams logParams = objectMapper.convertValue(params, McpProtocol.LogMessageParams.class);
+        
+        mcpLoggingService.logMessage(logParams)
+                .subscribe(v -> {
+                    try {
+                        Map<String, Object> response = new java.util.LinkedHashMap<>();
+                        response.put("jsonrpc", "2.0");
+                        response.put("id", id != null ? id : "null");
+                        response.put("result", Map.of("logged", true));
+                        
+                        String responseJson = objectMapper.writeValueAsString(response);
+                        sendSseEventSafe(emitter, responseJson, "logging/log", sessionId);
+                        log.info("✅ Logging/log response sent");
+                    } catch (Exception e) {
+                        log.error("❌ Error sending log result", e);
+                    }
+                });
+    }
 }
 

@@ -182,13 +182,18 @@ public class VirtualProjectService {
                 .updatedAt(java.time.LocalDateTime.now())
                 .build();
         
-        // 3. 创建Endpoint映射（先创建，但 virtualProjectId 会在持久化后设置）
-        // 注意：mcpServiceName 使用 "virtual-{endpointName}" 格式，与 VirtualProjectRegistrationService 保持一致
+        // 3. 创建Endpoint映射
+        // 用户要求 projectName 和 endpointName 保持一致
+        String finalEndpointName = request.getEndpointName();
+        if (finalEndpointName == null || finalEndpointName.trim().isEmpty()) {
+            finalEndpointName = projectName;
+        }
+        
         VirtualProjectEndpoint endpoint = VirtualProjectEndpoint.builder()
                 .virtualProjectId(null) // 先设置为 null，持久化后会更新
-                .endpointName(request.getEndpointName())
-                .endpointPath("/sse/" + request.getEndpointName())
-                .mcpServiceName("virtual-" + request.getEndpointName())
+                .endpointName(finalEndpointName)
+                .endpointPath("/sse/" + finalEndpointName)
+                .mcpServiceName("virtual-" + finalEndpointName)
                 .description(request.getDescription())
                 .status(VirtualProjectEndpoint.EndpointStatus.ACTIVE)
                 .createdAt(java.time.LocalDateTime.now())

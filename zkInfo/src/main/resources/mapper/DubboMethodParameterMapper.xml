@@ -34,6 +34,7 @@
             version = VALUES(version),
             parameter_name = VALUES(parameter_name),
             parameter_type = VALUES(parameter_type),
+            parameter_order = VALUES(parameter_order),
             parameter_description = VALUES(parameter_description),
             parameter_schema_json = VALUES(parameter_schema_json),
             gmt_modified = VALUES(gmt_modified)

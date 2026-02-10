@@ -37,18 +37,30 @@
         </dependency>
 
         <!-- ZooKeeper Client -->
-        <!-- 使用 Curator 4.3.0 以兼容 ZooKeeper 3.5 服务器 -->
-        <!-- Curator 5.x 自带 ZooKeeper 3.7.1 客户端，与服务器 3.5 可能存在协议不兼容 -->
+        <!-- 使用 Curator 5.1.0 以兼容 Dubbo 3.2.x -->
+        <!-- 虽然 Curator 5.x 推荐搭配 ZK 3.6+，但通过排除 ZK 3.7 可以基本保持与 ZK 3.5 的兼容性 -->
         <dependency>
             <groupId>org.apache.curator</groupId>
             <artifactId>curator-framework</artifactId>
-            <version>4.3.0</version>
+            <version>5.1.0</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.apache.zookeeper</groupId>
+                    <artifactId>zookeeper</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         
         <dependency>
             <groupId>org.apache.curator</groupId>
             <artifactId>curator-recipes</artifactId>
-            <version>4.3.0</version>
+            <version>5.1.0</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.apache.zookeeper</groupId>
+                    <artifactId>zookeeper</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         
         <!-- 显式指定 ZooKeeper 客户端版本为 3.5.x 以匹配服务器版本 -->

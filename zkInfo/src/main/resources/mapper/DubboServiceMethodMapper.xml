@@ -21,7 +21,7 @@
     </sql>
     
     <!-- 插入Dubbo服务方法信息（使用 ON DUPLICATE KEY UPDATE 避免重复键错误） -->
-    <insert id="insert" parameterType="com.pajk.mcpmetainfo.persistence.entity.DubboServiceMethodEntity" useGeneratedKeys="true" keyProperty="id">
+    <insert id="insert" parameterType="com.pajk.mcpmetainfo.persistence.entity.DubboServiceMethodEntity">
         INSERT INTO zk_dubbo_service_method (
             service_id, interface_name, version, method_name, return_type, method_description, gmt_created, gmt_modified
         ) VALUES (

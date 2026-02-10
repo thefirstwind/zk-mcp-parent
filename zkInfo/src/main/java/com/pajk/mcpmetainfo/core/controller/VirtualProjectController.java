@@ -71,157 +71,28 @@ public class VirtualProjectController {
     }
     
     /**
-     * 获取虚拟项目详情
+     * 获取虚拟项目详情 (通过 endpointName)
      */
-    @GetMapping("/{virtualProjectId}")
+    @GetMapping("/{endpointName}")
     public ResponseEntity<VirtualProjectService.VirtualProjectInfo> getVirtualProject(
-            @PathVariable Long virtualProjectId) {
+            @PathVariable String endpointName) {
         try {
-            VirtualProjectService.VirtualProjectInfo project = 
-                    virtualProjectService.getVirtualProject(virtualProjectId);
+            VirtualProjectService.VirtualProjectInfo project = findProjectByEndpointName(endpointName);
             if (project == null) {
                 return ResponseEntity.notFound().build();
             }
             return ResponseEntity.ok(project);
         } catch (Exception e) {
-            log.error("获取虚拟项目详情失败: {}", virtualProjectId, e);
+            log.error("获取虚拟项目详情失败: {}", endpointName, e);
             return ResponseEntity.internalServerError().build();
         }
     }
-    
+
     /**
-     * 获取虚拟项目的Endpoint映射
+     * 删除虚拟项目 (通过 endpointName)
      */
-    @GetMapping("/{virtualProjectId}/endpoint")
-    public ResponseEntity<Map<String, Object>> getVirtualProjectEndpoint(
-            @PathVariable Long virtualProjectId) {
-        try {
-            VirtualProjectService.VirtualProjectInfo project = 
-                    virtualProjectService.getVirtualProject(virtualProjectId);
-            if (project == null || project.getEndpoint() == null) {
-                return ResponseEntity.notFound().build();
-            }
-            
-            Map<String, Object> response = new HashMap<>();
-            response.put("endpoint", project.getEndpoint());
-            response.put("virtualProjectId", virtualProjectId);
-            
-            return ResponseEntity.ok(response);
-            
-        } catch (Exception e) {
-            log.error("获取虚拟项目Endpoint失败: {}", virtualProjectId, e);
-            return ResponseEntity.internalServerError().build();
-        }
-    }
-    
-    /**
-     * 获取虚拟项目的服务列表
-     */
-    @GetMapping("/{virtualProjectId}/services")
-    public ResponseEntity<List<com.pajk.mcpmetainfo.core.model.ProjectService>> getVirtualProjectServices(
-            @PathVariable Long virtualProjectId) {
-        try {
-            VirtualProjectService.VirtualProjectInfo project = 
-                    virtualProjectService.getVirtualProject(virtualProjectId);
-            if (project == null) {
-                return ResponseEntity.notFound().build();
-            }
-            return ResponseEntity.ok(project.getServices());
-        } catch (Exception e) {
-            log.error("获取虚拟项目服务列表失败: {}", virtualProjectId, e);
-            return ResponseEntity.internalServerError().build();
-        }
-    }
-    
-    /**
-     * 更新虚拟项目的服务列表
-     */
-    @PutMapping("/{virtualProjectId}/services")
-    public ResponseEntity<Map<String, Object>> updateVirtualProjectServices(
-            @PathVariable Long virtualProjectId,
-            @RequestBody UpdateServicesRequest request) {
-        try {
-            virtualProjectService.updateVirtualProjectServices(
-                    virtualProjectId, request.getServices());
-            
-            Map<String, Object> response = new HashMap<>();
-            response.put("message", "虚拟项目服务列表更新成功");
-            response.put("virtualProjectId", virtualProjectId);
-            response.put("serviceCount", request.getServices().size());
-            
-            return ResponseEntity.ok(response);
-            
-        } catch (Exception e) {
-            log.error("更新虚拟项目服务列表失败: {}", virtualProjectId, e);
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", "更新虚拟项目服务列表失败: " + e.getMessage());
-            return ResponseEntity.internalServerError().body(error);
-        }
-    }
-    
-    /**
-     * 获取虚拟项目的工具列表（预览）
-     * 通过 endpointName 从 Nacos 查询工具配置
-     */
-    @GetMapping("/{virtualProjectId}/tools")
-    public ResponseEntity<Map<String, Object>> getVirtualProjectTools(
-            @PathVariable Long virtualProjectId) {
-        try {
-            // 从 projectId 获取 endpointName
-            VirtualProjectService.VirtualProjectInfo virtualProject = 
-                    virtualProjectService.getVirtualProject(virtualProjectId);
-            if (virtualProject == null || virtualProject.getEndpoint() == null) {
-                return ResponseEntity.notFound().build();
-            }
-            
-            String endpointName = virtualProject.getEndpoint().getEndpointName();
-            List<Map<String, Object>> tools = registrationService.getVirtualProjectToolsByEndpointName(endpointName);
-            
-            Map<String, Object> response = new HashMap<>();
-            response.put("virtualProjectId", virtualProjectId);
-            response.put("endpointName", endpointName);
-            response.put("tools", tools);
-            response.put("toolCount", tools.size());
-            
-            return ResponseEntity.ok(response);
-            
-        } catch (Exception e) {
-            log.error("获取虚拟项目工具列表失败: {}", virtualProjectId, e);
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", "获取虚拟项目工具列表失败: " + e.getMessage());
-            return ResponseEntity.internalServerError().body(error);
-        }
-    }
-    
-    /**
-     * 删除虚拟项目（通过 ID）
-     */
-    @DeleteMapping("/{virtualProjectId}")
+    @DeleteMapping("/{endpointName}")
     public ResponseEntity<Map<String, Object>> deleteVirtualProject(
-            @PathVariable Long virtualProjectId) {
-        try {
-            virtualProjectService.deleteVirtualProject(virtualProjectId);
-            
-            Map<String, Object> response = new HashMap<>();
-            response.put("message", "虚拟项目删除成功");
-            response.put("virtualProjectId", virtualProjectId);
-            
-            return ResponseEntity.ok(response);
-            
-        } catch (Exception e) {
-            log.error("删除虚拟项目失败: {}", virtualProjectId, e);
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", "删除虚拟项目失败: " + e.getMessage());
-            return ResponseEntity.internalServerError().body(error);
-        }
-    }
-    
-    /**
-     * 删除虚拟项目（通过 endpointName）
-     * 支持删除内存中不存在的虚拟项目（从 Nacos 删除）
-     */
-    @DeleteMapping("/by-endpoint/{endpointName}")
-    public ResponseEntity<Map<String, Object>> deleteVirtualProjectByEndpointName(
             @PathVariable String endpointName) {
         try {
             boolean success = virtualProjectService.deleteVirtualProjectByEndpointName(endpointName);
@@ -237,56 +108,95 @@ public class VirtualProjectController {
                 response.put("endpointName", endpointName);
                 return ResponseEntity.internalServerError().body(response);
             }
-            
         } catch (Exception e) {
             log.error("删除虚拟项目失败: endpointName={}", endpointName, e);
             Map<String, Object> error = new HashMap<>();
             error.put("error", "删除虚拟项目失败: " + e.getMessage());
-            error.put("endpointName", endpointName);
             return ResponseEntity.internalServerError().body(error);
         }
     }
-    
+
     /**
-     * 删除虚拟项目（通过 serviceName）
-     * 支持删除内存中不存在的虚拟项目（从 Nacos 删除）
+     * 获取虚拟项目的服务列表 (通过 endpointName)
      */
-    @DeleteMapping("/by-service/{serviceName}")
-    public ResponseEntity<Map<String, Object>> deleteVirtualProjectByServiceName(
-            @PathVariable String serviceName) {
+    @GetMapping("/{endpointName}/services")
+    public ResponseEntity<List<com.pajk.mcpmetainfo.core.model.ProjectService>> getVirtualProjectServices(
+            @PathVariable String endpointName) {
         try {
-            boolean success = virtualProjectService.deleteVirtualProjectByServiceName(serviceName);
+            VirtualProjectService.VirtualProjectInfo project = findProjectByEndpointName(endpointName);
+            if (project == null) {
+                return ResponseEntity.notFound().build();
+            }
+            return ResponseEntity.ok(project.getServices());
+        } catch (Exception e) {
+            log.error("获取虚拟项目服务列表失败: endpointName={}", endpointName, e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * 更新虚拟项目的服务列表 (通过 endpointName)
+     */
+    @PutMapping("/{endpointName}/services")
+    public ResponseEntity<Map<String, Object>> updateVirtualProjectServices(
+            @PathVariable String endpointName,
+            @RequestBody UpdateServicesRequest request) {
+        try {
+            VirtualProjectService.VirtualProjectInfo project = findProjectByEndpointName(endpointName);
+            if (project == null) {
+                return ResponseEntity.notFound().build();
+            }
+
+            virtualProjectService.updateVirtualProjectServices(
+                    project.getProject().getId(), request.getServices());
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", "虚拟项目服务列表更新成功");
+            response.put("endpointName", endpointName);
+            response.put("serviceCount", request.getServices().size());
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("更新虚拟项目服务列表失败: endpointName={}", endpointName, e);
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "更新虚拟项目服务列表失败: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(error);
+        }
+    }
+
+    /**
+     * 获取虚拟项目的工具列表 (通过 endpointName)
+     */
+    @GetMapping("/{endpointName}/tools")
+    public ResponseEntity<Map<String, Object>> getVirtualProjectTools(
+            @PathVariable String endpointName) {
+        try {
+            List<Map<String, Object>> tools = registrationService.getVirtualProjectToolsByEndpointName(endpointName);
             
             Map<String, Object> response = new HashMap<>();
-            if (success) {
-                response.put("message", "虚拟项目删除成功");
-                response.put("serviceName", serviceName);
-                response.put("deletedFromNacos", true);
-                return ResponseEntity.ok(response);
-            } else {
-                response.put("error", "虚拟项目删除失败");
-                response.put("serviceName", serviceName);
-                return ResponseEntity.internalServerError().body(response);
-            }
+            response.put("endpointName", endpointName);
+            response.put("tools", tools);
+            response.put("toolCount", tools.size());
+            
+            return ResponseEntity.ok(response);
             
         } catch (Exception e) {
-            log.error("删除虚拟项目失败: serviceName={}", serviceName, e);
+            log.error("获取虚拟项目工具列表失败: {}", endpointName, e);
             Map<String, Object> error = new HashMap<>();
-            error.put("error", "删除虚拟项目失败: " + e.getMessage());
-            error.put("serviceName", serviceName);
+            error.put("error", "获取虚拟项目工具列表失败: " + e.getMessage());
             return ResponseEntity.internalServerError().body(error);
         }
     }
-    
+
     /**
-     * 重新注册虚拟项目到 Nacos
+     * 重新注册虚拟项目到 Nacos (通过 endpointName)
      */
-    @PostMapping("/{virtualProjectId}/reregister")
+    @PostMapping("/{endpointName}/reregister")
     public ResponseEntity<Map<String, Object>> reregisterVirtualProject(
-            @PathVariable Long virtualProjectId) {
+            @PathVariable String endpointName) {
         try {
-            VirtualProjectService.VirtualProjectInfo project = 
-                    virtualProjectService.getVirtualProject(virtualProjectId);
+            VirtualProjectService.VirtualProjectInfo project = findProjectByEndpointName(endpointName);
             if (project == null) {
                 return ResponseEntity.notFound().build();
             }
@@ -299,20 +209,24 @@ public class VirtualProjectController {
             
             Map<String, Object> response = new HashMap<>();
             response.put("message", "虚拟项目重新注册成功");
-            response.put("virtualProjectId", virtualProjectId);
-            // 使用 virtual-{endpointName} 格式（与注册时保持一致）
-            response.put("mcpServiceName", "virtual-" + project.getEndpoint().getEndpointName());
+            response.put("endpointName", endpointName);
+            response.put("mcpServiceName", "virtual-" + endpointName);
             
             return ResponseEntity.ok(response);
             
         } catch (Exception e) {
-            log.error("重新注册虚拟项目失败: {}", virtualProjectId, e);
+            log.error("重新注册虚拟项目失败: {}", endpointName, e);
             Map<String, Object> error = new HashMap<>();
             error.put("error", "重新注册虚拟项目失败: " + e.getMessage());
             return ResponseEntity.internalServerError().body(error);
         }
     }
     
+    // 助手方法：根据 endpointName 查找项目
+    private VirtualProjectService.VirtualProjectInfo findProjectByEndpointName(String endpointName) {
+        return virtualProjectService.getVirtualProjectByEndpointName(endpointName);
+    }
+
     /**
      * 更新服务列表请求
      */

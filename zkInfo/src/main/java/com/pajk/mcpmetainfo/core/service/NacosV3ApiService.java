@@ -367,5 +367,205 @@ public class NacosV3ApiService {
                 "please use Admin API or ConfigService SDK");
         return false;
     }
+    /**
+     * 发布配置 (使用 Nacos v1 API，支持 type 和 appName)
+     * POST /nacos/v1/cs/configs
+     * 
+     * @param dataId 配置ID
+     * @param group 配置组
+     * @param content 配置内容
+     * @param type 配置类型 (json, yaml, properties, text)
+     * @param appName 归属应用名称
+     * @return 是否发布成功
+     */
+    private String accessToken;
+    private long tokenExpirationTime;
+
+    /**
+     * 获取 AccessToken
+     * 如果 token 过期或不存在，尝试重新登录
+     */
+    public synchronized String getAccessToken() {
+        if (accessToken != null && System.currentTimeMillis() < tokenExpirationTime) {
+            return accessToken;
+        }
+        return login();
+    }
+
+    /**
+     * 登录以获取 AccessToken
+     */
+    private String login() {
+        if (username == null || username.isEmpty()) {
+            return null;
+        }
+        try {
+            // Nacos 2.x/3.x login endpoint
+            String url = "http://" + serverAddr + contextPath + "/v1/auth/login";
+            
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+            
+            org.springframework.util.MultiValueMap<String, String> map = new org.springframework.util.LinkedMultiValueMap<>();
+            map.add("username", username);
+            map.add("password", password);
+            
+            HttpEntity<org.springframework.util.MultiValueMap<String, String>> request = new HttpEntity<>(map, headers);
+            
+            try {
+                ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
+                if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                    Map<String, Object> body = response.getBody();
+                    String token = (String) body.get("accessToken");
+                    Integer ttl = (Integer) body.get("tokenTtl");
+                    if (token != null) {
+                        this.accessToken = token;
+                        // 提前 30 秒过期
+                        this.tokenExpirationTime = System.currentTimeMillis() + (ttl != null ? ttl : 1800) * 1000L - 30000;
+                        log.info("✅ Successfully logged in to Nacos as user: {}", username);
+                        return token;
+                    }
+                }
+            } catch (Exception e) {
+                // 如果 /v1/auth/login 失败，尝试旧版 /v1/auth/users/login
+                log.warn("⚠️ Failed to login via /v1/auth/login, trying /v1/auth/users/login");
+                url = "http://" + serverAddr + contextPath + "/v1/auth/users/login";
+                ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
+                if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                   Map<String, Object> body = response.getBody();
+                   String token = (String) body.get("accessToken");
+                   Integer ttl = (Integer) body.get("tokenTtl");
+                   if (token != null) {
+                       this.accessToken = token;
+                       this.tokenExpirationTime = System.currentTimeMillis() + (ttl != null ? ttl : 1800) * 1000L - 30000;
+                       log.info("✅ Successfully logged in to Nacos (legacy endpoint) as user: {}", username);
+                       return token;
+                   }
+                }
+            }
+            log.error("❌ Failed to login to Nacos: Response did not contain accessToken");
+            return null;
+        } catch (Exception e) {
+            log.error("❌ Error logging in to Nacos as {}: {}", username, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 发布配置 (使用 Nacos v1 API，支持 type 和 appName)
+     * POST /nacos/v1/cs/configs
+     * 
+     * @param dataId 配置ID
+     * @param group 配置组
+     * @param content 配置内容
+     * @param type 配置类型 (json, yaml, properties, text)
+     * @param appName 归属应用名称
+     * @return 是否发布成功
+     */
+    public boolean publishConfigV1(String dataId, String group, String content, String type, String appName) {
+        try {
+            // 构建 URL: http://{serverAddr}{contextPath}/v1/cs/configs
+            String url = "http://" + serverAddr + contextPath + "/v1/cs/configs";
+            
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+            
+            org.springframework.util.MultiValueMap<String, String> map = new org.springframework.util.LinkedMultiValueMap<>();
+            map.add("dataId", dataId);
+            map.add("group", group);
+            map.add("content", content);
+            
+            if (namespace != null && !namespace.isEmpty() && !"public".equals(namespace)) {
+                map.add("tenant", namespace); // v1 API 使用 tenant 表示 namespace
+            }
+            
+            if (type != null) {
+                map.add("type", type);
+            }
+            
+            if (appName != null) {
+                map.add("appName", appName);
+            }
+            
+            // 获取并添加 accessToken
+            if (username != null && !username.isEmpty()) {
+                String token = getAccessToken();
+                if (token != null) {
+                    map.add("accessToken", token);
+                } else {
+                    log.warn("⚠️ Failed to get access token, attempting request without token");
+                }
+            }
+
+            HttpEntity<org.springframework.util.MultiValueMap<String, String>> request = new HttpEntity<>(map, headers);
+            
+            ResponseEntity<String> response = restTemplate.postForEntity(url, request, String.class);
+            
+            if (response.getStatusCode().is2xxSuccessful() && "true".equals(response.getBody())) {
+                log.info("✅ Published config via v1 API: {} (type={}, appName={})", dataId, type, appName);
+                return true;
+            } else {
+                log.error("❌ Failed to publish config via v1 API: {}", response.getBody());
+                return false;
+            }
+
+        } catch (Exception e) {
+            log.error("❌ Error publishing config via v1 API: {}", dataId, e);
+            return false;
+        }
+    }
+
+    /**
+     * 删除服务 (DELETE /nacos/v1/ns/service)
+     * 
+     * @param serviceName 服务名
+     * @param groupName 服务组
+     * @return 是否成功
+     */
+    public boolean deleteService(String serviceName, String groupName) {
+        try {
+            // 使用 v3 API 代替已弃用的 v1 API
+            String url = "http://" + serverAddr + contextPath + "/v3/admin/ns/service";
+            
+            // DELETE 请求通常不支持 Body，参数放在 Query String
+            org.springframework.web.util.UriComponentsBuilder builder = org.springframework.web.util.UriComponentsBuilder.fromHttpUrl(url)
+                    .queryParam("serviceName", serviceName)
+                    .queryParam("groupName", groupName);
+            
+            if (namespace != null && !namespace.isEmpty()) {
+                builder.queryParam("namespaceId", namespace);
+            }
+            
+            // 获取并添加 accessToken
+            if (username != null && !username.isEmpty()) {
+                String token = getAccessToken();
+                if (token != null) {
+                    builder.queryParam("accessToken", token);
+                }
+            }
+            
+            // 使用 exchange 发送 DELETE
+            ResponseEntity<String> response = restTemplate.exchange(
+                    builder.toUriString(), 
+                    org.springframework.http.HttpMethod.DELETE, 
+                    null, 
+                    String.class);
+            
+            if (response.getStatusCode().is2xxSuccessful()) {
+                log.info("✅ Successfully deleted service: {} (group: {}) via v3 API", serviceName, groupName);
+                return true;
+            } else {
+                log.warn("⚠️ Failed to delete service: {} (response: {})", serviceName, response.getBody());
+                return false;
+            }
+        } catch (org.springframework.web.client.HttpClientErrorException.Forbidden e) {
+             log.warn("⚠️ Permission denied when deleting service: {} (403 Forbidden). Check if user has write permissions.", serviceName);
+             return false;
+        } catch (Exception e) {
+            log.error("❌ Error deleting service: {}", serviceName, e);
+            return false;
+        }
+
+}
 }
 

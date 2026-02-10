@@ -179,18 +179,8 @@ public class SseController {
         
         log.info("📡 Standard SSE connection request with serviceName: {}", actualServiceName);
         
-        // 解析 endpoint
-        // 如果 serviceName 以 virtual- 开头，去掉前缀再解析
+        // 保持原始名称作为 serviceName，由 resolver 决定如何查找
         String tryServiceName = actualServiceName;
-        if (actualServiceName.startsWith("virtual-")) {
-            tryServiceName = actualServiceName.substring("virtual-".length());
-            log.debug("🔍 ServiceName '{}' starts with virtual-, using '{}' for endpoint lookup", actualServiceName, tryServiceName);
-        } else if (actualServiceName.startsWith("mcp-")) {
-            // 向后兼容：如果以 mcp- 开头，也去掉前缀
-            tryServiceName = actualServiceName.substring("mcp-".length());
-            log.debug("🔍 ServiceName '{}' starts with mcp-, using '{}' for endpoint lookup", actualServiceName, tryServiceName);
-        }
-        
         String endpoint = resolveEndpointFromServiceName(tryServiceName);
         if (endpoint == null) {
             log.warn("⚠️ Cannot resolve endpoint from serviceName: {}, trying to use serviceName directly", tryServiceName);
@@ -404,13 +394,15 @@ public class SseController {
             try {
                 // 检查 emitter 是否仍然有效
                 if (sseEmitterMap.containsKey(sessionId) && emitter != null) {
-                    // 不发送心跳事件，只更新会话活跃时间（touch session）
-                    // 原因：MCP 客户端不识别 "heartbeat" 事件类型，会报错
-                    // 心跳的目的是保持连接活跃，通过 touch 更新会话时间即可
+                    // 更新会话活跃时间
                     sessionManager.touch(sessionId);
-                    
-                    // 移除心跳日志，减少日志输出（只在 trace 级别记录）
-                    log.trace("💓 Heartbeat (touch only): sessionId={}", sessionId);
+
+                    // 发送一个注释 (comment) 作为心跳
+                    // SSE 规范规定以冒号 : 开头的行是注释，客户端会忽略但在传输层能保持连接
+                    // 这样比发送 "heartbeat" 事件更安全，不会引起 client 的处理逻辑报错
+                    emitter.send(SseEmitter.event().comment("ping"));
+
+                    log.trace("💓 Heartbeat (comment sent): sessionId={}", sessionId);
                 }
                 // 移除无效心跳的日志，减少日志输出
             } catch (Exception e) {
@@ -425,23 +417,15 @@ public class SseController {
      * 从服务名称解析 endpoint
      */
     private String resolveEndpointFromServiceName(String serviceName) {
-        // 1. 如果是虚拟项目服务（以 mcp- 开头），尝试查找虚拟项目
-        // 例如：mcp-data-analysis -> data-analysis
-        if (serviceName.startsWith("mcp-")) {
-            String endpointName = serviceName.substring(4); // 去掉 "mcp-" 前缀
-            log.debug("🔍 Detected virtual project service name: {}, trying to resolve endpoint: {}", serviceName, endpointName);
-            try {
-                // 尝试查找虚拟项目
-                VirtualProjectService.VirtualProjectInfo virtualProject = 
-                        virtualProjectService.getVirtualProjectByEndpointName(endpointName);
-                if (virtualProject != null && virtualProject.getEndpoint() != null) {
-                    String resolvedEndpoint = virtualProject.getEndpoint().getEndpointName();
-                    log.info("✅ Resolved virtual project service '{}' to endpoint: {}", serviceName, resolvedEndpoint);
-                    return resolvedEndpoint;
-                }
-            } catch (Exception e) {
-                log.debug("Failed to resolve endpoint for virtual project service: {}", serviceName, e);
-            }
+        // 优先作为 endpoint 直接解析（带 virtual- 前缀的名字应该能被 resolveEndpoint 识别）
+        if (endpointResolver.resolveEndpoint(serviceName).isPresent()) {
+            log.info("✅ Resolved serviceName '{}' directly to endpoint", serviceName);
+            return serviceName;
+        }
+
+        // 如果没有解析到，再尝试根据习惯匹配
+        if (serviceName.startsWith("virtual-") || serviceName.startsWith("mcp-")) {
+            // 这里可以保留一些回退逻辑，或者直接返回
         }
         
         // 2. 如果服务名称格式是 zk-mcp-{interface}-{version}，尝试提取接口名
