@@ -1,8 +1,30 @@
-# ================================
-# ZK-MCP 项目 .gitignore
-# ================================
+# Compiled class files
+*.class
 
-# Maven 构建文件
+# Log files
+*.log
+logs/
+*.log.*
+
+# BlueJ files
+*.ctxt
+
+# Mobile Tools for Java (J2ME)
+.mtj.tmp/
+
+# Package Files
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Virtual machine crash logs
+hs_err_pid*
+
+# Maven
 target/
 pom.xml.tag
 pom.xml.releaseBackup
@@ -14,120 +36,88 @@ buildNumber.properties
 .mvn/timing.properties
 .mvn/wrapper/maven-wrapper.jar
 
-# IDE 文件
+# Gradle
+.gradle
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# IDE - IntelliJ IDEA
 .idea/
-*.iml
 *.iws
+*.iml
 *.ipr
-.vscode/
-.settings/
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+# IDE - Eclipse
+.apt_generated
 .classpath
+.factorypath
 .project
-*.swp
-*.swo
-*~
+.settings
+.springBeans
+.sts4-cache
+bin/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
 
-# 日志文件
-logs/
-*.log
-*.log.*
-nohup.out
-app-startup.log
+# IDE - NetBeans
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
 
-# 操作系统文件
+# IDE - VS Code
+.vscode/
+*.code-workspace
+
+# OS
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
 
-# Node.js (如果有前端项目)
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-package-lock.json
-yarn.lock
-
-# 敏感配置文件 - 防止 API Key 泄露
-*.env
-.env.*
-**/application.yml.bak
-**/application-dev.yml.bak
-**/application-prod.yml.bak
-**/application-local.yml
-
-# 如果配置文件中包含敏感信息，取消注释以下行：
-# **/application.yml
-# **/application-dev.yml
-# **/application-prod.yml
-
-# 临时文件
-*.tmp
-*.temp
-*.swp
-*.swo
-*~
-
-# 压缩文件
-*.zip
-*.tar.gz
-*.rar
-
-# 数据库文件
-*.db
-*.sqlite
-*.sqlite3
-
-# 测试覆盖率报告
-coverage/
-*.lcov
-
-# 文档生成文件
-docs/_build/
-site/
-
-# 备份文件
-*.bak
-*.backup
-*~
-
-# 运行时文件
+# Application specific
+pids/
 *.pid
 *.seed
 *.pid.lock
 
-# 编译输出
-*.class
-*.jar
-*.war
-*.ear
-*.nar
+# Test coverage
+*.gcov
+*.gcda
+*.gcno
 
-# 调试文件
-hs_err_pid*
+# Temporary files
+*.swp
+*.swo
+*~
+.*.swp
+.*.swo
 
-# 本地配置
-local.properties
+# Database
+*.db
+*.sqlite
+*.sqlite3
 
-# Zookeeper 数据目录（如果本地运行）
-zookeeper/
-zkdata/
+# Spring Boot
+spring-shell.log
 
-# MCP Server Node.js 相关
-mcp-server/node_modules/
-mcp-server/dist/
-mcp-server/.env
+# Nacos
+data/
+work/
 
-# 测试输出
-test-output/
-test-results/
+# Node modules (if any)
+node_modules/
 
-# 性能测试结果
-*.jfr
-*.hprof
+# Environment files
+.env
+.env.local
+.env.*.local
 
-# 自定义忽略
-# 添加项目特定的忽略规则
+# Custom
+zkInfo/docs.*/
+*.zip.backup
+integration_test_report_*.txt
