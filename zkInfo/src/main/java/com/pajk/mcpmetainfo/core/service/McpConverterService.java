@@ -2,6 +2,7 @@ package com.pajk.mcpmetainfo.core.service;
 
 import com.pajk.mcpmetainfo.core.model.ApplicationInfo;
 import com.pajk.mcpmetainfo.core.model.McpResponse;
+import com.pajk.mcpmetainfo.core.model.ProjectService;
 import com.pajk.mcpmetainfo.core.model.ProviderInfo;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,6 +47,12 @@ public class McpConverterService {
     
     @Autowired
     private ProviderService providerService;
+
+    @Autowired
+    private com.pajk.mcpmetainfo.core.util.McpToolSchemaGenerator mcpToolSchemaGenerator;
+    
+    @Autowired
+    private ProjectManagementService projectManagementService;
     
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     
@@ -116,16 +123,27 @@ public class McpConverterService {
                         McpResponse.McpTool tool = new McpResponse.McpTool();
                         
                         // 工具名称：接口名.方法名
-                        String toolName = provider.getInterfaceName() + "." + method.trim();
+                        String interfaceName = provider.getInterfaceName();
+                        String methodName = method.trim();
+                        String toolName = interfaceName + "." + methodName;
                         tool.setName(toolName);
                         
-                        // 工具描述
-                        tool.setDescription(String.format("调用 %s 服务的 %s 方法", 
-                                provider.getInterfaceName(), method.trim()));
+                        // 使用 McpToolSchemaGenerator 获取更详细的描述
+                        String dbDesc = mcpToolSchemaGenerator.getMethodDescriptionFromDb(interfaceName, methodName);
+                        tool.setDescription((dbDesc != null && !dbDesc.isBlank()) 
+                                ? dbDesc 
+                                : String.format("调用 %s 服务的 %s 方法", interfaceName, methodName));
                         
-                        // 输入参数schema（简化版本）
-                        Map<String, Object> inputSchema = createInputSchema(provider, method.trim());
+                        // 使用 McpToolSchemaGenerator 生成输入参数 schema
+                        Map<String, Object> inputSchema = mcpToolSchemaGenerator.createInputSchemaFromMethod(interfaceName, methodName);
                         tool.setInputSchema(inputSchema);
+                        
+                        // ✅ 获取并设置参数类型列表（用于Dubbo泛化调用）
+                        List<String> parameterTypes = mcpToolSchemaGenerator.getParameterTypes(interfaceName, methodName);
+                        if (parameterTypes != null && !parameterTypes.isEmpty()) {
+                            tool.setParameterTypes(parameterTypes);
+                            log.debug("✅ Set parameter types for {}.{}: {}", interfaceName, methodName, parameterTypes);
+                        }
                         
                         // 其他属性
                         tool.setType("function");
@@ -154,6 +172,53 @@ public class McpConverterService {
             } catch (Exception e) {
                 log.error("转换Provider为工具失败: {}", provider.getInterfaceName(), e);
             }
+        }
+        
+        return tools;
+    }
+    
+    /**
+     * 将虚拟项目转换为MCP工具列表
+     */
+    public List<McpResponse.McpTool> convertVirtualProjectToMcpTools(Long projectId) {
+        List<McpResponse.McpTool> tools = new ArrayList<>();
+        
+        try {
+            // 获取项目关联的服务
+            List<ProjectService> projectServices = projectManagementService.getProjectServices(projectId);
+            if (projectServices == null || projectServices.isEmpty()) {
+                return tools;
+            }
+            
+            // 从每个服务获取工具
+            for (ProjectService projectService : projectServices) {
+                String serviceInterface = projectService.getServiceInterface();
+                String version = projectService.getServiceVersion();
+                String group = projectService.getServiceGroup();
+                
+                // 从 ProviderService 获取该服务的 Provider
+                List<ProviderInfo> providers = providerService.getProvidersByInterface(serviceInterface);
+                if (providers == null || providers.isEmpty()) {
+                    continue;
+                }
+                
+                // 过滤版本和分组
+                providers = providers.stream()
+                        .filter(p -> (version == null || version.isEmpty() || version.equals(p.getVersion())) &&
+                                (group == null || group.isEmpty() || group.equals(p.getGroup())))
+                        .collect(Collectors.toList());
+                
+                if (providers.isEmpty()) {
+                    continue;
+                }
+                
+                // 转换 Provider 为工具 (复用 convertProvidersToTools 逻辑)
+                List<McpResponse.McpTool> serviceTools = convertProvidersToTools(providers);
+                tools.addAll(serviceTools);
+            }
+            
+        } catch (Exception e) {
+            log.error("转换虚拟项目 {} 为MCP工具列表失败", projectId, e);
         }
         
         return tools;

@@ -27,7 +27,9 @@ import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import com.pajk.mcpmetainfo.core.service.McpProtocolService;
 import com.pajk.mcpmetainfo.core.service.McpLoggingService;
+
 
 /**
  * MCP 消息处理 Controller（WebMVC 模式）
@@ -35,7 +37,7 @@ import com.pajk.mcpmetainfo.core.service.McpLoggingService;
  */
 @Slf4j
 @RestController
-@RequestMapping(value = "/mcp", produces = MediaType.APPLICATION_JSON_VALUE)
+@RequestMapping(value = "/mcp")
 @RequiredArgsConstructor
 @CrossOrigin(origins = "*")
 public class McpMessageController {
@@ -52,13 +54,14 @@ public class McpMessageController {
     private final McpToolSchemaGenerator mcpToolSchemaGenerator;
     private final VirtualProjectService virtualProjectService;
     private final McpLoggingService mcpLoggingService;
+    private final McpProtocolService mcpProtocolService;
+
     
     /**
      * 处理 MCP 消息：POST /mcp/{serviceName}/message?sessionId=xxx（路径参数方式，参考 mcp-router-v3）
      */
     @PostMapping(value = "/{serviceName}/message", 
-                 consumes = MediaType.APPLICATION_JSON_VALUE,
-                 produces = MediaType.APPLICATION_JSON_VALUE)
+                 consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Map<String, Object>> handleMessageWithPath(
             @PathVariable String serviceName,
             @RequestParam(required = false) String sessionId,
@@ -79,8 +82,7 @@ public class McpMessageController {
      * 处理 MCP 消息：POST /mcp/message?sessionId=xxx（查询参数方式）
      */
     @PostMapping(value = "/message", 
-                 consumes = MediaType.APPLICATION_JSON_VALUE,
-                 produces = MediaType.APPLICATION_JSON_VALUE)
+                 consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Map<String, Object>> handleMessage(
             @RequestParam(required = false) String sessionId,
             @RequestParam(required = false) String endpoint,  // 从 URL 参数获取 endpoint
@@ -269,12 +271,16 @@ public class McpMessageController {
                 handleSubscribeResource(emitter, request, id, sessionId);
             } else if ("resources/unsubscribe".equals(method)) {
                 handleUnsubscribeResource(emitter, request, id, sessionId);
+            } else if ("resources/templates/list".equals(method)) {
+                handleResourcesTemplatesList(emitter, endpoint, id, sessionId);
             } else if ("prompts/list".equals(method)) {
                 handlePromptsList(emitter, endpoint, id, sessionId);
             } else if ("prompts/get".equals(method)) {
                 handlePromptGet(emitter, request, id, sessionId);
             } else if ("logging/log".equals(method)) {
                 handleLogMessage(emitter, request, id, sessionId);
+            } else if ("logging/setLevel".equals(method)) {
+                handleLoggingSetLevel(emitter, request, id, sessionId);
             } else if ("ping".equals(method)) {
                 handlePing(emitter, id, sessionId);
             } else {
@@ -426,6 +432,18 @@ public class McpMessageController {
                         log.info("✅ Resources/read response sent: uri={}", uri);
                     } catch (Exception e) {
                         log.error("❌ Error sending resource result", e);
+                        try {
+                            sendErrorResponseSafe(emitter, id, -32603, "Internal error: " + e.getMessage(), sessionId);
+                        } catch (Exception ex) {
+                            log.error("Failed to send error response", ex);
+                        }
+                    }
+                }, error -> {
+                    log.error("❌ Error reading resource", error);
+                    try {
+                        sendErrorResponseSafe(emitter, id, -32603, "Internal error: " + error.getMessage(), sessionId);
+                    } catch (Exception ex) {
+                        log.error("Failed to send error response", ex);
                     }
                 });
     }
@@ -459,6 +477,18 @@ public class McpMessageController {
                         log.info("✅ Prompts/get response sent: name={}", name);
                     } catch (Exception e) {
                         log.error("❌ Error sending prompt result", e);
+                        try {
+                            sendErrorResponseSafe(emitter, id, -32603, "Internal error: " + e.getMessage(), sessionId);
+                        } catch (Exception ex) {
+                            log.error("Failed to send error response", ex);
+                        }
+                    }
+                }, error -> {
+                    log.error("❌ Error getting prompt", error);
+                    try {
+                        sendErrorResponseSafe(emitter, id, -32603, "Internal error: " + error.getMessage(), sessionId);
+                    } catch (Exception ex) {
+                        log.error("Failed to send error response", ex);
                     }
                 });
     }
@@ -496,77 +526,24 @@ public class McpMessageController {
                 EndpointResolver.EndpointInfo endpointInfo = endpointInfoOpt.get();
                 log.info("✅ Resolved endpoint '{}' to EndpointInfo: isVirtualProject={}, projectId={}", 
                         actualEndpoint, endpointInfo.isVirtualProject(), endpointInfo.getProjectId());
+                
                 if (endpointInfo.isVirtualProject()) {
-                    // 虚拟项目：直接通过 endpointName 获取工具（简化逻辑，不依赖 projectId）
+                    // 虚拟项目：优先从 Nacos Config 获取工具
                     tools = virtualProjectRegistrationService.getVirtualProjectToolsByEndpointName(actualEndpoint);
-                    log.info("✅ Got {} tools from virtual project (endpointName: {})", tools.size(), actualEndpoint);
+                    log.info("✅ Got {} tools from virtual project Nacos Config (endpointName: {})", tools.size(), actualEndpoint);
+                    
+                    // 如果 Nacos Config 中没有工具，但有 projectId，尝试从 DB 生成 (Fallback)
+                    if (tools.isEmpty() && endpointInfo.getProjectId() != null) {
+                        log.warn("⚠️ No tools found in Nacos Config for virtual project '{}', falling back to DB generation", actualEndpoint);
+                        tools = generateToolsFromProjectId(endpointInfo.getProjectId());
+                        log.info("✅ Generated {} tools from virtual project DB definition (projectId: {})", tools.size(), endpointInfo.getProjectId());
+                    }
                 } else {
                     // 实际项目：从 ProviderService 获取工具
                     Long projectId = endpointInfo.getProjectId();
                     if (projectId != null) {
-                        // 获取项目关联的服务
-                        List<ProjectService> projectServices = 
-                                projectManagementService.getProjectServices(projectId);
-                        
-                        log.info("📋 Found {} services in project (projectId: {})", projectServices.size(), projectId);
-                        
-                        // 从每个服务获取工具
-                        for (ProjectService projectService : projectServices) {
-                            String serviceInterface = projectService.getServiceInterface();
-                            String version = projectService.getServiceVersion();
-                            String group = projectService.getServiceGroup();
-                            
-                            log.debug("Processing service: {}:{}:{}", serviceInterface, version, group);
-                            
-                            // 从 ProviderService 获取该服务的 Provider，然后生成工具
-                            try {
-                                List<ProviderInfo> providers = providerService.getProvidersByInterface(serviceInterface);
-                                
-                                // 过滤版本和分组
-                                providers = providers.stream()
-                                        .filter(p -> (version == null || version.equals(p.getVersion())) &&
-                                                (group == null || group.equals(p.getGroup())))
-                                        .collect(java.util.stream.Collectors.toList());
-                                
-                                log.debug("Found {} providers for service {}:{}:{}", providers.size(), serviceInterface, version, group);
-                                
-                                // 生成工具（复用 VirtualProjectRegistrationService 的逻辑）
-                                if (!providers.isEmpty()) {
-                                    for (ProviderInfo provider : providers) {
-                                        if (provider.getMethods() != null && !provider.getMethods().isEmpty()) {
-                                            String[] methods = provider.getMethods().split(",");
-                                            for (String method : methods) {
-                                                Map<String, Object> tool = new java.util.HashMap<>();
-                                                
-                                                // 工具名称：接口名.方法名
-                                                String toolName = provider.getInterfaceName() + "." + method.trim();
-                                                tool.put("name", toolName);
-                                                
-                                                // 工具描述
-                                                tool.put("description", String.format("调用 %s 服务的 %s 方法",
-                                                        provider.getInterfaceName(), method.trim()));
-                                                
-                                                // 根据实际方法参数生成 inputSchema
-                                                Map<String, Object> inputSchema = mcpToolSchemaGenerator.createInputSchemaFromMethod(
-                                                        provider.getInterfaceName(), method.trim());
-                                                tool.put("inputSchema", inputSchema);
-                                                
-                                                tools.add(tool);
-                                            }
-                                        } else {
-                                            log.warn("⚠️ Provider {}:{} has no methods", provider.getInterfaceName(), provider.getVersion());
-                                        }
-                                    }
-                                } else {
-                                    log.warn("⚠️ No providers found for service {}:{}:{}", serviceInterface, version, group);
-                                }
-                            } catch (Exception e) {
-                                log.warn("Failed to get tools for service: {}:{}:{}", 
-                                        serviceInterface, version, group, e);
-                            }
-                        }
-                        
-                        log.info("✅ Generated {} tools from project (projectId: {})", tools.size(), projectId);
+                        tools = generateToolsFromProjectId(projectId);
+                        log.info("✅ Generated {} tools from real project (projectId: {})", tools.size(), projectId);
                     } else {
                         log.warn("⚠️ Real project endpoint found but projectId is null: {}", actualEndpoint);
                     }
@@ -594,6 +571,91 @@ public class McpMessageController {
             log.warn("Failed to get tools for endpoint: {}", endpoint, e);
         }
         
+        return tools;
+    }
+    
+    /**
+     * 根据项目 ID 生成工具列表 (从 DB 和 ProviderService)
+     */
+    private List<Map<String, Object>> generateToolsFromProjectId(Long projectId) {
+        List<Map<String, Object>> tools = new ArrayList<>();
+        try {
+            // 获取项目关联的服务
+            List<ProjectService> projectServices = 
+                    projectManagementService.getProjectServices(projectId);
+            
+            log.info("📋 Found {} services in project (projectId: {})", projectServices.size(), projectId);
+            
+            // 从每个服务获取工具
+            for (ProjectService projectService : projectServices) {
+                String serviceInterface = projectService.getServiceInterface();
+                String version = projectService.getServiceVersion();
+                String group = projectService.getServiceGroup();
+                
+                log.debug("Processing service: {}:{}:{}", serviceInterface, version, group);
+                
+                // 从 ProviderService 获取该服务的 Provider，然后生成工具
+                try {
+                    List<ProviderInfo> providers = providerService.getProvidersByInterface(serviceInterface);
+                    
+                    // 过滤版本和分组
+                    providers = providers.stream()
+                            .filter(p -> (version == null || version.isEmpty() || version.equals(p.getVersion())) &&
+                                    (group == null || group.isEmpty() || group.equals(p.getGroup())))
+                            .collect(java.util.stream.Collectors.toList());
+                    
+                    log.debug("Found {} providers for service {}:{}:{}", providers.size(), serviceInterface, version, group);
+                    
+                    // 生成工具
+                    if (!providers.isEmpty()) {
+                        // 使用 Set 去重，避免同一个接口的多个 Provider 生成重复的工具
+                        java.util.Set<String> processedMethods = new java.util.HashSet<>();
+                        
+                        for (ProviderInfo provider : providers) {
+                            if (provider.getMethods() != null && !provider.getMethods().isEmpty()) {
+                                String[] methods = provider.getMethods().split(",");
+                                for (String method : methods) {
+                                    String methodTrimmed = method.trim();
+                                    String toolKey = provider.getInterfaceName() + "." + methodTrimmed;
+                                    
+                                    if (processedMethods.contains(toolKey)) {
+                                        continue;
+                                    }
+                                    processedMethods.add(toolKey);
+                                    
+                                    Map<String, Object> tool = new java.util.HashMap<>();
+                                    
+                                    // 工具名称：接口名.方法名
+                                    tool.put("name", toolKey);
+                                    
+                                    // 工具描述
+                                    String dbDesc = mcpToolSchemaGenerator.getMethodDescriptionFromDb(provider.getInterfaceName(), methodTrimmed);
+                                    tool.put("description", (dbDesc != null && !dbDesc.isBlank()) 
+                                            ? dbDesc 
+                                            : String.format("调用 %s 服务的 %s 方法", provider.getInterfaceName(), methodTrimmed));
+                                    
+                                    // 根据实际方法参数生成 inputSchema
+                                    Map<String, Object> inputSchema = mcpToolSchemaGenerator.createInputSchemaFromMethod(
+                                            provider.getInterfaceName(), methodTrimmed);
+                                    tool.put("inputSchema", inputSchema);
+                                    
+                                    tools.add(tool);
+                                }
+                            } else {
+                                log.warn("⚠️ Provider {}:{} has no methods", provider.getInterfaceName(), provider.getVersion());
+                            }
+                        }
+                    } else {
+                        log.warn("⚠️ No providers found for service {}:{}:{}", serviceInterface, version, group);
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to get tools for service: {}:{}:{}", 
+                            serviceInterface, version, group, e);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Failed to generate tools from project ID: {}", projectId, e);
+        }
         return tools;
     }
     
@@ -661,7 +723,7 @@ public class McpMessageController {
         
         Map<String, Object> result = new java.util.LinkedHashMap<>();
         result.put("tools", tools);
-        result.put("toolsMeta", new java.util.HashMap<>());  // 添加 toolsMeta 字段（MCP 协议要求）
+        // Removed toolsMeta to comply with MCP spec
         
         Map<String, Object> response = new java.util.LinkedHashMap<>();
         response.put("jsonrpc", "2.0");
@@ -785,14 +847,63 @@ public class McpMessageController {
                     java.util.List<Object> argsList = (java.util.List<Object>) argumentsMap.get("args");
                     args = argsList.toArray();
                 } else if (argumentsMap.isEmpty()) {
-                    // 如果 arguments 是空 Map，表示无参数方法调用
                     args = new Object[0];
                 } else {
-                    // 如果 arguments 不为空且没有 args 字段，将整个 Map 作为参数
                     args = new Object[]{argumentsMap};
                 }
             }
+            
+            // 尝试提取显式参数类型并进行转换 (修复 Integer -> Long 问题)
+            // 这部分逻辑从 McpProtocolService 借鉴而来，确保在 McpMessageController 中也能正确转换类型
+            try {
+                String[] explicitParameterTypes = mcpProtocolService.extractParameterTypes(toolName, argumentsMap);
+                
+                if (explicitParameterTypes != null) {
+                     log.info("✅ Extracted explicit parameter types for {}: {}", toolName, java.util.Arrays.toString(explicitParameterTypes));
+                     
+                     if (args != null && explicitParameterTypes.length == args.length) {
+                         for (int i = 0; i < args.length; i++) {
+                             String targetType = explicitParameterTypes[i];
+                             Object originalValue = args[i];
+                             
+                             if (originalValue != null && targetType != null) {
+                                 try {
+                                     if ("java.lang.Long".equals(targetType) && originalValue instanceof Integer) {
+                                         args[i] = ((Integer) originalValue).longValue();
+                                         log.info("参数[{}] 自动转换: Integer {} -> Long {}", i, originalValue, args[i]);
+                                     } else if ("java.lang.Long".equals(targetType) && originalValue instanceof String) {
+                                         args[i] = Long.parseLong((String) originalValue);
+                                         log.info("参数[{}] 自动转换: String {} -> Long {}", i, originalValue, args[i]);
+                                     } else if ("java.lang.Integer".equals(targetType) && originalValue instanceof Long) {
+                                         args[i] = ((Long) originalValue).intValue();
+                                         log.info("参数[{}] 自动转换: Long {} -> Integer {}", i, originalValue, args[i]);
+                                     }
+                                 } catch (Exception e) {
+                                     log.warn("参数[{}] 类型转换失败: {} -> {}, error={}", i, originalValue.getClass().getName(), targetType, e.getMessage());
+                                 }
+                             }
+                         }
+                         
+                         // 将显式参数类型传递给 Dubbo 调用
+                         // 注意：这里需要重新定义 result，因为需要将 parameterTypes 传进去
+                         McpExecutorService.McpCallResult result = mcpExecutorService.executeToolCallSync(
+                                 toolName, args, null, explicitParameterTypes);
+                                 
+                         try {
+                             handleToolCallResult(emitter, result, id, sessionId);
+                         } catch (Exception e) {
+                             log.error("Failed to handle tool call result", e);
+                         }
+                         return; // 提前返回
+
+                     }
+                }
+            } catch (Exception e) {
+                log.warn("提取参数类型或转换失败: {}", e.getMessage());
+            }
+
         } else if (argumentsObj instanceof java.util.List) {
+
             // 如果是 List，直接转换（向后兼容）
             @SuppressWarnings("unchecked")
             java.util.List<Object> argumentsList = (java.util.List<Object>) argumentsObj;
@@ -816,6 +927,14 @@ public class McpMessageController {
         McpExecutorService.McpCallResult result = mcpExecutorService.executeToolCallSync(
                 toolName, args, null);
 
+        try {
+            handleToolCallResult(emitter, result, id, sessionId);
+        } catch (Exception e) {
+            log.error("Failed to handle tool call result", e);
+        }
+    }
+
+    private void handleToolCallResult(SseEmitter emitter, McpExecutorService.McpCallResult result, String id, String sessionId) throws IOException {
         Map<String, Object> response;
         if (result.isSuccess()) {
             // 构建符合 MCP 协议的响应格式
@@ -852,6 +971,7 @@ public class McpMessageController {
 
         log.info("✅ Tools/call response sent via SSE: success={}", result.isSuccess());
     }
+
     /**
      * 处理 resources/list 请求
      * 参考 tools/list 的实现，先解析 endpoint，然后返回资源列表
@@ -964,6 +1084,26 @@ public class McpMessageController {
                 );
     }
     
+    /**
+     * 处理 resources/templates/list 请求
+     */
+    private void handleResourcesTemplatesList(SseEmitter emitter, String endpoint, String id, String sessionId) throws IOException {
+        log.info("📨 Handling resources/templates/list request: sessionId={}, id={}", sessionId, id);
+        
+        // Return empty list for now as we don't support templates yet
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("resourceTemplates", new java.util.ArrayList<>());
+        
+        Map<String, Object> response = new java.util.LinkedHashMap<>();
+        response.put("jsonrpc", "2.0");
+        response.put("id", id != null ? id : "null");
+        response.put("result", result);
+        
+        String responseJson = objectMapper.writeValueAsString(response);
+        sendSseEventSafe(emitter, responseJson, "resources/templates/list", sessionId);
+        log.info("✅ Resources/templates/list response sent via SSE");
+    }
+
     /**
      * 处理 prompts/list 请求
      * 参考 tools/list 的实现，先解析 endpoint，然后返回提示列表
@@ -1215,12 +1355,12 @@ public class McpMessageController {
                 log.info("✅ Got {} tools for endpoint: {}", tools.size(), endpoint);
                 Map<String, Object> result = new java.util.LinkedHashMap<>();
                 result.put("tools", tools);
-                result.put("toolsMeta", new java.util.HashMap<>());
+                // Removed toolsMeta to comply with MCP spec
                 response.put("result", result);
                 log.info("✅ Returning tools/list response: tools count={}", tools.size());
                 
             } else if ("tools/call".equals(method)) {
-                // 处理 tools/call
+                // ... (tools/call handling remains same) ...
                 @SuppressWarnings("unchecked")
                 Map<String, Object> params = (Map<String, Object>) request.get("params");
                 String toolName = (String) params.get("name");
@@ -1245,53 +1385,48 @@ public class McpMessageController {
                 
                 // 提取参数
                 Object argumentsObj = params.get("arguments");
-                Object[] args;
+                @SuppressWarnings("unchecked")
+                Map<String, Object> argumentsMap = (argumentsObj instanceof java.util.Map) ? 
+                        (java.util.Map<String, Object>) argumentsObj : new java.util.HashMap<>();
                 
-                String[] toolParts = toolName.split("\\.");
-                String methodName = toolParts.length > 0 ? toolParts[toolParts.length - 1] : toolName;
-                String interfaceName = toolParts.length > 1 ? 
-                        String.join(".", java.util.Arrays.copyOf(toolParts, toolParts.length - 1)) : null;
-                
-                if (argumentsObj instanceof java.util.Map) {
-                    @SuppressWarnings("unchecked")
-                    java.util.Map<String, Object> argumentsMap = (java.util.Map<String, Object>) argumentsObj;
-                    if (interfaceName != null) {
-                        args = mcpToolSchemaGenerator.extractMethodParameters(interfaceName, methodName, argumentsMap);
-                    } else if (argumentsMap.isEmpty()) {
-                        args = new Object[0];
+                // 使用 McpProtocolService 执行调用 (支持参数类型推断和统一的逻辑)
+                try {
+                    // executeToolCall 返回 Mono，这里需要阻塞获取结果
+                    McpProtocol.CallToolResult toolResult = mcpProtocolService.executeToolCall(
+                            toolName, argumentsMap, 30000).block(); // 30s timeout
+                    
+                    if (toolResult != null) {
+                        if (toolResult.getIsError()) {
+                            // 提取错误信息
+                            String errorMsg = "Unknown error";
+                            if (toolResult.getContent() != null && !toolResult.getContent().isEmpty()) {
+                                errorMsg = toolResult.getContent().stream()
+                                    .map(c -> c.getText())
+                                    .collect(java.util.stream.Collectors.joining("\n"));
+                            }
+                            response.put("error", Map.of("code", -32603, "message", errorMsg));
+                        } else {
+                            // 调用成功，转换结果格式
+                            Map<String, Object> resultMap = new java.util.LinkedHashMap<>();
+                            resultMap.put("content", toolResult.getContent());
+                            resultMap.put("isError", false);
+                            response.put("result", resultMap);
+                        }
                     } else {
-                        args = new Object[]{argumentsMap};
+                        response.put("error", Map.of("code", -32603, "message", "Tool execution returned null"));
                     }
-                } else {
-                    args = new Object[0];
-                }
-                
-                // 执行调用（传入 null 让 executeToolCallSync 使用配置的 Dubbo 超时时间）
-                McpExecutorService.McpCallResult result = mcpExecutorService.executeToolCallSync(toolName, args, null);
-                
-                if (result.isSuccess()) {
-                    Map<String, Object> contentItem = new java.util.LinkedHashMap<>();
-                    contentItem.put("type", "text");
-                    contentItem.put("text", objectMapper.writeValueAsString(result.getResult()));
-                    
-                    java.util.List<Map<String, Object>> content = new java.util.ArrayList<>();
-                    content.add(contentItem);
-                    
-                    Map<String, Object> resultMap = new java.util.LinkedHashMap<>();
-                    resultMap.put("content", content);
-                    resultMap.put("isError", false);
-                    response.put("result", resultMap);
-                } else {
-                    response.put("error", Map.of("code", -32603, "message", result.getErrorMessage()));
+                } catch (Exception e) {
+                    log.error("RESTful tool call failed", e);
+                    response.put("error", Map.of("code", -32603, "message", e.getMessage()));
                 }
                 
             } else if ("resources/list".equals(method)) {
-                // 处理 resources/list（使用超时保护，避免长时间阻塞）
+                // 处理 resources/list
                 List<McpProtocol.McpResource> resources = new ArrayList<>();
                 try {
                     McpProtocol.ListResourcesResult listResult = mcpResourcesService.listResources(
                             new McpProtocol.ListResourcesParams())
-                            .timeout(java.time.Duration.ofSeconds(5)) // 5秒超时
+                            .timeout(java.time.Duration.ofSeconds(5))
                             .block();
                     if (listResult != null && listResult.getResources() != null) {
                         resources.addAll(listResult.getResources());
@@ -1304,16 +1439,16 @@ public class McpMessageController {
                 
                 Map<String, Object> result = new java.util.LinkedHashMap<>();
                 result.put("resources", resources);
-                result.put("resourcesMeta", new java.util.HashMap<>());
+                // Removed resourcesMeta
                 response.put("result", result);
                 
             } else if ("prompts/list".equals(method)) {
-                // 处理 prompts/list（使用超时保护，避免长时间阻塞）
+                // 处理 prompts/list
                 List<McpProtocol.McpPrompt> prompts = new ArrayList<>();
                 try {
                     McpProtocol.ListPromptsResult listResult = mcpPromptsService.listPrompts(
                             new McpProtocol.ListPromptsParams())
-                            .timeout(java.time.Duration.ofSeconds(5)) // 5秒超时
+                            .timeout(java.time.Duration.ofSeconds(5))
                             .block();
                     if (listResult != null && listResult.getPrompts() != null) {
                         prompts.addAll(listResult.getPrompts());
@@ -1326,9 +1461,53 @@ public class McpMessageController {
                 
                 Map<String, Object> result = new java.util.LinkedHashMap<>();
                 result.put("prompts", prompts);
-                result.put("promptsMeta", new java.util.HashMap<>());
+                // Removed promptsMeta
                 response.put("result", result);
                 
+            } else if ("resources/templates/list".equals(method)) {
+                // 处理 resources/templates/list (Empty list)
+                Map<String, Object> result = new java.util.LinkedHashMap<>();
+                result.put("resourceTemplates", new java.util.ArrayList<>());
+                response.put("result", result);
+
+            } else if ("resources/read".equals(method)) {
+                // 处理 resources/read
+                @SuppressWarnings("unchecked")
+                Map<String, Object> params = (Map<String, Object>) request.get("params");
+                String uri = (String) params.get("uri");
+                
+                try {
+                    McpProtocol.ReadResourceResult readResult = mcpResourcesService.readResource(
+                            McpProtocol.ReadResourceParams.builder().uri(uri).build())
+                            .timeout(java.time.Duration.ofSeconds(5))
+                            .block();
+                    response.put("result", readResult);
+                } catch (Exception e) {
+                   log.error("❌ Failed to read resource: {}", e.getMessage());
+                   response.put("error", Map.of("code", -32603, "message", "Failed to read resource: " + e.getMessage()));
+                   return ResponseEntity.ok(response);
+                }
+
+
+            } else if ("logging/setLevel".equals(method)) {
+                // 处理 logging/setLevel
+                @SuppressWarnings("unchecked")
+                Map<String, Object> params = (Map<String, Object>) request.get("params");
+                String level = (String) params.get("level");
+                log.info("📝 Setting log level (RESTful): {}", level);
+                // Return empty result as acknowledgment
+                response.put("result", new java.util.HashMap<>());
+
+            } else if ("logging/log".equals(method)) {
+                // 处理 logging/log (Log it and return success)
+                @SuppressWarnings("unchecked")
+                Map<String, Object> params = (Map<String, Object>) request.get("params");
+                String level = (String) params.get("level");
+                String data = (String) params.get("data");
+                log.info("📝 Received log message (RESTful): level={}, data={}", level, data);
+                // Return empty result
+                response.put("result", new java.util.HashMap<>());
+
             } else {
                 response.put("error", Map.of("code", -32601, "message", "Method not found: " + method));
             }
@@ -1406,6 +1585,30 @@ public class McpMessageController {
                         log.error("❌ Error sending unsubscribe result", e);
                     }
                 });
+    }
+
+    /**
+     * 处理 logging/setLevel 请求
+     */
+    private void handleLoggingSetLevel(SseEmitter emitter, Map<String, Object> request, String id, String sessionId) throws IOException {
+        log.info("📨 Handling logging/setLevel request: sessionId={}, id={}", sessionId, id);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> params = (Map<String, Object>) request.get("params");
+        String level = (String) params.get("level");
+        
+        log.info("📝 Setting log level for session {}: {}", sessionId, level);
+        
+        // 目前简单的确认设置成功，不做实际的过滤逻辑（因为 McpLoggingService 是全局的）
+        // 可以在未来实现基于 session 的日志级别过滤
+        
+        Map<String, Object> response = new java.util.LinkedHashMap<>();
+        response.put("jsonrpc", "2.0");
+        response.put("id", id != null ? id : "null");
+        response.put("result", new java.util.HashMap<>());
+        
+        String responseJson = objectMapper.writeValueAsString(response);
+        sendSseEventSafe(emitter, responseJson, "logging/setLevel", sessionId);
+        log.info("✅ Logging/setLevel response sent");
     }
 
     /**

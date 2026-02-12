@@ -46,11 +46,17 @@ import java.util.concurrent.TimeUnit;
  * @since 2024-01-01
  */
 @Slf4j
-// @Service
+@Service
 public class HeartbeatMonitorService {
     
     @Autowired
     private ProviderService providerService;
+    
+    @Autowired
+    private DubboServiceDbService dubboServiceDbService;
+    
+    @Autowired
+    private NacosMcpHttpApiService nacosMcpHttpApiService;
     
     private ExecutorService executorService;
     
@@ -140,10 +146,41 @@ public class HeartbeatMonitorService {
             // 如果在线，更新最后心跳时间
             if (isOnline) {
                 provider.setLastHeartbeat(LocalDateTime.now());
+            } else {
+                // 如果离线（超时），执行清理逻辑
+                handleOfflineProvider(provider);
             }
             
         } catch (Exception e) {
             log.error("检测Provider心跳失败: {}", provider.getAddress(), e);
+        }
+    }
+
+    /**
+     * 处理离线 Provider
+     * 1. 从数据库移除节点
+     * 2. 从 Nacos 移除服务
+     */
+    private void handleOfflineProvider(ProviderInfo provider) {
+        try {
+            log.warn("Provider心跳超时，开始清理: {} (App: {})", provider.getAddress(), provider.getApplication());
+            
+            // 1. 从数据库移除
+            if (provider.getZkPath() != null) {
+                dubboServiceDbService.removeServiceByZkPath(provider.getZkPath());
+                log.info("已从数据库移除 Provider: {}", provider.getZkPath());
+            }
+            
+            // 2. 从 Nacos 移除对应的机器/服务
+            // 注意：这里假设 Application Name 对应 Nacos 中的 MCP Server Name
+            String appName = provider.getApplication();
+            if (appName != null && !appName.isEmpty() && !"unknown".equals(appName)) {
+                nacosMcpHttpApiService.deleteMcpServer(appName);
+                log.info("已请求 Nacos 移除 MCP Server: {}", appName);
+            }
+            
+        } catch (Exception e) {
+            log.error("处理离线 Provider 失败: {}", provider.getAddress(), e);
         }
     }
     

@@ -105,6 +105,10 @@ public class McpProtocol {
         @JsonProperty("inputSchema")
         private Map<String, Object> inputSchema;
         
+        // 扩展字段：参数类型列表（用于精确的Dubbo泛化调用）
+        @JsonProperty("parameterTypes")
+        private List<String> parameterTypes;
+        
         // 扩展字段：支持流式调用
         private Boolean streamable;
         

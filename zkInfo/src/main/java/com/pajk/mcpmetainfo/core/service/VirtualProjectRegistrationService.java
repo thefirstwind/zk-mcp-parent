@@ -88,7 +88,7 @@ public class VirtualProjectRegistrationService {
                     serviceName, // 使用 virtual-{endpointName} 格式
                     "1.0.0", // 虚拟项目统一使用1.0.0版本
                     aggregatedProviders,
-                    virtualProject.getProjectName() // 虚拟项目名称作为application
+                    serviceName // 虚拟项目名称也使用带前缀的服务名
             );
             
             log.info("✅ Successfully registered virtual project to Nacos: {} ({} services, {} providers)", 
@@ -392,8 +392,8 @@ public class VirtualProjectRegistrationService {
                 com.pajk.mcpmetainfo.persistence.entity.VirtualProjectEndpointEntity entity = 
                         virtualProjectEndpointMapper.findByEndpointName(actualEndpoint);
                 if (entity == null || entity.getStatus() != com.pajk.mcpmetainfo.core.model.VirtualProjectEndpoint.EndpointStatus.ACTIVE) {
-                    log.warn("⚠️ Virtual project endpoint not found or not active: {}", actualEndpoint);
-                    return Collections.emptyList();
+                    log.info("ℹ️ Virtual project endpoint not found or not active in database: {}. Will try to check Nacos directly.", actualEndpoint);
+                    // 不再返回 emptyList，而是继续尝试从 Nacos 获取
                 }
             } catch (Exception e) {
                 log.warn("⚠️ Failed to verify endpoint from database: {}, error: {}", actualEndpoint, e.getMessage());

@@ -121,3 +121,5 @@ node_modules/
 zkInfo/docs.*/
 *.zip.backup
 integration_test_report_*.txt
+demo-provider3/
+virtual-projects/

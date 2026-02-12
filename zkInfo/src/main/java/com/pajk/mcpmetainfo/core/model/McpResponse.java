@@ -90,6 +90,14 @@ public class McpResponse {
         private Map<String, Object> inputSchema;
         
         /**
+         * 参数类型列表（Java类型全名）
+         * 例如: ["java.lang.Long", "java.lang.String"]
+         * 用于精确的Dubbo泛化调用参数转换
+         */
+        @JsonProperty("parameterTypes")
+        private List<String> parameterTypes;
+        
+        /**
          * 工具类型
          */
         @JsonProperty("type")

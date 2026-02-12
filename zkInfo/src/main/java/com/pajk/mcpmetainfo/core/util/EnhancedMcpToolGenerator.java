@@ -248,23 +248,31 @@ public class EnhancedMcpToolGenerator {
      * 优先使用数据库中的 parameter_description，如果没有则生成清晰的描述
      * 格式参考：Person's ID, Person's first name 等
      */
+    /**
+     * 生成参数描述
+     * 优先使用数据库中的 parameter_description，如果没有则生成清晰的描述
+     * 格式参考：Person's ID, Person's first name 等
+     */
     private String generateParameterDescription(String paramName, String paramType, String dbDescription) {
+        String description;
         if (dbDescription != null && !dbDescription.trim().isEmpty()) {
             // 优先使用数据库中的描述
-            return dbDescription;
-        }
-        
-        // 如果数据库中没有描述，生成清晰的描述
-        // 将参数名转换为更友好的描述格式
-        String description = formatParameterNameToDescription(paramName);
-        String simpleType = getSimpleTypeName(paramType);
-        
-        // 如果参数名已经是友好的格式，直接使用；否则添加类型信息
-        if (description.equals(paramName)) {
-            return description + " (" + simpleType + ")";
+            description = dbDescription;
         } else {
-            return description;
+            // 如果数据库中没有描述，生成清晰的描述
+            // 将参数名转换为更友好的描述格式
+            description = formatParameterNameToDescription(paramName);
+            String simpleType = getSimpleTypeName(paramType);
+            
+            // 如果参数名已经是友好的格式，直接使用；否则添加类型信息
+            if (description.equals(paramName)) {
+                description = description + " (" + simpleType + ")";
+            }
         }
+        
+        // 添加 (类型: <typeName>) 格式，以便 McpProtocolService 可以提取它
+        // 注意：paramType 应该是全限定名
+        return description + " (类型: " + paramType + ")";
     }
     
     /**

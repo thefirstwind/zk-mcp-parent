@@ -95,7 +95,7 @@ public class VirtualProjectController {
     public ResponseEntity<Map<String, Object>> deleteVirtualProject(
             @PathVariable String endpointName) {
         try {
-            boolean success = virtualProjectService.deleteVirtualProjectByEndpointName(endpointName);
+            boolean success = virtualProjectService.deleteVirtualProjectByServiceName(endpointName);
             
             Map<String, Object> response = new HashMap<>();
             if (success) {

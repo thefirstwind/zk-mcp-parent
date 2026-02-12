@@ -121,20 +121,21 @@ public class McpResourcesService {
     private McpProtocol.McpResource createResourceFromProvider(ProviderInfo provider) {
         String uri = "provider://" + provider.getApplication();
         
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("provider", provider.getApplication());
+        metadata.put("group", provider.getGroup());
+        metadata.put("version", provider.getVersion());
+        metadata.put("online", provider.isOnline());
+        metadata.put("interface", provider.getInterfaceName());
+        metadata.put("methods", provider.getMethods());
+        
         return McpProtocol.McpResource.builder()
                 .uri(uri)
-                .name(provider.getApplication())
+                .name(provider.getApplication() != null ? provider.getApplication() : "unknown")
                 .description("Dubbo服务提供者: " + provider.getInterfaceName())
                 .mimeType("application/json")
                 .subscribable(true)
-                .metadata(Map.of(
-                    "provider", provider.getApplication(),
-                    "group", provider.getGroup(),
-                    "version", provider.getVersion(),
-                    "online", provider.isOnline(),
-                    "interface", provider.getInterfaceName(),
-                    "methods", provider.getMethods()
-                ))
+                .metadata(metadata)
                 .build();
     }
 
@@ -149,7 +150,7 @@ public class McpResourcesService {
                         .description("系统资源：所有Dubbo服务提供者列表")
                         .mimeType("application/json")
                         .subscribable(true)
-                        .metadata(Map.of("type", "system", "category", "providers"))
+                        .metadata(new HashMap<String, Object>() {{ put("type", "system"); put("category", "providers"); }})
                         .build(),
                 
                 McpProtocol.McpResource.builder()
@@ -158,7 +159,7 @@ public class McpResourcesService {
                         .description("系统资源：MCP服务器健康状态")
                         .mimeType("application/json")
                         .subscribable(true)
-                        .metadata(Map.of("type", "system", "category", "health"))
+                        .metadata(new HashMap<String, Object>() {{ put("type", "system"); put("category", "health"); }})
                         .build(),
                 
                 McpProtocol.McpResource.builder()
@@ -167,11 +168,14 @@ public class McpResourcesService {
                         .description("系统资源：MCP服务器配置信息")
                         .mimeType("application/json")
                         .subscribable(false)
-                        .metadata(Map.of("type", "system", "category", "config"))
+                        .metadata(new HashMap<String, Object>() {{ put("type", "system"); put("category", "config"); }})
                         .build()
         );
     }
 
+    /**
+     * 读取系统资源
+     */
     /**
      * 读取系统资源
      */
@@ -181,7 +185,9 @@ public class McpResourcesService {
                 List<ProviderInfo> providers = providerService.getAllProviders();
                 return Mono.just(McpProtocol.ReadResourceResult.builder()
                         .contents(List.of(McpProtocol.McpContent.builder()
-                                .type("json")
+                                .type("resource") // Standard type for resource content
+                                .uri(uri)
+                                .mimeType("application/json")
                                 .text(providers.toString())
                                 .build()))
                         .build());
@@ -189,7 +195,9 @@ public class McpResourcesService {
             case "system://health":
                 return Mono.just(McpProtocol.ReadResourceResult.builder()
                         .contents(List.of(McpProtocol.McpContent.builder()
-                                .type("json")
+                                .type("resource")
+                                .uri(uri)
+                                .mimeType("application/json")
                                 .text("{\"status\":\"healthy\",\"timestamp\":\"" + System.currentTimeMillis() + "\"}")
                                 .build()))
                         .build());
@@ -197,7 +205,9 @@ public class McpResourcesService {
             case "system://config":
                 return Mono.just(McpProtocol.ReadResourceResult.builder()
                         .contents(List.of(McpProtocol.McpContent.builder()
-                                .type("json")
+                                .type("resource")
+                                .uri(uri)
+                                .mimeType("application/json")
                                 .text("{\"version\":\"1.0.0\",\"capabilities\":[\"tools\",\"resources\",\"prompts\",\"logging\"]}")
                                 .build()))
                         .build());
@@ -205,7 +215,9 @@ public class McpResourcesService {
             default:
                 return Mono.just(McpProtocol.ReadResourceResult.builder()
                         .contents(List.of(McpProtocol.McpContent.builder()
-                                .type("error")
+                                .type("resource")
+                                .uri(uri)
+                                .mimeType("text/plain")
                                 .text("未知的系统资源: " + uri)
                                 .build()))
                         .build());
@@ -222,7 +234,9 @@ public class McpResourcesService {
         if (providers.isEmpty()) {
             return Mono.just(McpProtocol.ReadResourceResult.builder()
                     .contents(List.of(McpProtocol.McpContent.builder()
-                            .type("error")
+                            .type("resource")
+                            .uri(uri)
+                            .mimeType("text/plain")
                             .text("提供者不存在: " + providerName)
                             .build()))
                     .build());
@@ -230,7 +244,9 @@ public class McpResourcesService {
         
         return Mono.just(McpProtocol.ReadResourceResult.builder()
                 .contents(List.of(McpProtocol.McpContent.builder()
-                        .type("json")
+                        .type("resource")
+                        .uri(uri)
+                        .mimeType("application/json")
                         .text(providers.toString())
                         .build()))
                 .build());
@@ -243,7 +259,9 @@ public class McpResourcesService {
         // 这里可以实现文件系统资源读取
         return Mono.just(McpProtocol.ReadResourceResult.builder()
                 .contents(List.of(McpProtocol.McpContent.builder()
-                        .type("text")
+                        .type("resource")
+                        .uri(uri)
+                        .mimeType("text/plain")
                         .text("文件资源读取功能待实现: " + uri)
                         .build()))
                 .build());

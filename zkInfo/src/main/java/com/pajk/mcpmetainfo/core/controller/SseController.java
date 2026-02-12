@@ -70,7 +70,7 @@ public class SseController {
      * 2. Header X-Service-Name
      * 3. 从 Nacos 注册信息中查找（根据请求的 IP:Port）
      */
-    @GetMapping(value = "/sse", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @GetMapping(value = "/sse")
     public ResponseEntity<SseEmitter> sseStandard(
             @RequestParam(required = false) String serviceName,
             @RequestHeader(value = "X-Service-Name", required = false) String serviceNameHeader,
@@ -268,7 +268,7 @@ public class SseController {
     /**
      * SSE 端点：GET /sse/{endpoint}
      */
-    @GetMapping(value = "/sse/{endpoint}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @GetMapping(value = "/sse/{endpoint}")
     public ResponseEntity<SseEmitter> sse(@PathVariable String endpoint) {
         log.info("📡 SSE connection request for endpoint: {}", endpoint);
         return handleSse(endpoint);

@@ -9,7 +9,7 @@
         <artifactId>zk-mcp-parent</artifactId>
         <version>1.0.0</version>
     </parent>
-
+    <version>1.0.0</version>
     <artifactId>demo-provider2</artifactId>
     <name>Demo Provider 2 (Dubbo 2.5)</name>
     <description>演示服务提供者模块 - 使用 Alibaba Dubbo 2.5</description>

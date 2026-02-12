@@ -197,7 +197,9 @@ public class McpToolSchemaGenerator {
                             if (paramType != null && (paramType.endsWith("[]") || paramType.contains("List") ||
                                 paramType.contains("Set") || paramType.contains("Collection"))) {
                                 Map<String, Object> items = new HashMap<>();
-                                items.put("type", "any");
+                                // items.put("type", "any"); // type: any is invalid in JSON Schema
+                                // Leave items empty to allow any type, or default to string
+                                // items.put("type", "string"); 
                                 paramProperty.put("items", items);
                             }
                         }
@@ -225,7 +227,7 @@ public class McpToolSchemaGenerator {
                 Map<String, Object> argsProperty = new HashMap<>();
                 argsProperty.put("type", "array");
                 argsProperty.put("description", "方法参数列表");
-                argsProperty.put("items", Map.of("type", "any"));
+                argsProperty.put("items", new HashMap<>()); // Empty schema matches anything
                 properties.put("args", argsProperty);
                 required.add("args");
             }
@@ -236,7 +238,7 @@ public class McpToolSchemaGenerator {
             Map<String, Object> argsProperty = new HashMap<>();
             argsProperty.put("type", "array");
             argsProperty.put("description", "方法参数列表");
-            argsProperty.put("items", Map.of("type", "any"));
+            argsProperty.put("items", new HashMap<>()); // Empty schema matches anything
             properties.put("args", argsProperty);
             required.add("args");
         }
@@ -288,7 +290,7 @@ public class McpToolSchemaGenerator {
         
         // 3. 基于方法名模式推断参数（fallback）
         log.warn("⚠️ 无法从 metadata 或数据库获取方法签名，使用方法名推断: {}.{}", interfaceName, methodName);
-        return inferMethodSignatureFromName(methodName);
+        return inferMethodSignatureFromName(methodName, interfaceName);
     }
     
     /**
@@ -492,7 +494,7 @@ public class McpToolSchemaGenerator {
      * 基于方法名模式推断方法签名
      * 这是临时方案，理想情况下应该从 ZooKeeper metadata 读取
      */
-    private MethodSignatureInfo inferMethodSignatureFromName(String methodName) {
+    private MethodSignatureInfo inferMethodSignatureFromName(String methodName, String interfaceName) {
         MethodSignatureInfo info = new MethodSignatureInfo();
         
         // 常见模式：
@@ -534,7 +536,7 @@ public class McpToolSchemaGenerator {
                 entityName = Character.toLowerCase(entityName.charAt(0)) + entityName.substring(1);
                 
                 // 推断具体的 POJO 类型
-                String inferredType = inferPOJOTypeFromMethodName(methodName, entityName);
+                String inferredType = inferPOJOTypeFromMethodName(methodName, entityName, interfaceName);
                 if (inferredType != null) {
                     paramType = inferredType;
                 }
@@ -558,7 +560,7 @@ public class McpToolSchemaGenerator {
                 entityName = Character.toLowerCase(entityName.charAt(0)) + entityName.substring(1);
                 
                 // 推断具体的 POJO 类型
-                String inferredType = inferPOJOTypeFromMethodName(methodName, entityName);
+                String inferredType = inferPOJOTypeFromMethodName(methodName, entityName, interfaceName);
                 if (inferredType != null) {
                     paramType = inferredType;
                 }
@@ -594,50 +596,76 @@ public class McpToolSchemaGenerator {
      * 例如: createUser -> com.pajk.mcpmetainfo.core.demo.model.User
      *      createOrder -> com.pajk.mcpmetainfo.core.demo.model.Order
      */
-    private String inferPOJOTypeFromMethodName(String methodName, String entityName) {
-        // 常见实体类型映射
-        Map<String, String> entityTypeMap = new HashMap<>();
-        entityTypeMap.put("user", "com.pajk.mcpmetainfo.core.demo.model.User");
-        entityTypeMap.put("order", "com.pajk.mcpmetainfo.core.demo.model.Order");
-        entityTypeMap.put("product", "com.pajk.mcpmetainfo.core.demo.model.Product");
-        
+    /**
+     * 从方法名推断 POJO 类型
+     * 优先尝试根据 interfaceName 推断所在的包，然后推断 model 包
+     */
+    private String inferPOJOTypeFromMethodName(String methodName, String entityName, String interfaceName) {
         // 从方法名提取实体名（首字母大写）
         String entityType = null;
         if (methodName.startsWith("create")) {
             String extracted = methodName.substring(6); // 跳过 "create"
             if (!extracted.isEmpty()) {
-                entityType = extracted.toLowerCase();
+                entityType = extracted;
             }
         } else if (methodName.startsWith("add")) {
             String extracted = methodName.substring(3); // 跳过 "add"
             if (!extracted.isEmpty()) {
-                entityType = extracted.toLowerCase();
+                entityType = extracted;
             }
         } else if (methodName.startsWith("update")) {
             String extracted = methodName.substring(6); // 跳过 "update"
             if (!extracted.isEmpty()) {
-                entityType = extracted.toLowerCase();
+                entityType = extracted;
             }
         }
         
         // 从 entityName 推断
         if (entityType == null && entityName != null) {
-            entityType = entityName.toLowerCase();
+            entityType = Character.toUpperCase(entityName.charAt(0)) + entityName.substring(1);
+        }
+
+        if (entityType == null) {
+            return null;
+        }
+
+        // 1. 尝试根据 interfaceName 推断包名
+        if (interfaceName != null && interfaceName.contains(".")) {
+            // 假设目录结构: ...service.UserService -> ...model.User
+            String packageName = interfaceName.substring(0, interfaceName.lastIndexOf("."));
+            String modelPackage = null;
+            
+            if (packageName.endsWith(".service")) {
+                // ...service -> ...model
+                modelPackage = packageName.substring(0, packageName.lastIndexOf(".service")) + ".model";
+            } else if (packageName.endsWith(".api")) {
+                // ...api -> ...model
+                modelPackage = packageName.substring(0, packageName.lastIndexOf(".api")) + ".model";
+            } else {
+                // 尝试直接 append .model
+                modelPackage = packageName + ".model";
+            }
+            
+            if (modelPackage != null) {
+                String inferredClass = modelPackage + "." + entityType;
+                log.debug("🎯 Inferred POJO type from interface: {} -> {}", interfaceName, inferredClass);
+                return inferredClass;
+            }
         }
         
-        // 查找映射
-        if (entityType != null && entityTypeMap.containsKey(entityType)) {
-            return entityTypeMap.get(entityType);
+        // 2. 常见实体类型映射（作为后备）
+        Map<String, String> entityTypeMap = new HashMap<>();
+        entityTypeMap.put("user", "com.pajk.mcpmetainfo.core.demo.model.User");
+        entityTypeMap.put("order", "com.pajk.mcpmetainfo.core.demo.model.Order");
+        entityTypeMap.put("product", "com.pajk.mcpmetainfo.core.demo.model.Product");
+        
+        String lowerCaseType = entityType.toLowerCase();
+        if (entityTypeMap.containsKey(lowerCaseType)) {
+            return entityTypeMap.get(lowerCaseType);
         }
         
-        // 尝试构建完整类名
-        if (entityType != null) {
-            // 首字母大写
-            String capitalized = Character.toUpperCase(entityType.charAt(0)) + entityType.substring(1);
-            return "com.pajk.mcpmetainfo.core.demo.model." + capitalized;
-        }
-        
-        return null;
+        // 3. 默认回退到 demo model
+        return "com.pajk.mcpmetainfo.core.demo.model." + entityType;
     }
     
     /**
@@ -646,7 +674,8 @@ public class McpToolSchemaGenerator {
     private String getParameterDescriptionFromType(String typeName, String paramName) {
         String simpleType = typeName.contains(".") ? 
                 typeName.substring(typeName.lastIndexOf(".") + 1) : typeName;
-        return String.format("%s 类型的参数 %s", simpleType, paramName);
+        // 添加 (类型: <typeName>) 格式，以便 McpProtocolService 可以提取它
+        return String.format("%s 类型的参数 %s (类型: %s)", simpleType, paramName, typeName);
     }
     
     /**
@@ -654,7 +683,7 @@ public class McpToolSchemaGenerator {
      */
     private String getJsonTypeFromJavaTypeName(String javaTypeName) {
         if (javaTypeName == null || javaTypeName.isEmpty()) {
-            return "any";
+            return "string"; // Default to string instead of invalid 'any'
         }
         
         // 基本类型
@@ -867,5 +896,32 @@ public class McpToolSchemaGenerator {
             
             return new Object[0];
         }
+    }
+    
+    /**
+     * 获取方法的参数类型列表
+     * 用于MCP工具定义中的 parameterTypes 字段
+     * 
+     * @param interfaceName 接口全限定名
+     * @param methodName 方法名
+     * @return 参数类型列表，如 ["java.lang.Long", "java.lang.String"]，如果无法获取则返回空列表
+     */
+    public List<String> getParameterTypes(String interfaceName, String methodName) {
+        log.debug("获取参数类型: interface={}, method={}", interfaceName, methodName);
+        
+        try {
+            MethodSignatureInfo methodInfo = getMethodSignatureFromMetadata(interfaceName, methodName);
+            
+            if (methodInfo != null && methodInfo.getParameters() != null) {
+                return methodInfo.getParameters().stream()
+                        .map(MethodParameter::getType)
+                        .filter(type -> type != null && !type.isEmpty())
+                        .toList();
+            }
+        } catch (Exception e) {
+            log.warn("获取参数类型失败: {}.{}, error={}", interfaceName, methodName, e.getMessage());
+        }
+        
+        return Collections.emptyList();
     }
 }

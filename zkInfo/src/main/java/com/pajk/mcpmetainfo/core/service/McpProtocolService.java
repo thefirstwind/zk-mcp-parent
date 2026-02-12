@@ -16,10 +16,18 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
+import java.util.regex.*;
 
 /**
  * MCP协议服务实现
  * 提供标准的MCP JSON-RPC 2.0协议支持
+ */
+/**
+ * MCP 协议处理服务
+ * 
+ * @traceability
+ *   - Requirement: REQ-20260211-003 (虚拟项目参数类型修复)
+ *   - Design: docs/requirements/REQ-20260211-003.md
  */
 @Slf4j
 @Service
@@ -31,6 +39,7 @@ public class McpProtocolService {
     private final McpResourcesService mcpResourcesService;
     private final McpPromptsService mcpPromptsService;
     private final McpLoggingService mcpLoggingService;
+    private final VirtualProjectService virtualProjectService;
     private final ObjectMapper objectMapper;
     
     // 流式调用管理
@@ -263,18 +272,61 @@ public class McpProtocolService {
     }
 
     /**
-     * 执行同步工具调用
+     * 执行工具调用
+     * 
+     * @traceability REQ-20260211-003 (支持显式参数类型转换)
      */
-    private Mono<McpProtocol.CallToolResult> executeToolCall(String toolName, 
-            Map<String, Object> arguments, Integer timeout) {
+    public Mono<McpProtocol.CallToolResult> executeToolCall(String toolName, 
+            Map<String, Object> arguments, int timeoutMs) {
+
         
         return Mono.fromCallable(() -> {
+            // 尝试提取参数类型
+            String[] explicitParameterTypes = extractParameterTypes(toolName, arguments);
+            if (explicitParameterTypes != null) {
+                log.info("工具调用 {}: 提取到显式参数类型: {}", toolName, Arrays.toString(explicitParameterTypes));
+            } else {
+                log.info("工具调用 {}: 未提取到显式参数类型，将使用 Dubbo 自动推断", toolName);
+            }
+            
             // 转换参数格式
             Object[] args = convertArgumentsToArray(arguments);
+            
+            // 如果只有提取到了显式参数类型，尝试转换参数值以匹配类型
+            // 这是关键：修复 Integer -> Long 的问题
+            if (explicitParameterTypes != null && args != null && explicitParameterTypes.length == args.length) {
+                for (int i = 0; i < args.length; i++) {
+                    String targetType = explicitParameterTypes[i];
+                    Object originalValue = args[i];
+                    
+                    if (originalValue != null && targetType != null) {
+                        try {
+                            if ("java.lang.Long".equals(targetType) && originalValue instanceof Integer) {
+                                args[i] = ((Integer) originalValue).longValue();
+                                log.info("参数[{}] 自动转换: Integer {} -> Long {}", i, originalValue, args[i]);
+                            } else if ("java.lang.Long".equals(targetType) && originalValue instanceof String) {
+                                args[i] = Long.parseLong((String) originalValue);
+                                log.info("参数[{}] 自动转换: String {} -> Long {}", i, originalValue, args[i]);
+                            } else if ("java.lang.Integer".equals(targetType) && originalValue instanceof Long) {
+                                args[i] = ((Long) originalValue).intValue();
+                                log.info("参数[{}] 自动转换: Long {} -> Integer {}", i, originalValue, args[i]);
+                            } else if ("java.lang.Double".equals(targetType) && originalValue instanceof Integer) {
+                                args[i] = ((Integer) originalValue).doubleValue();
+                            } else if ("java.lang.Float".equals(targetType) && originalValue instanceof Integer) {
+                                args[i] = ((Integer) originalValue).floatValue();
+                            }
+                            // 可以添加更多类型的转换
+                        } catch (Exception e) {
+                            log.warn("参数[{}] 类型转换失败: {} -> {}, error={}", i, originalValue.getClass().getName(), targetType, e.getMessage());
+                        }
+                    }
+                }
+            }
+            
             log.debug("转换后的参数: args={}", args != null ? java.util.Arrays.toString(args) : "null");
             
             // 执行Dubbo调用
-            McpExecutorService.McpCallResult result = mcpExecutorService.executeToolCallSync(toolName, args, timeout);
+            McpExecutorService.McpCallResult result = mcpExecutorService.executeToolCallSync(toolName, args, timeoutMs, explicitParameterTypes);
             log.debug("Dubbo调用结果: success={}, result={}, error={}", 
                 result != null && result.isSuccess(), 
                 result != null ? result.getResult() : "null",
@@ -312,6 +364,105 @@ public class McpProtocolService {
                     .isError(false)
                     .build();
         });
+    }
+
+    /**
+     * 从工具定义中提取参数类型
+     */
+    public String[] extractParameterTypes(String toolName, Map<String, Object> arguments) {
+
+        if (arguments == null || arguments.isEmpty()) {
+            return null;
+        }
+
+        try {
+            // 查找工具定义
+            List<McpProtocol.McpTool> tools = getAllMcpTools();
+            McpProtocol.McpTool tool = tools.stream()
+                    .filter(t -> t.getName() != null && t.getName().equals(toolName))
+                    .findFirst()
+                    .orElse(null);
+                    
+            if (tool == null) {
+                return null;
+            }
+            
+            // ✅ 优先使用 parameterTypes 字段（新方案，最可靠）
+            List<String> parameterTypes = tool.getParameterTypes();
+            if (parameterTypes != null && !parameterTypes.isEmpty()) {
+                log.info("✅ 使用工具定义中的 parameterTypes: {} -> {}", toolName, parameterTypes);
+                return parameterTypes.toArray(new String[0]);
+            }
+            
+            // 降级方案：从inputSchema的description解析（旧方案）
+            if (tool.getInputSchema() == null) {
+                return null;
+            }
+            
+            Map<String, Object> schema = tool.getInputSchema();
+            @SuppressWarnings("unchecked")
+            Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
+            if (properties == null) {
+                return null;
+            }
+            
+            List<String> types = new ArrayList<>();
+            // 注意：这里假设 arguments 的迭代顺序与 convertArgumentsToArray 方法中的顺序一致
+            // 对于 LinkedHashMap（Jackson默认），这是成立的
+            for (String key : arguments.keySet()) {
+                // 如果包含 args 键且是唯一键，可能是包装器格式，此时很难确定类型对应关系，跳过推断
+                if ("args".equals(key) && arguments.size() == 1) {
+                    return null;
+                }
+                
+                Object propObj = properties.get(key);
+                if (propObj instanceof Map) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> prop = (Map<String, Object>) propObj;
+                    String desc = (String) prop.get("description");
+                    if (desc != null) {
+                        // 解析 (类型: Long)
+                        Pattern pattern = Pattern.compile("\\(类型:\\s*([a-zA-Z0-9_.]+)\\)");
+                        Matcher matcher = pattern.matcher(desc);
+                        if (matcher.find()) {
+                            String type = matcher.group(1).trim();
+                            // 映射常见类型
+                            // 注意：这里的类型映射需要与 Dubbo 支持的类型一致
+                            if ("Long".equalsIgnoreCase(type)) type = "java.lang.Long";
+                            else if ("Integer".equalsIgnoreCase(type)) type = "java.lang.Integer";
+                            else if ("String".equalsIgnoreCase(type)) type = "java.lang.String";
+                            else if ("Boolean".equalsIgnoreCase(type)) type = "java.lang.Boolean";
+                            else if ("Double".equalsIgnoreCase(type)) type = "java.lang.Double";
+                            else if ("Float".equalsIgnoreCase(type)) type = "java.lang.Float";
+                            else if ("int".equals(type)) type = "int";
+                            else if ("long".equals(type)) type = "long";
+                            
+                            types.add(type);
+                        } else {
+                            // 如果无法解析类型，添加 null 占位
+                            types.add(null);
+                        }
+                    } else {
+                        types.add(null);
+                    }
+                } else {
+                    types.add(null);
+                }
+            }
+            
+            // 如果提取到的类型包含 null，说明部分类型未知，最好回退到 Dubbo 自动推断
+            if (types.contains(null)) {
+                log.warn("⚠️ 从description解析参数类型时包含null: {}", types);
+                return null;
+            }
+            
+            log.info("⚠️ 使用从description解析的参数类型（旧方案）: {} -> {}", toolName, types);
+            return types.toArray(new String[0]);
+            
+        } catch (Exception e) {
+            log.warn("提取参数类型失败: tool=" + toolName, e);
+            return null;
+        }
     }
 
     /**
@@ -380,36 +531,169 @@ public class McpProtocolService {
     }
 
     /**
-     * 获取所有MCP工具
+     * 获取所有 MCP 工具
+     * 
+     * @traceability REQ-20260211-003 (加载并合并虚拟配置中的 parameterTypes)
      */
-    private List<McpProtocol.McpTool> getAllMcpTools() {
+    public List<McpProtocol.McpTool> getAllMcpTools() {
         try {
-            // 获取所有工具并按名称去重
+            // 1. 从 ZooKeeper 获取 Dubbo 服务并转换
+            // 使用 LinkedHashMap 保持顺序并去重
             Map<String, McpProtocol.McpTool> uniqueTools = new java.util.LinkedHashMap<>();
             
-            mcpConverterService.convertAllApplicationsToMcp().stream()
-                    .flatMap(app -> app.getTools().stream())
-                    .map(this::convertToMcpTool)
-                    .forEach(tool -> {
-                        String toolName = tool.getName();
-                        if (!uniqueTools.containsKey(toolName)) {
-                            // 第一次遇到该工具，直接添加
-                            uniqueTools.put(toolName, tool);
-                        } else {
-                            // 已存在该工具，合并provider信息
-                            McpProtocol.McpTool existing = uniqueTools.get(toolName);
-                            // 如果当前provider在线，更新状态
-                            if (tool.getOnline() && !existing.getOnline()) {
-                                existing.setOnline(true);
-                                existing.setProvider(tool.getProvider());
+            try {
+                mcpConverterService.convertAllApplicationsToMcp().stream()
+                        .flatMap(app -> app.getTools().stream())
+                        .map(this::convertToMcpTool)
+                        .forEach(tool -> {
+                            String toolName = tool.getName();
+                            if (!uniqueTools.containsKey(toolName)) {
+                                uniqueTools.put(toolName, tool);
+                            } else {
+                                McpProtocol.McpTool existing = uniqueTools.get(toolName);
+                                if (tool.getOnline() && !existing.getOnline()) {
+                                    existing.setOnline(true);
+                                    existing.setProvider(tool.getProvider());
+                                }
                             }
-                            // 如果现有工具不在线，用在线的provider替换
-                            if (!existing.getOnline() && tool.getOnline()) {
-                                existing.setProvider(tool.getProvider());
-                                existing.setOnline(true);
+                        });
+            } catch (Exception e) {
+                log.warn("获取 Dubbo 服务失败", e);
+            }
+
+            // 1.5 从 VirtualProjectService 获取虚拟项目并转换
+            try {
+                if (virtualProjectService != null) {
+                    List<VirtualProjectService.VirtualProjectInfo> virtualProjects = virtualProjectService.getAllVirtualProjects();
+                    for (VirtualProjectService.VirtualProjectInfo vp : virtualProjects) {
+                        try {
+                            List<McpProtocol.McpTool> vpTools = mcpConverterService.convertVirtualProjectToMcpTools(vp.getProject().getId())
+                                    .stream()
+                                    .map(this::convertToMcpTool)
+                                    .collect(Collectors.toList());
+                            
+                            log.info("🔍 Found {} tools for virtual project: {}", vpTools.size(), vp.getProject().getProjectName());
+                            
+                            for (McpProtocol.McpTool tool : vpTools) {
+                                String toolName = tool.getName();
+                                if (!uniqueTools.containsKey(toolName)) {
+                                    uniqueTools.put(toolName, tool);
+                                } else {
+                                    // 工具已存在，可能是因为实际项目也被扫描到了
+                                    // 确保 parameterTypes 存在
+                                    McpProtocol.McpTool existing = uniqueTools.get(toolName);
+                                    if (existing.getParameterTypes() == null || existing.getParameterTypes().isEmpty()) {
+                                        if (tool.getParameterTypes() != null && !tool.getParameterTypes().isEmpty()) {
+                                            existing.setParameterTypes(tool.getParameterTypes());
+                                            log.debug("✅ 为已存在的工具补充 parameterTypes (from Virtual Project): {} -> {}", toolName, tool.getParameterTypes());
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (Exception e) {
+                            log.warn("处理虚拟项目工具失败: {}", vp.getProject().getProjectName(), e);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("获取虚拟项目服务失败", e);
+            }
+
+            // 2. 扫描本地虚拟项目配置 (virtual-projects/*.json)
+            try {
+                java.io.File virtualProjectDir = new java.io.File("virtual-projects");
+                if (!virtualProjectDir.exists() || !virtualProjectDir.isDirectory()) {
+                    virtualProjectDir = new java.io.File("zkInfo/virtual-projects");
+                }
+                if (!virtualProjectDir.exists() || !virtualProjectDir.isDirectory()) {
+                    virtualProjectDir = new java.io.File("zk-mcp-parent/zkInfo/virtual-projects");
+                }
+                
+                log.info("🔍 Scanning virtual project directory: {}", virtualProjectDir.getAbsolutePath());
+                if (virtualProjectDir.exists() && virtualProjectDir.isDirectory()) {
+                    java.io.File[] files = virtualProjectDir.listFiles((dir, name) -> name.endsWith(".json"));
+                    if (files != null) {
+                        log.info("🔍 Found {} virtual project files", files.length);
+                        for (java.io.File file : files) {
+                            try {
+                                log.info("🔍 Processing file: {}", file.getName());
+                                Map<String, Object> config = objectMapper.readValue(file, Map.class);
+                                if (config.containsKey("tools")) {
+                                    List<Map<String, Object>> tools = (List<Map<String, Object>>) config.get("tools");
+                                    log.info("🔍 File {} contains {} tools", file.getName(), tools.size());
+                                    for (Map<String, Object> toolMap : tools) {
+                                        String toolName = (String) toolMap.get("toolName");
+                                        if (toolName == null) toolName = (String) toolMap.get("name"); // 兼容旧格式
+                                        
+                                        if (toolName != null) {
+                                            // 解析 inputSchema
+                                            Map<String, Object> inputSchema = null;
+                                            Object schemaObj = toolMap.get("inputSchema");
+                                            if (schemaObj instanceof String) {
+                                                try {
+                                                    // 如果是字符串，解析为 Map
+                                                    inputSchema = objectMapper.readValue((String) schemaObj, Map.class);
+                                                } catch (Exception e) {
+                                                    log.warn("Parsing inputSchema failed for {}", toolName);
+                                                }
+                                            } else if (schemaObj instanceof Map) {
+                                                inputSchema = (Map<String, Object>) schemaObj;
+                                            }
+                                            
+                                            // 解析 parameterTypes list
+                                            List<String> parameterTypes = null;
+                                            if (toolMap.containsKey("parameterTypes")) {
+                                                parameterTypes = (List<String>) toolMap.get("parameterTypes");
+                                            }
+
+                                            // 如果工具已经存在，尝试补充信息（如 parameterTypes）
+                                            McpProtocol.McpTool existing = uniqueTools.get(toolName);
+                                            if (existing != null) {
+                                                if (existing.getParameterTypes() == null || existing.getParameterTypes().isEmpty()) {
+                                                    if (parameterTypes != null && !parameterTypes.isEmpty()) {
+                                                        existing.setParameterTypes(parameterTypes);
+                                                        log.debug("✅ 为已存在的工具补充 parameterTypes: {} -> {}", toolName, parameterTypes);
+                                                    }
+                                                }
+                                                // ✅ 总是更新 inputSchema 和 description，因为虚拟项目的定义通常包含更精确的类型推导信息
+                                                if (inputSchema != null && !inputSchema.isEmpty()) {
+                                                    existing.setInputSchema(inputSchema);
+                                                    log.debug("✅ 为已存在的工具更新 inputSchema: {}", toolName);
+                                                }
+                                                if (toolMap.get("description") != null) {
+                                                    existing.setDescription((String) toolMap.get("description"));
+                                                }
+                                            } else {
+                                                // 如果工具不存在（可能因为 Provider 离线或未注册），添加虚拟工具定义
+                                                // 这样 extractParameterTypes 就能找到它
+                                                McpProtocol.McpTool virtualTool = McpProtocol.McpTool.builder()
+                                                        .name(toolName)
+                                                        .description((String) toolMap.get("description"))
+                                                        .inputSchema(inputSchema) // 可能包含 parameters info
+                                                        .parameterTypes(parameterTypes) // 明确的参数类型
+                                                        .streamable(isStreamable(toolName))
+                                                        .online(true) // 假设虚拟项目都是为了调用在线服务
+                                                        .group("virtual")
+                                                        .version("1.0.0")
+                                                        .build();
+                                                
+                                                uniqueTools.put(toolName, virtualTool);
+                                                log.info("✅ 加载虚拟项目工具定义: {}", toolName);
+                                            }
+                                        }
+                                    }
+                                }
+                            } catch (Exception e) {
+                                log.warn("Failed to parse virtual project config: {}", file.getName(), e);
                             }
                         }
-                    });
+                    }
+                } else {
+                     log.warn("⚠️ virtual-projects directory does not exist or is not a directory: {}", virtualProjectDir.getAbsolutePath());
+                }
+            } catch (Exception e) {
+                log.warn("Failed to scan virtual projects", e);
+            }
             
             return new ArrayList<>(uniqueTools.values());
         } catch (Exception e) {
@@ -417,6 +701,7 @@ public class McpProtocolService {
             return new ArrayList<>();
         }
     }
+
 
     /**
      * 转换为MCP工具格式
@@ -426,6 +711,7 @@ public class McpProtocolService {
                 .name(tool.getName())
                 .description(tool.getDescription())
                 .inputSchema(tool.getInputSchema())
+                .parameterTypes(tool.getParameterTypes())
                 .streamable(isStreamable(tool.getName()))
                 .provider(tool.getProvider())
                 .online(tool.isOnline())

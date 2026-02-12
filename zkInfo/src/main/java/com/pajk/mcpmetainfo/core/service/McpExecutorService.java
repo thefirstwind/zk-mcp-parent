@@ -220,6 +220,19 @@ public class McpExecutorService {
      * @return 调用结果
      */
     public CompletableFuture<McpCallResult> executeToolCall(String toolName, Object[] args, Integer timeout) {
+        return executeToolCall(toolName, args, timeout, null);
+    }
+
+    /**
+     * 执行 MCP 工具调用（支持显式指定参数类型）
+     * 
+     * @param toolName 工具名称 (格式: interface.method)
+     * @param args 方法参数数组
+     * @param timeout 调用超时时间(毫秒)
+     * @param explicitParameterTypes 显式指定的参数类型（可选，如果不为空则跳过推断）
+     * @return 调用结果
+     */
+    public CompletableFuture<McpCallResult> executeToolCall(String toolName, Object[] args, Integer timeout, String[] explicitParameterTypes) {
         // 从 toolName 解析接口名和方法名（用于生成友好的错误信息）
         String interfaceName = null;
         String methodName = null;
@@ -283,12 +296,19 @@ public class McpExecutorService {
                 }
                 
                 // 先获取参数类型（用于后续的参数转换和调用）
-                // 注意：这里传入原始args，因为我们需要知道原始参数的类型
-                String[] parameterTypes = getParameterTypes(localInterfaceName, localMethodName, args, dubboVersion);
+                String[] parameterTypes;
+                if (explicitParameterTypes != null && explicitParameterTypes.length > 0) {
+                    parameterTypes = explicitParameterTypes;
+                    log.info("✅ 使用显式指定的参数类型: {}", String.join(", ", parameterTypes));
+                } else {
+                    parameterTypes = getParameterTypes(localInterfaceName, localMethodName, args, dubboVersion);
+                }
                 
                 // 确保参数类型和参数值都存在且匹配
                 if (parameterTypes != null && parameterTypes.length > 0) {
-                    log.info("✅ 获取到参数类型: {}", String.join(", ", parameterTypes));
+                    if (explicitParameterTypes == null) {
+                        log.info("✅ 获取到参数类型: {}", String.join(", ", parameterTypes));
+                    }
                     
                     // 如果参数值为空但参数类型不为空，说明参数在提取阶段丢失了
                     if (args == null || args.length == 0) {
@@ -443,9 +463,20 @@ public class McpExecutorService {
                 
                 if ("3.x".equals(dubboVersion)) {
                     // Dubbo3: 支持 POJO 模式，parameterTypes 可以为 null
+                    // 但如果有明确的参数类型，应该优先使用，以避免自动推断错误（特别是 int/long 混淆）
                     log.info("📞 执行 Dubbo3 泛化调用: {}.{}({} 个参数)", 
                             localInterfaceName, localMethodName, convertedArgs != null ? convertedArgs.length : 0);
-                    result = genericService.$invoke(localMethodName, null, convertedArgs);
+                    
+                    // 如果 parameterTypes 为空，传 null 让 Dubbo 推断
+                    // 如果有 explicitParameterTypes，肯定已经赋给了 parameterTypes，所以优先使用
+                    String[] invokeTypes = (parameterTypes != null && parameterTypes.length > 0) ? parameterTypes : null;
+                    if (invokeTypes != null) {
+                        log.info("   使用指定的参数类型: {}", String.join(", ", invokeTypes));
+                    } else {
+                        log.info("   使用 Dubbo3 自动推断");
+                    }
+                    
+                    result = genericService.$invoke(localMethodName, invokeTypes, convertedArgs);
                 } else {
                     // Dubbo2: 必须指定 parameterTypes
                     // 关键：parameterTypes 必须是完整的类名，args 可以是 Map 对象（对于 POJO 类型）
@@ -520,7 +551,17 @@ public class McpExecutorService {
     /**
      * 同步执行 MCP 工具调用
      */
+    /**
+     * 同步执行 MCP 工具调用
+     */
     public McpCallResult executeToolCallSync(String toolName, Object[] args, Integer timeout) {
+        return executeToolCallSync(toolName, args, timeout, null);
+    }
+
+    /**
+     * 同步执行 MCP 工具调用（支持显式指定参数类型）
+     */
+    public McpCallResult executeToolCallSync(String toolName, Object[] args, Integer timeout, String[] explicitParameterTypes) {
         // 从 toolName 解析接口名和方法名（用于生成友好的错误信息）
         String interfaceName = null;
         String methodName = null;
@@ -535,7 +576,7 @@ public class McpExecutorService {
         }
         
         try {
-            CompletableFuture<McpCallResult> future = executeToolCall(toolName, args, timeout);
+            CompletableFuture<McpCallResult> future = executeToolCall(toolName, args, timeout, explicitParameterTypes);
             
             // 使用传入的超时时间，如果没有则使用配置的 Dubbo 超时时间（默认 30 秒）
             int syncTimeout = (timeout != null && timeout > 0) ? timeout : dubboTimeout;
@@ -756,6 +797,55 @@ public class McpExecutorService {
                         log.debug("✅ 泛化调用：参数[{}]是Map，目标类型是POJO {}，直接使用Map（不转换）", i, paramType);
                         convertedArgs[i] = arg; // 直接使用Map，不转换为POJO
                         continue;
+                    }
+                }
+                
+                // 处理 JSON String 格式的参数 (例如 MCP Inspector 可能传过来 String 类型的 JSON)
+                if (arg instanceof String && paramType != null && !paramType.equals("java.lang.String")) {
+                    String strArg = ((String) arg).trim();
+                    // 检查是否看起来像 JSON 对象或数组
+                    if ((strArg.startsWith("{") && strArg.endsWith("}")) || 
+                        (strArg.startsWith("[") && strArg.endsWith("]"))) {
+                        try {
+                            log.debug("🔄 检测到 JSON String 参数，尝试解析: str={}, targetType={}", strArg, paramType);
+                            // 将 JSON String 解析为 Map 或 List
+                            Object parsedArgs = objectMapper.readValue(strArg, Object.class);
+                            
+                            // 如果目标是 POJO，解析出来的是 Map，直接使用
+                            if (parsedArgs instanceof Map && isPOJOType(paramType)) {
+                                log.info("✅ 参数转换: 将 JSON String 解析为 Map 以匹配 POJO 类型 {}. JSON: {}", paramType, strArg);
+                                convertedArgs[i] = parsedArgs;
+                                continue;
+                            }
+                            
+                            // 如果目标是 List/Set/Collection，解析出来的是 List
+                            if (parsedArgs instanceof List && (
+                                paramType.startsWith("java.util.List") || 
+                                paramType.startsWith("java.util.Collection") ||
+                                paramType.startsWith("java.util.Set") ||
+                                paramType.endsWith("[]")
+                            )) {
+                                log.info("✅ 参数转换: 将 JSON String 解析为 List 以匹配集合类型 {}. JSON: {}", paramType, strArg);
+                                convertedArgs[i] = parsedArgs; // Dubbo 泛化调用通常能处理 List -> Array/Set 的转换
+                                continue;
+                            }
+                            
+                            // 如果目标是 Map
+                            if (parsedArgs instanceof Map && paramType.startsWith("java.util.Map")) {
+                                convertedArgs[i] = parsedArgs;
+                                continue;
+                            }
+                            
+                            // 其他情况，如果在 isPOJOType 判定为真，尝试使用解析后的对象
+                            if (isPOJOType(paramType)) {
+                                log.info("✅ 参数转换: 将 JSON String 解析为 Object 以匹配 POJO 类型 {}.", paramType);
+                                convertedArgs[i] = parsedArgs;
+                                continue;
+                            }
+                            
+                        } catch (Exception e) {
+                            log.warn("⚠️ 尝试解析 JSON String 参数失败，保留原值: error={}, json={}", e.getMessage(), strArg);
+                        }
                     }
                 }
                 

@@ -21,7 +21,8 @@ import org.mybatis.spring.boot.autoconfigure.MybatisAutoConfiguration;
 @EnableConfigurationProperties(McpSessionProperties.class)
 @ComponentScan(basePackages = {
     "com.pajk.mcpmetainfo.core",
-    "com.pajk.mcpmetainfo.persistence"
+    "com.pajk.mcpmetainfo.persistence",
+    "com.pajk.mcpmetainfo.web"
 })
 public class ZkInfoApplication {
     

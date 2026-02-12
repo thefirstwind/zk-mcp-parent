@@ -187,6 +187,11 @@ public class ParameterConverter {
     
     /**
      * 转换基础类型
+     * 
+     * @traceability
+     *   - Requirement: REQ-20260211-001
+     *   - Issue: Dubbo泛化调用参数类型必须严格匹配，java.lang.Long 不能用 long 代替
+     *   - Fix: 对于包装类型（如 java.lang.Long），返回包装类对象而不是基本类型
      */
     private Object convertPrimitive(Object value, String targetType) {
         if (value == null) {
@@ -194,31 +199,72 @@ public class ParameterConverter {
         }
         
         try {
-            if (targetType.equals("int") || targetType.equals("java.lang.Integer")) {
+            // int/Integer
+            if (targetType.equals("int")) {
+                // 基本类型 int - 返回 int
                 if (value instanceof Number) {
                     return ((Number) value).intValue();
                 } else if (value instanceof String) {
                     return Integer.parseInt((String) value);
                 }
-            } else if (targetType.equals("long") || targetType.equals("java.lang.Long")) {
+            } else if (targetType.equals("java.lang.Integer")) {
+                // 包装类型 Integer - 返回 Integer 对象
+                if (value instanceof Number) {
+                    return Integer.valueOf(((Number) value).intValue());
+                } else if (value instanceof String) {
+                    return Integer.valueOf((String) value);
+                }
+            } 
+            
+            // long/Long
+            else if (targetType.equals("long")) {
+                // 基本类型 long - 返回 long
                 if (value instanceof Number) {
                     return ((Number) value).longValue();
                 } else if (value instanceof String) {
                     return Long.parseLong((String) value);
                 }
-            } else if (targetType.equals("double") || targetType.equals("java.lang.Double")) {
+            } else if (targetType.equals("java.lang.Long")) {
+                // 包装类型 Long - 返回 Long 对象 ✅ 关键修复
+                if (value instanceof Number) {
+                    Long result = Long.valueOf(((Number) value).longValue());
+                    log.info("✅✅✅ 已转换为 Long 对象: value={}, type={}, result={}, resultClass={}", 
+                        value, value.getClass().getName(), result, result.getClass().getName());
+                    return result;
+                } else if (value instanceof String) {
+                    Long result = Long.valueOf((String) value);
+                    log.info("✅✅✅ 已从String转换为 Long 对象: value={}, result={}", value, result);
+                    return result;
+                }
+                log.warn("⚠️⚠️⚠️ Long类型转换失败，value类型不匹配: type={}", value.getClass().getName());
+            }
+            
+            // double/Double
+            else if (targetType.equals("double")) {
                 if (value instanceof Number) {
                     return ((Number) value).doubleValue();
                 } else if (value instanceof String) {
                     return Double.parseDouble((String) value);
                 }
-            } else if (targetType.equals("boolean") || targetType.equals("java.lang.Boolean")) {
+            } else if (targetType.equals("java.lang.Double")) {
+                if (value instanceof Number) {
+                    return Double.valueOf(((Number) value).doubleValue());
+                } else if (value instanceof String) {
+                    return Double.valueOf((String) value);
+                }
+            }
+            
+            // boolean/Boolean
+            else if (targetType.equals("boolean") || targetType.equals("java.lang.Boolean")) {
                 if (value instanceof Boolean) {
                     return value;
                 } else if (value instanceof String) {
                     return Boolean.parseBoolean((String) value);
                 }
-            } else if (targetType.equals("java.lang.String")) {
+            } 
+            
+            // String
+            else if (targetType.equals("java.lang.String")) {
                 return value.toString();
             }
         } catch (Exception e) {

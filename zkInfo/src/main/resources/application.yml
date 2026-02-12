@@ -123,7 +123,7 @@ zookeeper:
 # 如果为空，则允许所有接口入库（不推荐，建议配置白名单以确保安全）
 zk:
   whitelist:
-    interfaces: ${ZK_WHITELIST_INTERFACES:com.zkinfo.demo.service,com.pajk.provider1.service}  # 配置文件白名单（支持多个，逗号分隔）
+    interfaces: ${ZK_WHITELIST_INTERFACES:com.pajk}  # 配置文件白名单（支持多个，逗号分隔）
     database:
       enabled: ${ZK_WHITELIST_DB_ENABLED:true}  # 是否启用数据库白名单（默认启用）
     cache:
